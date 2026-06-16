@@ -70,9 +70,10 @@
   <div style="margin-bottom:12px;">
     <div style="font-size:12px; font-weight:bold; color:{% if action=='refund' %}#fd7e14{% else %}#28a745{% endif %}; margin-bottom:4px;">
       {% if action == 'refund' %}▼ 売上マイナス仕訳（返金）{% else %}▼ 売上仕訳（収入）{% endif %}
+      <span style="font-weight:normal; color:#555; margin-left:8px;">部門: <strong>{{ se.section_name or '—' }}</strong></span>
     </div>
     <table style="font-size:12px; width:100%;">
-      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考</th></tr></thead>
+      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考（求職者+入社企業）</th><th>メモタグ（担当CA）</th></tr></thead>
       <tbody>
         <tr>
           <td>{{ se.issue_date or '—' }}</td>
@@ -83,6 +84,11 @@
             {{ '{:,}'.format(se.details[0].amount) if se.details else '—' }}円
           </td>
           <td>{{ se.details[0].description if se.details else '—' }}</td>
+          <td style="color:#6f42c1;">
+            {% if se.details and se.details[0].tag_names %}
+              {{ se.details[0].tag_names | join(', ') }}
+            {% else %}—{% endif %}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -95,9 +101,10 @@
   <div style="margin-bottom:12px;">
     <div style="font-size:12px; font-weight:bold; color:{% if action=='refund' %}#fd7e14{% else %}#dc3545{% endif %}; margin-bottom:4px;">
       {% if action == 'refund' %}▼ 仕入マイナス仕訳（返金）{% else %}▼ 仕入仕訳（支出）{% endif %}
+      <span style="font-weight:normal; color:#555; margin-left:8px;">部門: <strong>{{ pe.section_name or '—' }}</strong></span>
     </div>
     <table style="font-size:12px; width:100%;">
-      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考</th></tr></thead>
+      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考（求職者+入社企業）</th><th>メモタグ（担当CA）</th></tr></thead>
       <tbody>
         <tr>
           <td>{{ pe.issue_date or '—' }}</td>
@@ -108,6 +115,11 @@
             {{ '{:,}'.format(pe.details[0].amount) if pe.details else '—' }}円
           </td>
           <td>{{ pe.details[0].description if pe.details else '—' }}</td>
+          <td style="color:#6f42c1;">
+            {% if pe.details and pe.details[0].tag_names %}
+              {{ pe.details[0].tag_names | join(', ') }}
+            {% else %}—{% endif %}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -118,9 +130,11 @@
   {% set pca = j.pca_entry %}
   {% if pca %}
   <div style="margin-bottom:12px;">
-    <div style="font-size:12px; font-weight:bold; color:#6f42c1; margin-bottom:4px;">▼ PCA支払仕訳（受け取り報酬料）</div>
+    <div style="font-size:12px; font-weight:bold; color:#6f42c1; margin-bottom:4px;">▼ PCA支払仕訳（PCA仕入高）
+      <span style="font-weight:normal; color:#555; margin-left:8px;">部門: <strong>{{ pca.section_name or '—' }}</strong></span>
+    </div>
     <table style="font-size:12px; width:100%;">
-      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考</th></tr></thead>
+      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考（求職者+入社企業）</th><th>メモタグ（担当CA）</th></tr></thead>
       <tbody>
         <tr>
           <td>{{ pca.issue_date or '—' }}</td>
@@ -131,6 +145,11 @@
             {{ '{:,}'.format(pca.details[0].amount) if pca.details else '—' }}円
           </td>
           <td>{{ pca.details[0].description if pca.details else '—' }}</td>
+          <td style="color:#6f42c1;">
+            {% if pca.details and pca.details[0].tag_names %}
+              {{ pca.details[0].tag_names | join(', ') }}
+            {% else %}—{% endif %}
+          </td>
         </tr>
       </tbody>
     </table>

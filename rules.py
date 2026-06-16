@@ -288,8 +288,10 @@ def _extract_props(record: dict) -> dict:
     pca_kessai_str = get_date("PCA仕入決済期日")
 
     # 求職者名を取得（relationから別ページを参照）
-    from notion_client import get_jobseeker_name
+    from notion_client import get_jobseeker_name, get_company_name
     jobseeker_name = get_jobseeker_name(record)
+    # 入社企業名を取得（決定企業（DB）relationから）
+    company_name = get_company_name(record)
 
     return {
         "phase": phase,
@@ -313,6 +315,7 @@ def _extract_props(record: dict) -> dict:
         "db_type": record.get("_db_type", "honten"),
         "tanto_ca": tanto_ca,
         "jobseeker_name": jobseeker_name,
+        "company_name": company_name,
         "shukyaku_keiro": shukyaku_keiro,
     }
 
@@ -499,15 +502,19 @@ def build_journal_entries(record: dict) -> dict:
     if not shiire_kessai and p["nyusha_date"]:
         shiire_kessai = calc_payment_date(p["nyusha_date"], rule["payment_rule"])
 
-    # 発生日
-    issue_date = (p["seiyaku_date"] or p["nyusha_date"] or date.today()).isoformat()
-    nyusha_date_str = p["nyusha_str"][:10] if p["nyusha_str"] else issue_date
+    # 発生日: 入社日を使用（入社日がない場合は今日）
+    nyusha_date_str = p["nyusha_str"][:10] if p["nyusha_str"] else date.today().isoformat()
+    issue_date = nyusha_date_str
 
-    # 備考: 担当CA名 + 求職者名 + フェーズ
-    tanto_ca = p.get("tanto_ca") or ""
+    # 備考: 求職者名 + 入社企業名
     jobseeker_name = p.get("jobseeker_name") or ""
-    biko_parts = [x for x in [tanto_ca, jobseeker_name, phase] if x]
+    company_name = p.get("company_name") or ""
+    biko_parts = [x for x in [jobseeker_name, company_name] if x]
     biko = " ".join(biko_parts)
+
+    # メモタグ: 担当CA名をメモタグに設定
+    tanto_ca = p.get("tanto_ca") or ""
+    tag_names = [tanto_ca] if tanto_ca else []
 
     # 売上仕訳
     if p["zeinuki_uriage"] and p["zeinuki_uriage"] > 0:
@@ -537,7 +544,7 @@ def build_journal_entries(record: dict) -> dict:
                 "amount": int(p["zeinuki_uriage"]),
                 "description": biko,
                 "item_name": "本店：CA",
-                "tag_names": [],
+                "tag_names": tag_names,
             }],
             "memo": biko,
         }
@@ -561,7 +568,7 @@ def build_journal_entries(record: dict) -> dict:
                     "amount": int(p["zeinuki_shukyaku"]),
                     "description": biko,
                     "item_name": "本店：CA",
-                    "tag_names": [],
+                    "tag_names": tag_names,
                 }],
                 "memo": biko,
             }
@@ -583,7 +590,7 @@ def build_journal_entries(record: dict) -> dict:
                 "amount": int(p["pca_shiire"]),
                 "description": biko,
                 "item_name": "本店：CA",
-                "tag_names": [],
+                "tag_names": tag_names,
             }],
             "memo": biko,
         }

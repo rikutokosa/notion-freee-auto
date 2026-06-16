@@ -28,7 +28,8 @@ from flask import Flask, render_template, request, redirect, jsonify, url_for
 
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
-    load_token, is_token_expired, clear_master_cache,
+    load_token, is_token_expired, clear_master_cache, get_master_cache,
+    get_sections, get_tags, get_account_items, get_partners,
 )
 from notion_client import fetch_pending_records, get_record
 from rules import build_journal_entries
@@ -70,17 +71,17 @@ def start_polling():
             try:
                 token = load_token()
                 if token and not is_token_expired(token):
-                    logger.info("自動ポーリング実行")
+                    logger.info("freee自動転記実行")
                     run_once(db_type="all")
                 else:
-                    logger.warning("freeeトークン未設定または期限切れ。ポーリングをスキップ。")
+                    logger.warning("freeeトークン未設定または期限切れ。freee自動転記をスキップ。")
             except Exception as e:
-                logger.exception(f"ポーリングエラー: {e}")
+                logger.exception(f"freee自動転記エラー: {e}")
             time.sleep(POLL_INTERVAL)
 
     _polling_thread = threading.Thread(target=loop, daemon=True)
     _polling_thread.start()
-    logger.info(f"バックグラウンドポーリング開始 (間隔: {POLL_INTERVAL}秒)")
+    logger.info(f"freee自動転記開始 (間隔: {POLL_INTERVAL}秒)")
 
 
 # ============================================================
@@ -248,14 +249,14 @@ def run_single():
 @app.route("/polling/start", methods=["POST"])
 def polling_start():
     start_polling()
-    return jsonify({"status": "ok", "message": "ポーリング開始"})
+    return jsonify({"status": "ok", "message": "freee自動転記開始"})
 
 
 @app.route("/polling/stop", methods=["POST"])
 def polling_stop():
     global _polling_active
     _polling_active = False
-    return jsonify({"status": "ok", "message": "ポーリング停止（再起動まで）"})
+    return jsonify({"status": "ok", "message": "freee自動転記停止（再起動まで）"})
 
 
 # ============================================================
@@ -397,6 +398,24 @@ def api_status():
 def api_refresh_cache():
     clear_master_cache()
     return jsonify({"message": "マスタキャッシュをクリアしました"})
+
+
+@app.route("/api/freee_master")
+def api_freee_master():
+    """デバッグ用: freeeのマスタデータ（部門・メモタグ・動定科目・取引先）を返す"""
+    try:
+        sections = get_sections()
+        tags = get_tags()
+        account_items = get_account_items()
+        partners = get_partners()
+        return jsonify({
+            "sections": [{"id": s.get("id"), "name": s.get("name")} for s in sections],
+            "tags": [{"id": t.get("id"), "name": t.get("name")} for t in tags],
+            "account_items": [{"id": a.get("id"), "name": a.get("name")} for a in account_items],
+            "partners": [{"id": p.get("id"), "name": p.get("name")} for p in partners],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ============================================================

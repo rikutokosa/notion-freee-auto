@@ -16,10 +16,10 @@
     {% endif %}
   </div>
   <div class="card" style="padding:16px 20px;">
-    <div style="font-size:12px; color:#888; margin-bottom:4px;">自動ポーリング</div>
+    <div style="font-size:12px; color:#888; margin-bottom:4px;">freee自動転記</div>
     {% if polling_active %}
       <div><span class="status-dot dot-green"></span><strong style="color:#28a745;">稼働中</strong></div>
-      <div style="font-size:11px; color:#888; margin-top:4px;">{{ poll_interval }}秒ごとに確認</div>
+      <div style="font-size:11px; color:#888; margin-top:4px;">１時間ごとに自動転記</div>
     {% else %}
       <div><span class="status-dot dot-gray"></span><strong style="color:#888;">停止中</strong></div>
     {% endif %}
@@ -46,9 +46,9 @@
     <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
     <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
     {% if not polling_active %}
-      <button class="btn btn-primary" onclick="startPolling()">🔄 自動ポーリング開始</button>
+      <button class="btn btn-primary" onclick="startPolling()">🔄 freee自動転記開始</button>
     {% else %}
-      <button class="btn btn-secondary" onclick="stopPolling()">⏸ 自動ポーリング停止</button>
+      <button class="btn btn-secondary" onclick="stopPolling()">⏸ freee自動転記停止</button>
     {% endif %}
   </div>
   <div id="run-result" style="margin-top:12px; font-size:13px; white-space:pre-wrap;"></div>

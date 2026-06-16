@@ -418,6 +418,42 @@ def api_freee_master():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/test_deal", methods=["POST"])
+def api_test_deal():
+    """デバッグ用: freeeに取引を直接登録してエラー詳細を返す"""
+    try:
+        token = get_valid_token()
+        import requests as req
+        payload = request.get_json()
+        resp = req.post(
+            "https://api.freee.co.jp/api/1/deals",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=30,
+        )
+        return jsonify({"status": resp.status_code, "body": resp.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/test_invoice", methods=["POST"])
+def api_test_invoice():
+    """デバッグ用: freeeに請求書を直接登録してエラー詳細を返す"""
+    try:
+        token = get_valid_token()
+        import requests as req
+        payload = request.get_json()
+        resp = req.post(
+            "https://api.freee.co.jp/api/1/invoices",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=30,
+        )
+        return jsonify({"status": resp.status_code, "body": resp.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ============================================================
 # 起動
 # ============================================================

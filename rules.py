@@ -530,8 +530,8 @@ def build_journal_entries(record: dict) -> dict:
         else:
             sales_partner = None
 
-        # 部門設定: PCAは「本店PCA」、本店CAは「本店CA」
-        section_name = "本店PCA" if db_type == "pca" else "本店CA"
+        # 部門設定: PCAは「本店：PCA」、本店CAは「本店：CA」（freeeの正式部門名）
+        section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
 
         base["sales_entry"] = {
             "issue_date": issue_date,
@@ -543,7 +543,6 @@ def build_journal_entries(record: dict) -> dict:
                 "tax_code": 1,
                 "amount": int(p["zeinuki_uriage"]),
                 "description": biko,
-                "item_name": "本店：CA",
                 "tag_names": tag_names,
             }],
             "memo": biko,
@@ -553,7 +552,7 @@ def build_journal_entries(record: dict) -> dict:
     if rule["payment_rule"] != "登録不要":
         if p["zeinuki_shukyaku"] and p["zeinuki_shukyaku"] > 0:
             # 仕入の部門も同じ設定
-            purchase_section = "本店PCA" if db_type == "pca" else "本店CA"
+            purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
             # 仕入取引先は集客経路のルールから取得（集客経路がなければ求人データベースのルールを使用）
             shukyaku_rule = get_rule(p.get("shukyaku_keiro") or "")
             purchase_partner = shukyaku_rule.get("supplier") if shukyaku_rule else rule.get("supplier")
@@ -567,7 +566,6 @@ def build_journal_entries(record: dict) -> dict:
                     "tax_code": 7,
                     "amount": int(p["zeinuki_shukyaku"]),
                     "description": biko,
-                    "item_name": "本店：CA",
                     "tag_names": tag_names,
                 }],
                 "memo": biko,
@@ -583,13 +581,12 @@ def build_journal_entries(record: dict) -> dict:
             "issue_date": nyusha_date_str,
             "due_date": pca_kessai.isoformat() if pca_kessai else None,
             "partner_name": None,  # 担当パートナー名（Notionの「担当パートナー」から取得要）
-            "section_name": "本店PCA",
+            "section_name": "本店：PCA",
             "details": [{
                 "account_item_name": "PCA仕入高",
                 "tax_code": 7,
                 "amount": int(p["pca_shiire"]),
                 "description": biko,
-                "item_name": "本店：CA",
                 "tag_names": tag_names,
             }],
             "memo": biko,

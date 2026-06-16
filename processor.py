@@ -36,26 +36,57 @@ MAX_LOG = 200
 
 
 def _build_invoice_entry(journal: dict, props: dict) -> dict:
-    """請求書登録用エントリを構築する"""
+    """
+    請求書登録用エントリを構築する
+
+    freee請求書の仕様:
+    - 件名 (subject): 人材紹介手数料（固定）
+    - 明細1 (item行): description=求職者名、unit_price=金額、tax_rate=10
+    - 明細2 (text行): description=「入社企業：{入社企業名}様」
+    - 備考 (invoice_note): 「振込手数料は貴社負担でお願いいたします。」（固定）
+    - 社内メモ (memo): 「本店：CA」または「本店：PCA」
+    """
     sales_entry = journal.get("sales_entry") or {}
     details = sales_entry.get("details", [])
 
-    invoice_details = []
+    # 求職者名・入社企業名を取得
+    jobseeker_name = props.get("jobseeker_name") or ""
+    company_name = props.get("company_name") or ""
+    db_type = props.get("db_type", "honten")
+
+    # 社内メモ: 部門名
+    section_memo = "本店：PCA" if db_type == "pca" else "本店：CA"
+
+    # 明細行を構築
+    invoice_lines = []
     for d in details:
-        invoice_details.append({
-            "name": "人材紹介手数料",
+        # 明細1: 品目行（求職者名 + 金額）
+        invoice_lines.append({
+            "name": jobseeker_name or "人材紹介手数料",
             "unit_price": abs(d.get("amount", 0)),
             "quantity": 1,
-            "description": d.get("description", ""),
+            "description": jobseeker_name,
             "tax_code": d.get("tax_code", 1),
         })
+        # 明細2: テキスト行（入社企業名）
+        if company_name:
+            invoice_lines.append({
+                "name": f"入社企業：{company_name}様",
+                "unit_price": 0,
+                "quantity": 1,
+                "description": f"入社企業：{company_name}様",
+                "tax_code": 0,
+                "type": "text",  # テキスト行
+            })
 
     return {
         "issue_date": sales_entry.get("issue_date", datetime.now().strftime("%Y-%m-%d")),
         "due_date": sales_entry.get("due_date"),
         "partner_name": sales_entry.get("partner_name"),
         "title": "人材紹介手数料",
-        "details": invoice_details,
+        "invoice_note": "振込手数料は貴社負担でお願いいたします。",
+        "memo": section_memo,
+        "details": invoice_lines,
     }
 
 

@@ -422,13 +422,22 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     # 明細行（freee請求書APIの正しい形式）
     lines = []
     for d in entry.get("details", []):
-        line = {
-            "type": "item",
-            "description": d.get("name", "人材紹介手数料"),
-            "quantity": d.get("quantity", 1),
-            "unit_price": str(d.get("unit_price", 0)),
-            "tax_rate": 10,  # 消費税10%
-        }
+        line_type = d.get("type", "item")
+        if line_type == "text":
+            # テキスト行（入社企業名など）
+            line = {
+                "type": "text",
+                "description": d.get("description", ""),
+            }
+        else:
+            # 品目行
+            line = {
+                "type": "item",
+                "description": d.get("name", "人材紹介手数料"),
+                "quantity": d.get("quantity", 1),
+                "unit_price": str(d.get("unit_price", 0)),
+                "tax_rate": 10,  # 消費税10%
+            }
         lines.append(line)
 
     # freee請求書APIの必須フィールドを含むペイロード
@@ -445,12 +454,16 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         payload["payment_date"] = entry["due_date"]
     if entry.get("title"):
         payload["subject"] = entry["title"]
+    if entry.get("invoice_note"):
+        payload["invoice_note"] = entry["invoice_note"]  # 備考（振込手数料は貴社負担でお願いいたします。）
+    if entry.get("memo"):
+        payload["memo"] = entry["memo"]  # 社内メモ（本店：CA または 本店：PCA）
     if partner_id:
         payload["partner_id"] = partner_id
     elif partner_name:
         # partner_nameはサポート外のためpartner_idが必須。取引先が見つからない場合はエラーにする
         logger.warning(f"請求書登録: 取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
-        raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
+        raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取弒先を登録してください。")
     if entry.get("invoice_number"):
         payload["invoice_number"] = entry["invoice_number"]
 

@@ -401,6 +401,22 @@ def api_refresh_cache():
     return jsonify({"message": "マスタキャッシュをクリアしました"})
 
 
+@app.route("/api/iv_companies")
+def api_iv_companies():
+    """デバッグ用: freee請求書APIのcompany_id一覧を返す"""
+    try:
+        import requests as req
+        token = get_valid_token()
+        resp = req.get(
+            "https://api.freee.co.jp/iv/companies",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        return jsonify({"status": resp.status_code, "body": resp.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/freee_master")
 def api_freee_master():
     """デバッグ用: freeeのマスタデータ（部門・メモタグ・動定科目・取引先）を返す"""

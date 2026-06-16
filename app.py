@@ -30,6 +30,7 @@ from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
     load_token, is_token_expired, clear_master_cache, get_master_cache,
     get_sections, get_tags, get_account_items, get_partners,
+    create_deal,
 )
 from notion_client import fetch_pending_records, get_record
 from rules import build_journal_entries
@@ -451,6 +452,187 @@ def api_test_invoice():
         )
         return jsonify({"status": resp.status_code, "body": resp.json()})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# 仕訳アシスタント
+# ============================================================
+@app.route("/assistant")
+def assistant():
+    """仕訳アシスタントページ"""
+    token_ok = False
+    try:
+        get_valid_token()
+        token_ok = True
+    except Exception:
+        pass
+    return render_template("assistant.html", token_ok=token_ok)
+
+
+@app.route("/api/assistant/register", methods=["POST"])
+def api_assistant_register():
+    """フォーム入力から直接freeeに仕訳登録する"""
+    data = request.get_json() or {}
+    try:
+        cache = get_master_cache()
+        deal_type = data.get("deal_type", "income")
+        issue_date = data["issue_date"]
+        due_date = data.get("due_date")
+        partner_name = data.get("partner_name")
+        details_raw = data.get("details", [])
+        repeat = data.get("repeat", False)
+        repeat_count = int(data.get("repeat_count", 1))
+
+        # 明細行に section_name を付与（detail内にあれば使う）
+        details = []
+        section_name = None
+        for d in details_raw:
+            sn = d.pop("section_name", None)
+            if sn and not section_name:
+                section_name = sn
+            details.append(d)
+
+        registered_ids = []
+        from dateutil.relativedelta import relativedelta
+        from datetime import date
+        base_date = date.fromisoformat(issue_date)
+
+        count = repeat_count if repeat else 1
+        for i in range(count):
+            current_date = base_date + relativedelta(months=i)
+            current_due = None
+            if due_date:
+                base_due = date.fromisoformat(due_date)
+                current_due = (base_due + relativedelta(months=i)).isoformat()
+
+            entry = {
+                "issue_date": current_date.isoformat(),
+                "due_date": current_due,
+                "partner_name": partner_name,
+                "section_name": section_name,
+                "details": details,
+            }
+            deal = create_deal(entry, deal_type, cache)
+            registered_ids.append(deal.get("id"))
+
+        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
+    except Exception as e:
+        logger.exception("仕訳アシスタント登録エラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/assistant/register_bulk", methods=["POST"])
+def api_assistant_register_bulk():
+    """AI生成の仕訳エントリを一括登録する"""
+    data = request.get_json() or {}
+    entries = data.get("entries", [])
+    try:
+        cache = get_master_cache()
+        registered_ids = []
+        for entry in entries:
+            deal_type = entry.pop("deal_type", "income")
+            deal = create_deal(entry, deal_type, cache)
+            registered_ids.append(deal.get("id"))
+        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
+    except Exception as e:
+        logger.exception("AI仕訳一括登録エラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/assistant/ai", methods=["POST"])
+def api_assistant_ai():
+    """自然言語指示をAIで解釈してfreee仕訳エントリを生成する"""
+    import os, json as _json
+    data = request.get_json() or {}
+    user_message = data.get("message", "")
+    history = data.get("history", [])
+    master = data.get("master", {})
+
+    try:
+        import requests as req
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        openai_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+
+        if not openai_key:
+            return jsonify({"error": "OpenAI APIキーが設定されていません"}), 500
+
+        # マスタデータのサマリーを作成
+        sections_list = ", ".join([s["name"] for s in master.get("sections", [])])
+        tags_list = ", ".join([t["name"] for t in master.get("tags", [])])
+        account_items_list = ", ".join([a["name"] for a in master.get("account_items", [])])
+        partners_list = ", ".join([p["name"] for p in master.get("partners", [])][:50])
+
+        system_prompt = f"""あなたはfreee会計の仕訳登録アシスタントです。
+ユーザーの自然言語の指示を解釈し、freeeに登録するための仕訳データをJSON形式で生成してください。
+
+【freeeに登録されているマスタデータ】
+部門: {sections_list}
+メモタグ: {tags_list}
+勘定科目（一部）: {account_items_list}
+取引先（一部）: {partners_list}
+
+【出力形式】
+回答は以下の形式で返してください：
+1. まず日本語で仕訳の内容を説明する
+2. 次に以下のJSON形式でエントリを返す（```json と ``` で囲む）
+
+```json
+[
+  {{
+    "deal_type": "income" または "expense",
+    "issue_date": "YYYY-MM-DD",
+    "due_date": "YYYY-MM-DD" または null,
+    "partner_name": "取引先名" または null,
+    "details": [
+      {{
+        "account_item_name": "勘定科目名（マスタに存在するもの）",
+        "amount": 金額（税抜・整数）,
+        "tax_code": 1（課税売上10%）または 7（課税仕入10%）または 0（不課税）,
+        "section_name": "部門名" または null,
+        "tag_names": ["タグ名"] または [],
+        "description": "備考"
+      }}
+    ]
+  }}
+]
+```
+
+繰り返し仕訳の場合は複数のエントリを配列で返してください。
+勘定科目は必ずマスタデータに存在する名称を使用してください。"""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        for h in history[-6:]:  # 直近3往復
+            messages.append(h)
+        messages.append({"role": "user", "content": user_message})
+
+        resp = req.post(
+            f"{openai_base}/chat/completions",
+            headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+            json={"model": "gpt-4o-mini", "messages": messages, "temperature": 0.2},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        reply_text = resp.json()["choices"][0]["message"]["content"]
+
+        # JSONブロックを抽出
+        entries = []
+        import re
+        json_match = re.search(r'```json\s*([\s\S]+?)\s*```', reply_text)
+        if json_match:
+            try:
+                entries = _json.loads(json_match.group(1))
+                # JSONブロックを除いたテキストを返す
+                reply_clean = reply_text[:json_match.start()].strip() + reply_text[json_match.end():].strip()
+            except Exception:
+                reply_clean = reply_text
+        else:
+            reply_clean = reply_text
+
+        return jsonify({"reply": reply_clean, "entries": entries})
+
+    except Exception as e:
+        logger.exception("AI仕訳生成エラー")
         return jsonify({"error": str(e)}), 500
 
 

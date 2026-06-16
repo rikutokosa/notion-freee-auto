@@ -1,0 +1,481 @@
+{% extends "base.html" %}
+{% block title %}仕訳アシスタント{% endblock %}
+
+{% block content %}
+<style>
+  .tab-bar { display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e0e0e0; }
+  .tab-btn {
+    padding: 10px 24px; font-size: 14px; font-weight: bold; cursor: pointer;
+    border: none; background: #f0f4f8; color: #555; border-radius: 8px 8px 0 0;
+    margin-right: 4px; transition: background 0.2s;
+  }
+  .tab-btn.active { background: #fff; color: #1a1a2e; border-bottom: 2px solid #fff; margin-bottom: -2px; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 12px; font-weight: bold; color: #555; }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 7px 10px; border: 1px solid #ccc; border-radius: 5px;
+    font-size: 13px; font-family: inherit;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none; border-color: #4a90d9;
+  }
+  .form-group.flex-1 { flex: 1; min-width: 140px; }
+  .form-group.flex-2 { flex: 2; min-width: 200px; }
+
+  .detail-row {
+    background: #f8f9fa; border-radius: 6px; padding: 12px;
+    margin-bottom: 8px; position: relative;
+  }
+  .detail-row .remove-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: #dc3545; color: #fff; border: none;
+    border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px;
+  }
+
+  .ai-chat { display: flex; flex-direction: column; gap: 12px; }
+  .ai-input-area { display: flex; gap: 8px; }
+  .ai-input-area textarea {
+    flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px;
+  }
+  .ai-messages { min-height: 200px; max-height: 400px; overflow-y: auto; }
+  .ai-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
+  .ai-msg.user { background: #e8f0fe; color: #1a1a2e; margin-left: 40px; }
+  .ai-msg.assistant { background: #fff; border: 1px solid #e0e0e0; margin-right: 40px; }
+  .ai-msg.error { background: #f8d7da; color: #721c24; }
+  .ai-msg pre { white-space: pre-wrap; font-family: inherit; }
+
+  .preview-table { margin-top: 12px; }
+  .preview-table table { font-size: 12px; }
+  .preview-table th { background: #e8f0fe; }
+
+  .result-box {
+    padding: 12px 16px; border-radius: 6px; margin-top: 12px;
+    font-size: 13px; display: none;
+  }
+  .result-box.success { background: #d4edda; color: #155724; border: 1px solid #28a745; }
+  .result-box.error { background: #f8d7da; color: #721c24; border: 1px solid #dc3545; }
+
+  .repeat-section { background: #fffbe6; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-top: 8px; }
+  .repeat-section label { font-size: 12px; font-weight: bold; color: #856404; }
+
+  .spinner { display: none; margin-left: 8px; }
+  .spinner.active { display: inline-block; }
+</style>
+
+<div class="card">
+  <h2>仕訳アシスタント</h2>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;">
+    Notionとは独立して、freeeに直接仕訳を登録できます。自然言語で指示するか、フォームで直接入力してください。
+  </p>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('ai')">🤖 AI指示（自然言語）</button>
+    <button class="tab-btn" onclick="switchTab('form')">📝 フォーム入力</button>
+  </div>
+
+  <!-- ===== AI指示タブ ===== -->
+  <div id="tab-ai" class="tab-content active" style="padding-top:20px;">
+    <div class="ai-chat">
+      <div class="ai-messages" id="aiMessages">
+        <div class="ai-msg assistant">
+          こんにちは！freeeへの仕訳登録をお手伝いします。<br>
+          例えば以下のように指示してください：<br><br>
+          ・「長期借入金の返済 元金100,000円・利息3,000円を毎月1日で12ヶ月分登録して」<br>
+          ・「2026年7月1日 本店：CA部門 売掛金 500,000円 備考：テスト」<br>
+          ・「マイナビへの広告費 税抜50,000円を今月末で登録」<br><br>
+          freeeに登録されている勘定科目・取引先・部門・メモタグを自動で参照します。
+        </div>
+      </div>
+      <div class="ai-input-area">
+        <textarea id="aiInput" placeholder="仕訳の内容を自然言語で入力してください..." onkeydown="handleAiKey(event)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn btn-primary" onclick="sendAiMessage()" id="aiSendBtn">送信</button>
+          <button class="btn btn-secondary" onclick="clearAiChat()" style="font-size:12px;">クリア</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== フォーム入力タブ ===== -->
+  <div id="tab-form" class="tab-content" style="padding-top:20px;">
+    <form id="journalForm">
+
+      <!-- 基本情報 -->
+      <div class="form-row">
+        <div class="form-group flex-1">
+          <label>仕訳種別 *</label>
+          <select id="dealType" name="deal_type">
+            <option value="income">収入（売上）</option>
+            <option value="expense">支出（費用）</option>
+          </select>
+        </div>
+        <div class="form-group flex-1">
+          <label>発生日 *</label>
+          <input type="date" id="issueDate" name="issue_date" required>
+        </div>
+        <div class="form-group flex-1">
+          <label>決済期日</label>
+          <input type="date" id="dueDate" name="due_date">
+        </div>
+        <div class="form-group flex-2">
+          <label>取引先</label>
+          <input type="text" id="partnerName" name="partner_name" list="partnerList" placeholder="取引先名を入力">
+          <datalist id="partnerList"></datalist>
+        </div>
+      </div>
+
+      <!-- 繰り返し設定 -->
+      <div class="repeat-section">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+          <input type="checkbox" id="repeatEnabled" onchange="toggleRepeat()">
+          <label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">🔁 繰り返し登録（毎月同じ仕訳を複数回登録）</label>
+        </div>
+        <div id="repeatOptions" style="display:none;">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>繰り返し回数</label>
+              <input type="number" id="repeatCount" value="12" min="1" max="60" style="width:80px;">
+              <span style="font-size:12px;color:#666;margin-top:4px;">回（発生日から毎月）</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 明細行 -->
+      <div style="margin-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="font-size:13px;font-weight:bold;">明細行</label>
+          <button type="button" class="btn btn-secondary" onclick="addDetailRow()" style="font-size:12px;padding:4px 12px;">+ 明細追加</button>
+        </div>
+        <div id="detailRows"></div>
+      </div>
+
+      <!-- 登録ボタン -->
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
+        <button type="button" class="btn btn-success" onclick="submitForm()" id="formSubmitBtn">
+          ▶ freeeに登録
+        </button>
+        <span class="spinner" id="formSpinner">⏳ 登録中...</span>
+      </div>
+      <div class="result-box" id="formResult"></div>
+    </form>
+  </div>
+</div>
+
+<!-- マスタデータ（JS用） -->
+<script>
+let masterData = { sections: [], tags: [], account_items: [], partners: [] };
+let aiHistory = [];
+
+// ページ読み込み時にマスタデータを取得
+async function loadMaster() {
+  try {
+    const res = await fetch('/api/freee_master');
+    const data = await res.json();
+    if (data.error) return;
+    masterData = data;
+    // 取引先datalistを更新
+    const dl = document.getElementById('partnerList');
+    dl.innerHTML = '';
+    data.partners.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      dl.appendChild(opt);
+    });
+    // 最初の明細行を追加
+    addDetailRow();
+  } catch(e) {
+    console.error('マスタ取得失敗:', e);
+    addDetailRow();
+  }
+}
+
+// タブ切り替え
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// 今日の日付をデフォルト設定
+document.addEventListener('DOMContentLoaded', () => {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('issueDate').value = today;
+  loadMaster();
+});
+
+// ===== フォーム機能 =====
+function addDetailRow() {
+  const container = document.getElementById('detailRows');
+  const idx = container.children.length;
+
+  // 勘定科目オプション
+  let accountOptions = '<option value="">勘定科目を選択</option>';
+  masterData.account_items.forEach(a => {
+    accountOptions += `<option value="${a.name}">${a.name}</option>`;
+  });
+
+  // 部門オプション
+  let sectionOptions = '<option value="">部門なし</option>';
+  masterData.sections.forEach(s => {
+    sectionOptions += `<option value="${s.name}">${s.name}</option>`;
+  });
+
+  // メモタグオプション
+  let tagOptions = masterData.tags.map(t =>
+    `<option value="${t.name}">${t.name}</option>`
+  ).join('');
+
+  const row = document.createElement('div');
+  row.className = 'detail-row';
+  row.innerHTML = `
+    <button type="button" class="remove-btn" onclick="removeDetailRow(this)">✕</button>
+    <div class="form-row">
+      <div class="form-group flex-2">
+        <label>勘定科目 *</label>
+        <select name="account_item_name" required>${accountOptions}</select>
+      </div>
+      <div class="form-group flex-1">
+        <label>税抜金額 *</label>
+        <input type="number" name="amount" placeholder="例: 100000" required min="0">
+      </div>
+      <div class="form-group flex-1">
+        <label>税区分コード</label>
+        <select name="tax_code">
+          <option value="1">課税売上10%（1）</option>
+          <option value="7">課税仕入10%（7）</option>
+          <option value="0">不課税（0）</option>
+          <option value="3">非課税売上（3）</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group flex-2">
+        <label>部門</label>
+        <select name="section_name">${sectionOptions}</select>
+      </div>
+      <div class="form-group flex-2">
+        <label>メモタグ</label>
+        <select name="tag_name">
+          <option value="">タグなし</option>
+          ${tagOptions}
+        </select>
+      </div>
+      <div class="form-group flex-3">
+        <label>備考</label>
+        <input type="text" name="description" placeholder="備考（任意）">
+      </div>
+    </div>
+  `;
+  container.appendChild(row);
+}
+
+function removeDetailRow(btn) {
+  const row = btn.closest('.detail-row');
+  if (document.getElementById('detailRows').children.length > 1) {
+    row.remove();
+  }
+}
+
+function toggleRepeat() {
+  const enabled = document.getElementById('repeatEnabled').checked;
+  document.getElementById('repeatOptions').style.display = enabled ? 'block' : 'none';
+}
+
+async function submitForm() {
+  const btn = document.getElementById('formSubmitBtn');
+  const spinner = document.getElementById('formSpinner');
+  const resultBox = document.getElementById('formResult');
+
+  const issueDate = document.getElementById('issueDate').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const dealType = document.getElementById('dealType').value;
+  const partnerName = document.getElementById('partnerName').value;
+  const repeatEnabled = document.getElementById('repeatEnabled').checked;
+  const repeatCount = parseInt(document.getElementById('repeatCount').value) || 1;
+
+  if (!issueDate) { alert('発生日を入力してください'); return; }
+
+  // 明細行を収集
+  const detailRows = document.querySelectorAll('#detailRows .detail-row');
+  const details = [];
+  for (const row of detailRows) {
+    const accountName = row.querySelector('[name="account_item_name"]').value;
+    const amount = parseInt(row.querySelector('[name="amount"]').value);
+    const taxCode = parseInt(row.querySelector('[name="tax_code"]').value);
+    const sectionName = row.querySelector('[name="section_name"]').value;
+    const tagName = row.querySelector('[name="tag_name"]').value;
+    const description = row.querySelector('[name="description"]').value;
+
+    if (!accountName || !amount) { alert('勘定科目と金額は必須です'); return; }
+
+    const detail = {
+      account_item_name: accountName,
+      amount: amount,
+      tax_code: taxCode,
+      description: description,
+      tag_names: tagName ? [tagName] : [],
+    };
+    if (sectionName) detail.section_name = sectionName;
+    details.push(detail);
+  }
+
+  btn.disabled = true;
+  spinner.classList.add('active');
+  resultBox.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/assistant/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deal_type: dealType,
+        issue_date: issueDate,
+        due_date: dueDate || null,
+        partner_name: partnerName || null,
+        details: details,
+        repeat: repeatEnabled,
+        repeat_count: repeatCount,
+      })
+    });
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      resultBox.className = 'result-box success';
+      resultBox.innerHTML = `✅ 登録完了！${data.registered}件登録しました。<br>` +
+        (data.ids ? `登録ID: ${data.ids.join(', ')}` : '');
+    } else {
+      resultBox.className = 'result-box error';
+      resultBox.innerHTML = `❌ エラー: ${data.message || JSON.stringify(data)}`;
+    }
+    resultBox.style.display = 'block';
+  } catch(e) {
+    resultBox.className = 'result-box error';
+    resultBox.innerHTML = `❌ 通信エラー: ${e.message}`;
+    resultBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    spinner.classList.remove('active');
+  }
+}
+
+// ===== AI指示機能 =====
+function handleAiKey(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    sendAiMessage();
+  }
+}
+
+function addAiMessage(role, text) {
+  const container = document.getElementById('aiMessages');
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.innerHTML = text.replace(/\n/g, '<br>');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+function clearAiChat() {
+  aiHistory = [];
+  const container = document.getElementById('aiMessages');
+  container.innerHTML = `<div class="ai-msg assistant">
+    チャット履歴をクリアしました。新しい仕訳の指示をどうぞ。
+  </div>`;
+}
+
+async function sendAiMessage() {
+  const input = document.getElementById('aiInput');
+  const btn = document.getElementById('aiSendBtn');
+  const message = input.value.trim();
+  if (!message) return;
+
+  addAiMessage('user', message);
+  input.value = '';
+  btn.disabled = true;
+
+  const thinkingDiv = addAiMessage('assistant', '⏳ 考え中...');
+
+  try {
+    const res = await fetch('/api/assistant/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: message,
+        history: aiHistory,
+        master: masterData,
+      })
+    });
+    const data = await res.json();
+    thinkingDiv.remove();
+
+    if (data.error) {
+      addAiMessage('error', `❌ エラー: ${data.error}`);
+    } else {
+      aiHistory.push({ role: 'user', content: message });
+      aiHistory.push({ role: 'assistant', content: data.reply });
+
+      let replyHtml = data.reply.replace(/\n/g, '<br>');
+
+      // 登録確認ボタンを表示
+      if (data.entries && data.entries.length > 0) {
+        replyHtml += `<br><br>`;
+        replyHtml += `<div class="preview-table">`;
+        replyHtml += `<table><tr><th>発生日</th><th>種別</th><th>取引先</th><th>勘定科目</th><th>金額</th><th>部門</th><th>備考</th></tr>`;
+        data.entries.forEach(e => {
+          e.details.forEach(d => {
+            replyHtml += `<tr>
+              <td>${e.issue_date}</td>
+              <td>${e.deal_type === 'income' ? '収入' : '支出'}</td>
+              <td>${e.partner_name || '-'}</td>
+              <td>${d.account_item_name}</td>
+              <td>${d.amount.toLocaleString()}円</td>
+              <td>${d.section_name || '-'}</td>
+              <td>${d.description || '-'}</td>
+            </tr>`;
+          });
+        });
+        replyHtml += `</table></div>`;
+
+        const entriesJson = JSON.stringify(data.entries).replace(/"/g, '&quot;');
+        replyHtml += `<br><button class="btn btn-success" onclick='registerAiEntries(${entriesJson})'>▶ この内容でfreeeに登録する（${data.entries.length}件）</button>`;
+      }
+
+      addAiMessage('assistant', replyHtml);
+    }
+  } catch(e) {
+    thinkingDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function registerAiEntries(entries) {
+  const resultDiv = addAiMessage('assistant', '⏳ freeeに登録中...');
+  try {
+    const res = await fetch('/api/assistant/register_bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: entries })
+    });
+    const data = await res.json();
+    resultDiv.remove();
+    if (data.status === 'ok') {
+      addAiMessage('assistant', `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids || []).join(', ')}`);
+    } else {
+      addAiMessage('error', `❌ 登録エラー: ${data.message}`);
+    }
+  } catch(e) {
+    resultDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
+  }
+}
+</script>
+{% endblock %}

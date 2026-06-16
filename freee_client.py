@@ -22,6 +22,7 @@ FREEE_COMPANY_ID = int(os.environ.get("FREEE_COMPANY_ID", "1856949"))
 FREEE_AUTH_URL = "https://accounts.secure.freee.co.jp/public_api/authorize"
 FREEE_TOKEN_URL = "https://accounts.secure.freee.co.jp/public_api/token"
 FREEE_API_BASE = "https://api.freee.co.jp/api/1"
+FREEE_IV_BASE = "https://api.freee.co.jp/iv"  # 請求書API
 
 # トークン保存ファイル（本番はDBに保存）
 TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", "/tmp/freee_token.json"))
@@ -212,15 +213,27 @@ _cache: dict = {}
 
 def get_master_cache() -> dict:
     """勘定科目・取引先・品目・メモタグ・部門のキャッシュを取得する"""
+    import logging
+    logger = logging.getLogger(__name__)
     global _cache
     if not _cache:
-        _cache = {
-            "account_items": get_account_items(),
-            "partners": get_partners(),
-            "items": get_items(),
-            "tags": get_tags(),
-            "sections": get_sections(),
-        }
+        try:
+            account_items = get_account_items()
+            partners = get_partners()
+            items = get_items()
+            tags = get_tags()
+            sections = get_sections()
+            logger.info(f"マスタキャッシュ取得: 勘定科目={len(account_items)}件, 取引先={len(partners)}件, タグ={len(tags)}件, 部門={len(sections)}件")
+            _cache = {
+                "account_items": account_items,
+                "partners": partners,
+                "items": items,
+                "tags": tags,
+                "sections": sections,
+            }
+        except Exception as e:
+            logger.error(f"マスタキャッシュ取得エラー: {e}")
+            raise ValueError(f"freeeマスタデータ取得失敗: {e}")
     return _cache
 
 
@@ -295,7 +308,9 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     for d in entry.get("details", []):
         account_item_id = _find_account_item_id(d["account_item_name"], account_items)
         if not account_item_id:
-            raise ValueError(f"勘定科目「{d['account_item_name']}」が見つかりません")
+            import logging
+            logging.getLogger(__name__).error(f"勘定科目が見つかりません: '{d['account_item_name']}' / 登録済み科目数={len(account_items)}")
+            raise ValueError(f"勘定科目「{d['account_item_name']}」が見つかりません（freeeに登録されていないか名称が異なります）")
 
         item_id = _find_item_id(d.get("item_name", ""), items) if d.get("item_name") else None
 
@@ -347,9 +362,15 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
         timeout=30,
     )
 
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"仕訳登録リクエスト: type={deal_type}, issue_date={entry['issue_date']}, details={len(details)}件, section={entry.get('section_name')}, tags={[d.get('tag_names') for d in entry.get('details', [])]}")
+
     if resp.status_code not in (200, 201):
+        logger.error(f"仕訳登録失敗: {resp.status_code} {resp.text[:1000]}")
         raise ValueError(f"freee取引登録失敗: {resp.status_code} {resp.text[:500]}")
 
+    logger.info(f"仕訳登録成功: ID={resp.json().get('deal', {}).get('id')}")
     return resp.json().get("deal", {})
 
 
@@ -424,16 +445,22 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     if entry.get("invoice_number"):
         payload["invoice_number"] = entry["invoice_number"]
 
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"請求書登録リクエスト: partner={partner_name}, issue_date={entry['issue_date']}, lines={len(invoice_lines)}件")
+
     resp = requests.post(
-        f"{FREEE_API_BASE}/invoices",
+        f"{FREEE_IV_BASE}/invoices",
         headers=_api_headers(),
         json={"invoice": payload},
         timeout=30,
     )
 
     if resp.status_code not in (200, 201):
+        logger.error(f"請求書登録失敗: {resp.status_code} {resp.text[:1000]}")
         raise ValueError(f"freee請求書登録失敗: {resp.status_code} {resp.text[:500]}")
 
+    logger.info(f"請求書登録成功: ID={resp.json().get('invoice', {}).get('id')}")
     return resp.json().get("invoice", {})
 
 

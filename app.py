@@ -488,6 +488,27 @@ def api_test_invoice():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/test_invoice_put", methods=["POST"])
+def api_test_invoice_put():
+    """デバッグ用: freee請求書APIのPUT /invoices/{id}をテスト"""
+    try:
+        token = get_valid_token()
+        import requests as req
+        data = request.get_json()
+        invoice_id = data.pop("invoice_id")
+        import logging
+        logging.getLogger(__name__).info(f"test_invoice_put送信: id={invoice_id}, payload={data}")
+        resp = req.put(
+            f"https://api.freee.co.jp/iv/invoices/{invoice_id}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=data,
+            timeout=30,
+        )
+        return jsonify({"status": resp.status_code, "body": resp.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ============================================================
 # 仕訳アシスタント
 # ============================================================

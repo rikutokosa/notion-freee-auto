@@ -458,10 +458,13 @@ def api_test_invoice():
         token = get_valid_token()
         import requests as req
         payload = request.get_json()
+        # freee請求書APIはフラットなJSONを直接送る（invoiceラップ不要）
+        import logging
+        logging.getLogger(__name__).info(f"test_invoice送信ペイロード: {payload}")
         resp = req.post(
             "https://api.freee.co.jp/iv/invoices",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"invoice": payload},
+            json=payload,
             timeout=30,
         )
         return jsonify({"status": resp.status_code, "body": resp.json()})

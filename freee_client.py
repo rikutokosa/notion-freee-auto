@@ -394,22 +394,24 @@ def delete_deal(deal_id: int) -> bool:
 # ============================================================
 def create_invoice(entry: dict, cache: dict) -> dict:
     """
-    freeeに請求書を登録する
+    freee請求書に請求書を登録する（freee請求書API /iv/invoices）
 
     entry: {
-        issue_date,        # 請求日
-        due_date,          # 入金期日
+        issue_date,        # 請求日（billing_dateに対応）
+        due_date,          # 入金期日（payment_dateに対応）
         partner_name,      # 取引先名
-        title,             # 件名（例: 人材紹介手数料）
+        title,             # 件名（subjectに対応）
         invoice_number,    # 請求書番号（省略可）
         details: [{
-            name,          # 品目名
+            name,          # 品目名（descriptionに対応）
             unit_price,    # 単価
             quantity,      # 数量
             description,   # 備考
         }]
     }
     """
+    import logging
+    logger = logging.getLogger(__name__)
     partners = cache["partners"]
 
     partner_id = None
@@ -417,42 +419,48 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     if partner_name:
         partner_id = _find_partner_id(partner_name, partners)
 
-    # 明細行
-    invoice_lines = []
+    # 明細行（freee請求書APIの正しい形式）
+    lines = []
     for d in entry.get("details", []):
         line = {
-            "name": d.get("name", "人材紹介手数料"),
+            "type": "item",
+            "description": d.get("name", "人材紹介手数料"),
             "quantity": d.get("quantity", 1),
-            "unit_price": d.get("unit_price", 0),
-            "description": d.get("description", ""),
-            "tax_code": d.get("tax_code", 1),
-            "type": "normal",
+            "unit_price": str(d.get("unit_price", 0)),
+            "tax_rate": 10,  # 消費税10%
         }
-        invoice_lines.append(line)
+        lines.append(line)
 
+    # freee請求書APIの必須フィールドを含むペイロード
     payload = {
         "company_id": FREEE_COMPANY_ID,
-        "issue_date": entry["issue_date"],
-        "due_date": entry.get("due_date"),
-        "title": entry.get("title", "人材紹介手数料"),
-        "invoice_lines": invoice_lines,
-        "invoice_status": "issue",  # 発行済み
+        "billing_date": entry["issue_date"],   # 請求日
+        "tax_entry_method": "out",              # 外税表示
+        "tax_fraction": "round",               # 端数四捨五入
+        "withholding_tax_entry_method": "out", # 源泉征収外税計算
+        "partner_title": "御中",               # 必須項目
+        "lines": lines,
     }
+    if entry.get("due_date"):
+        payload["payment_date"] = entry["due_date"]
+    if entry.get("title"):
+        payload["subject"] = entry["title"]
     if partner_id:
         payload["partner_id"] = partner_id
     elif partner_name:
-        payload["partner_name"] = partner_name
+        # partner_nameはサポート外のためpartner_idが必須。取引先が見つからない場合はエラーにする
+        logger.warning(f"請求書登録: 取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
+        raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
     if entry.get("invoice_number"):
         payload["invoice_number"] = entry["invoice_number"]
 
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"請求書登録リクエスト: partner={partner_name}, issue_date={entry['issue_date']}, lines={len(invoice_lines)}件")
+    logger.info(f"請求書登録リクエスト: partner={partner_name}(id={partner_id}), billing_date={entry['issue_date']}, lines={len(lines)}件")
+    logger.info(f"請求書ペイロード: {payload}")
 
     resp = requests.post(
         f"{FREEE_IV_BASE}/invoices",
         headers=_api_headers(),
-        json={"invoice": payload},
+        json=payload,
         timeout=30,
     )
 
@@ -460,8 +468,8 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         logger.error(f"請求書登録失敗: {resp.status_code} {resp.text[:1000]}")
         raise ValueError(f"freee請求書登録失敗: {resp.status_code} {resp.text[:500]}")
 
-    logger.info(f"請求書登録成功: ID={resp.json().get('invoice', {}).get('id')}")
-    return resp.json().get("invoice", {})
+    logger.info(f"請求書登録成功: ID={resp.json().get('id')}")
+    return resp.json()
 
 
 # ============================================================

@@ -153,6 +153,23 @@ def get_partners() -> list:
     return resp.json().get("partners", [])
 
 
+def get_sections() -> list:
+    """部門一覧を取得する（権限がない場合は空リストを返す）"""
+    try:
+        resp = requests.get(
+            f"{FREEE_API_BASE}/sections",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=30,
+        )
+        if resp.status_code == 403:
+            return []
+        resp.raise_for_status()
+        return resp.json().get("sections", [])
+    except Exception:
+        return []
+
+
 def get_items() -> list:
     """品目一覧を取得する（権限がない場合は空リストを返す）"""
     try:
@@ -194,7 +211,7 @@ _cache: dict = {}
 
 
 def get_master_cache() -> dict:
-    """勘定科目・取引先・品目・メモタグのキャッシュを取得する"""
+    """勘定科目・取引先・品目・メモタグ・部門のキャッシュを取得する"""
     global _cache
     if not _cache:
         _cache = {
@@ -202,6 +219,7 @@ def get_master_cache() -> dict:
             "partners": get_partners(),
             "items": get_items(),
             "tags": get_tags(),
+            "sections": get_sections(),
         }
     return _cache
 
@@ -243,12 +261,19 @@ def _find_tag_id(name: str, tags_cache: list) -> Optional[int]:
 # ============================================================
 # 取引（仕訳）登録
 # ============================================================
+def _find_section_id(name: str, sections_cache: list) -> Optional[int]:
+    for sec in sections_cache:
+        if sec.get("name") == name:
+            return sec.get("id")
+    return None
+
+
 def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     """
     freeeに取引（収入/支出）を登録する
 
     entry: {
-        issue_date, due_date, partner_name, memo,
+        issue_date, due_date, partner_name, memo, section_name,
         details: [{account_item_name, tax_code, amount, description, item_name, tag_names}]
     }
     deal_type: "income" | "expense"
@@ -257,6 +282,7 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     partners = cache["partners"]
     items = cache["items"]
     tags = cache["tags"]
+    sections = cache.get("sections", [])
 
     # 取引先ID
     partner_id = None
@@ -279,6 +305,10 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
             if tid:
                 tag_ids.append(tid)
 
+        # 部門ID（entryのsection_nameから解決）
+        section_name = entry.get("section_name")
+        section_id = _find_section_id(section_name, sections) if section_name else None
+
         detail = {
             "account_item_id": account_item_id,
             "tax_code": d["tax_code"],
@@ -289,6 +319,11 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
             detail["item_id"] = item_id
         if tag_ids:
             detail["tag_ids"] = tag_ids
+        if section_id:
+            detail["section_id"] = section_id
+        elif section_name:
+            # IDが見つからない場合は名前で登録を試みる
+            detail["section_name"] = section_name
 
         details.append(detail)
 

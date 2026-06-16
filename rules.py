@@ -521,10 +521,14 @@ def build_journal_entries(record: dict) -> dict:
         else:
             sales_partner = None
 
+        # 部門設定: PCAは「本店PCA」、本店CAは「本店CA」
+        section_name = "本店PCA" if db_type == "pca" else "本店CA"
+
         base["sales_entry"] = {
             "issue_date": issue_date,
             "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
             "partner_name": sales_partner,
+            "section_name": section_name,
             "details": [{
                 "account_item_name": account_item,
                 "tax_code": 1,
@@ -539,10 +543,13 @@ def build_journal_entries(record: dict) -> dict:
     # 仕入仕訳（登録不要の場合はスキップ）
     if rule["payment_rule"] != "登録不要":
         if p["zeinuki_shukyaku"] and p["zeinuki_shukyaku"] > 0:
+            # 仕入の部門も同じ設定
+            purchase_section = "本店PCA" if db_type == "pca" else "本店CA"
             base["purchase_entry"] = {
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
                 "partner_name": rule.get("supplier"),
+                "section_name": purchase_section,
                 "details": [{
                     "account_item_name": "スカウト手数料",
                     "tax_code": 7,
@@ -564,6 +571,7 @@ def build_journal_entries(record: dict) -> dict:
             "issue_date": nyusha_date_str,
             "due_date": pca_kessai.isoformat() if pca_kessai else None,
             "partner_name": None,  # 担当パートナー名（要確認）
+            "section_name": "本店PCA",
             "details": [{
                 "account_item_name": "受け取り報酬料",
                 "tax_code": 7,

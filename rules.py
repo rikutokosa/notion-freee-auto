@@ -268,6 +268,7 @@ def _extract_props(record: dict) -> dict:
     phase = get_title("フェーズ")
     tanto_ca = get_rollup_select("担当CA")
     job_db = get_select("求人データベース")
+    shukyaku_keiro = get_rollup_select("集客経路")  # rollupから取得
     current_status = get_select("請求ステータス")
     nyusha_str = get_date("入社日")
     seiyaku_str = get_date("成約日")
@@ -312,6 +313,7 @@ def _extract_props(record: dict) -> dict:
         "db_type": record.get("_db_type", "honten"),
         "tanto_ca": tanto_ca,
         "jobseeker_name": jobseeker_name,
+        "shukyaku_keiro": shukyaku_keiro,
     }
 
 
@@ -545,10 +547,13 @@ def build_journal_entries(record: dict) -> dict:
         if p["zeinuki_shukyaku"] and p["zeinuki_shukyaku"] > 0:
             # 仕入の部門も同じ設定
             purchase_section = "本店PCA" if db_type == "pca" else "本店CA"
+            # 仕入取引先は集客経路のルールから取得（集客経路がなければ求人データベースのルールを使用）
+            shukyaku_rule = get_rule(p.get("shukyaku_keiro") or "")
+            purchase_partner = shukyaku_rule.get("supplier") if shukyaku_rule else rule.get("supplier")
             base["purchase_entry"] = {
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
-                "partner_name": rule.get("supplier"),
+                "partner_name": purchase_partner,
                 "section_name": purchase_section,
                 "details": [{
                     "account_item_name": "スカウト手数料",
@@ -570,10 +575,10 @@ def build_journal_entries(record: dict) -> dict:
         base["pca_entry"] = {
             "issue_date": nyusha_date_str,
             "due_date": pca_kessai.isoformat() if pca_kessai else None,
-            "partner_name": None,  # 担当パートナー名（要確認）
+            "partner_name": None,  # 担当パートナー名（Notionの「担当パートナー」から取得要）
             "section_name": "本店PCA",
             "details": [{
-                "account_item_name": "受け取り報酬料",
+                "account_item_name": "PCA仕入高",
                 "tax_code": 7,
                 "amount": int(p["pca_shiire"]),
                 "description": biko,

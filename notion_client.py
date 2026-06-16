@@ -1,0 +1,222 @@
+"""
+Notion APIクライアント
+本店CA成約管理DB・PCA成約管理DBを監視し、
+「②経理対応待ち」フィルターのレコードを取得する
+"""
+import os
+import requests
+from datetime import datetime, timezone
+from typing import Optional
+
+
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "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")
+
+# 本店CA成約管理DB
+NOTION_DB_ID_HONTEN = os.environ.get("NOTION_DB_ID_HONTEN", "320a7a34-dbe2-8082-8055-c57f9b8a04bb")
+# PCA成約管理DB
+NOTION_DB_ID_PCA = os.environ.get("NOTION_DB_ID_PCA", "32fa7a34-dbe2-8005-ab91-ff33d64506e0")
+
+NOTION_VERSION = "2022-06-28"
+NOTION_BASE = "https://api.notion.com/v1"
+
+# ②経理対応待ちフィルターに該当するステータス（本店CA）
+PENDING_STATUSES_HONTEN = [
+    "本部確認済",
+    "●入社前辞退",
+    "●返金（短期離職）",
+]
+
+# ②経理対応待ちフィルターに該当するステータス（PCA）
+PENDING_STATUSES_PCA = [
+    "本部確認済",
+    "入社前辞退",
+    "返金発生",
+]
+
+# 処理完了後のステータスマッピング（本店CA）
+STATUS_DONE_MAP_HONTEN = {
+    "本部確認済": "□承諾→freee登録済",
+    "●入社前辞退": "□入社前辞退→freee更新済",
+    "●返金（短期離職）": "□返金→freee・請求書更新済",
+}
+
+# 処理完了後のステータスマッピング（PCA）
+STATUS_DONE_MAP_PCA = {
+    "本部確認済": "承諾→freee登録済",
+    "入社前辞退": "入社前辞退→freee更新済",
+    "返金発生": "返金→freee・請求書更新済",
+}
+
+
+def _headers():
+    return {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+
+
+def _query_db(db_id: str, pending_statuses: list) -> list[dict]:
+    """
+    DBをクエリして全件取得する（ページネーション対応）
+    """
+    url = f"{NOTION_BASE}/databases/{db_id}/query"
+
+    # 経理対応待ちフィルター（複数ステータスのOR条件）
+    status_filters = [
+        {"property": "請求ステータス", "select": {"equals": s}}
+        for s in pending_statuses
+    ]
+    filter_payload = {"or": status_filters}
+
+    payload = {
+        "filter": filter_payload,
+        "sorts": [{"property": "入社日", "direction": "ascending"}],
+    }
+
+    results = []
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+
+        resp = requests.post(url, headers=_headers(), json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        results.extend(data.get("results", []))
+        has_more = data.get("has_more", False)
+        start_cursor = data.get("next_cursor")
+
+    return results
+
+
+def fetch_pending_records(db_type: str = "honten") -> list[dict]:
+    """
+    経理対応待ちレコードを取得する
+
+    db_type: "honten" | "pca" | "all"
+    """
+    records = []
+
+    if db_type in ("honten", "all"):
+        honten = _query_db(NOTION_DB_ID_HONTEN, PENDING_STATUSES_HONTEN)
+        for r in honten:
+            r["_db_type"] = "honten"
+        records.extend(honten)
+
+    if db_type in ("pca", "all"):
+        pca = _query_db(NOTION_DB_ID_PCA, PENDING_STATUSES_PCA)
+        for r in pca:
+            r["_db_type"] = "pca"
+        records.extend(pca)
+
+    return records
+
+
+def get_record(page_id: str) -> dict:
+    """
+    特定のページを取得する
+    """
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    resp = requests.get(url, headers=_headers(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_current_status(record: dict) -> str:
+    """
+    レコードの現在の請求ステータスを取得する
+    """
+    props = record.get("properties", {})
+    status_info = props.get("請求ステータス", {})
+    sel = status_info.get("select")
+    return sel.get("name", "") if sel else ""
+
+
+def get_done_status(original_status: str, db_type: str) -> str:
+    """
+    処理完了後のステータスを取得する
+    """
+    if db_type == "pca":
+        return STATUS_DONE_MAP_PCA.get(original_status, "承諾→freee登録済")
+    else:
+        return STATUS_DONE_MAP_HONTEN.get(original_status, "□承諾→freee登録済")
+
+
+def mark_as_done(page_id: str, original_status: str,
+                 db_type: str = "honten",
+                 sales_id: Optional[int] = None,
+                 purchase_id: Optional[int] = None,
+                 invoice_id: Optional[int] = None) -> bool:
+    """
+    freee登録完了後にNotionのステータスを更新する
+    original_status に応じて遷移先ステータスを決定する
+    """
+    done_status = get_done_status(original_status, db_type)
+
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    props = {
+        "請求ステータス": {
+            "select": {"name": done_status}
+        },
+        "freee処理状態": {
+            "select": {"name": "成功"}
+        },
+        "処理日時": {
+            "date": {"start": datetime.now(timezone.utc).isoformat()}
+        }
+    }
+    if sales_id:
+        props["freee売上取引ID"] = {"number": sales_id}
+    if purchase_id:
+        props["freee支出取引ID"] = {"number": purchase_id}
+    if invoice_id:
+        props["freee請求書ID"] = {"number": invoice_id}
+
+    payload = {"properties": props}
+    resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    return resp.status_code == 200
+
+
+def mark_as_error(page_id: str, error_msg: str) -> bool:
+    """
+    エラー時にNotionのステータスを更新する
+    """
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    payload = {
+        "properties": {
+            "freee処理状態": {
+                "select": {"name": "失敗"}
+            },
+            "エラー内容": {
+                "rich_text": [{"text": {"content": error_msg[:2000]}}]
+            },
+            "処理日時": {
+                "date": {"start": datetime.now(timezone.utc).isoformat()}
+            }
+        }
+    }
+    resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    return resp.status_code == 200
+
+
+def clear_error(page_id: str) -> bool:
+    """
+    エラー内容をクリアする（再処理前に呼ぶ）
+    """
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    payload = {
+        "properties": {
+            "エラー内容": {
+                "rich_text": []
+            },
+            "freee処理状態": {
+                "select": {"name": "処理中"}
+            }
+        }
+    }
+    resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    return resp.status_code == 200

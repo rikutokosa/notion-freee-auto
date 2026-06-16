@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}エラー - Notion→freee{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>エラーが発生しました</h2>
+  <div class="alert alert-danger" style="margin-top:12px;">{{ message }}</div>
+  <a href="/" class="btn btn-primary" style="margin-top:12px;">ダッシュボードに戻る</a>
+</div>
+{% endblock %}

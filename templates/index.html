@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}ダッシュボード - Notion→freee{% endblock %}
+{% block content %}
+
+<h1 style="font-size:22px; font-weight:bold; margin-bottom:20px;">ダッシュボード</h1>
+
+<!-- ステータスカード -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:20px;">
+  <div class="card" style="padding:16px 20px;">
+    <div style="font-size:12px; color:#888; margin-bottom:4px;">freee認証</div>
+    {% if token_ok %}
+      <div><span class="status-dot dot-green"></span><strong style="color:#28a745;">接続済み</strong></div>
+    {% else %}
+      <div><span class="status-dot dot-red"></span><strong style="color:#dc3545;">未認証</strong></div>
+      <a href="/auth/freee" class="btn btn-primary" style="margin-top:8px; font-size:12px; padding:5px 12px;">freee認証する</a>
+    {% endif %}
+  </div>
+  <div class="card" style="padding:16px 20px;">
+    <div style="font-size:12px; color:#888; margin-bottom:4px;">自動ポーリング</div>
+    {% if polling_active %}
+      <div><span class="status-dot dot-green"></span><strong style="color:#28a745;">稼働中</strong></div>
+      <div style="font-size:11px; color:#888; margin-top:4px;">{{ poll_interval }}秒ごとに確認</div>
+    {% else %}
+      <div><span class="status-dot dot-gray"></span><strong style="color:#888;">停止中</strong></div>
+    {% endif %}
+  </div>
+  <div class="card" style="padding:16px 20px;">
+    <div style="font-size:12px; color:#888; margin-bottom:4px;">処理件数（今セッション）</div>
+    <div style="font-size:28px; font-weight:bold; color:#1a1a2e;">{{ logs|length }}</div>
+  </div>
+</div>
+
+{% if not token_ok %}
+<div class="alert alert-warning">
+  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold;">こちらから認証</a>してください。
+</div>
+{% endif %}
+
+<!-- 操作ボタン -->
+<div class="card">
+  <h2>操作</h2>
+  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <button class="btn btn-success" onclick="runNow('all')">▶ 全件処理（本店CA＋PCA）</button>
+    <button class="btn btn-primary" onclick="runNow('honten')">本店CAのみ</button>
+    <button class="btn btn-primary" onclick="runNow('pca')">PCAのみ</button>
+    <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
+    <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
+    {% if not polling_active %}
+      <button class="btn btn-primary" onclick="startPolling()">🔄 自動ポーリング開始</button>
+    {% else %}
+      <button class="btn btn-secondary" onclick="stopPolling()">⏸ 自動ポーリング停止</button>
+    {% endif %}
+  </div>
+  <div id="run-result" style="margin-top:12px; font-size:13px; white-space:pre-wrap;"></div>
+</div>
+
+<!-- 処理ログ -->
+<div class="card">
+  <h2>処理ログ（直近50件）</h2>
+  {% if logs %}
+  <table>
+    <thead>
+      <tr>
+        <th>日時</th>
+        <th>求職者/フェーズ</th>
+        <th>集客経路</th>
+        <th>入社日</th>
+        <th>結果</th>
+        <th>詳細</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td style="white-space:nowrap;">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+        <td>{{ log.phase or '' }}</td>
+        <td>{{ log.job_db or '' }}</td>
+        <td>{{ log.nyusha_date or '' }}</td>
+        <td>
+          {% if log.status == 'success' %}
+            <span class="badge badge-ok">✅ 成功</span>
+          {% elif log.status == 'error' %}
+            <span class="badge badge-error">❌ エラー</span>
+          {% elif log.status == 'dry_run' %}
+            <span class="badge badge-skip">👁 プレビュー</span>
+          {% elif log.status == 'review' %}
+            <span class="badge badge-review">⚠️ 要確認</span>
+          {% else %}
+            <span class="badge">{{ log.status }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px; color:#666;">
+          {% if log.sales_id %}売上ID: {{ log.sales_id }}{% endif %}
+          {% if log.purchase_id %} / 仕入ID: {{ log.purchase_id }}{% endif %}
+          {% if log.message and not log.sales_id %}{{ log.message[:80] }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888; font-size:14px;">まだ処理履歴がありません。</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runNow(dbType = 'all') {
+  const res = document.getElementById('run-result');
+  res.textContent = '処理中...';
+  try {
+    const r = await fetch('/run', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({db_type: dbType})
+    });
+    const data = await r.json();
+    if (data.status === 'ok') {
+      let msg = `処理完了: ${data.total}件\n`;
+      if (data.success) msg += `✅ 成功: ${data.success}件\n`;
+      if (data.reviews) msg += `⚠️ 要確認: ${data.reviews}件\n`;
+      if (data.errors) msg += `❌ エラー: ${data.errors}件\n`;
+      (data.results || []).forEach(r => {
+        if (r.status === 'success') msg += `  ✅ ${r.phase}: ${r.message}\n`;
+        if (r.status === 'error') msg += `  ❌ ${r.phase}: ${r.message}\n`;
+        if (r.status === 'review') msg += `  ⚠️ ${r.phase}: ${r.message}\n`;
+      });
+      if (!data.results || data.results.length === 0) msg += '経理対応待ちのレコードはありませんでした。';
+      res.style.color = data.errors > 0 ? '#dc3545' : '#155724';
+      res.textContent = msg;
+    } else {
+      res.style.color = '#dc3545';
+      res.textContent = 'エラー: ' + data.message;
+    }
+  } catch(e) {
+    res.style.color = '#dc3545';
+    res.textContent = 'エラー: ' + e.message;
+  }
+  setTimeout(() => location.reload(), 4000);
+}
+
+async function startPolling() {
+  await fetch('/polling/start', {method:'POST'});
+  location.reload();
+}
+
+async function stopPolling() {
+  await fetch('/polling/stop', {method:'POST'});
+  location.reload();
+}
+</script>
+{% endblock %}

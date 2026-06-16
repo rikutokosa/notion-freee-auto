@@ -57,26 +57,39 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
     # 社内メモ: 部門名
     section_memo = "本店：PCA" if db_type == "pca" else "本店：CA"
 
+    # 売上エントリから会計情報を取得（取引連携用）
+    account_item_name = None
+    section_name = sales_entry.get("section_name", "")
+    tag_names = []
+    if details:
+        first_detail = details[0]
+        account_item_name = first_detail.get("account_item_name")
+        tag_names = first_detail.get("tag_names", [])
+
     # 明細行を構築
     invoice_lines = []
     for d in details:
         # 明細1: 品目行（求職者名 + 金額）
-        invoice_lines.append({
+        item_line = {
             "name": jobseeker_name or "人材紹介手数料",
             "unit_price": abs(d.get("amount", 0)),
             "quantity": 1,
             "description": jobseeker_name,
             "tax_code": d.get("tax_code", 1),
-        })
+        }
+        # 取引連携用の会計情報を追加
+        if account_item_name:
+            item_line["account_item_name"] = account_item_name
+        if section_name:
+            item_line["section_name"] = section_name
+        if tag_names:
+            item_line["tag_names"] = tag_names
+        invoice_lines.append(item_line)
         # 明細2: テキスト行（入社企業名）
         if company_name:
             invoice_lines.append({
-                "name": f"入社企業：{company_name}様",
-                "unit_price": 0,
-                "quantity": 1,
+                "type": "text",
                 "description": f"入社企業：{company_name}様",
-                "tax_code": 0,
-                "type": "text",  # テキスト行
             })
 
     return {

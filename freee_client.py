@@ -406,13 +406,20 @@ def create_invoice(entry: dict, cache: dict) -> dict:
             name,          # 品目名（descriptionに対応）
             unit_price,    # 単価
             quantity,      # 数量
-            description,   # 備考
+            type,          # "item" または "text"
+            account_item_name,  # 勘定科目名（取引連携用）
+            tax_code,      # 税区分コード（取引連携用）
+            section_name,  # 部門名（取引連携用）
+            tag_names,     # メモタグ名リスト（取引連携用）
         }]
     }
     """
     import logging
     logger = logging.getLogger(__name__)
     partners = cache["partners"]
+    account_items = cache.get("account_items", [])
+    tags = cache.get("tags", [])
+    sections = cache.get("sections", [])
 
     partner_id = None
     partner_name = entry.get("partner_name")
@@ -438,6 +445,27 @@ def create_invoice(entry: dict, cache: dict) -> dict:
                 "unit_price": str(d.get("unit_price", 0)),
                 "tax_rate": 10,  # 消費税10%
             }
+            # 取引連携用の会計情報を追加（これにより請求書から取引が自動作成される）
+            account_item_name = d.get("account_item_name")
+            if account_item_name:
+                account_item_id = _find_account_item_id(account_item_name, account_items)
+                if account_item_id:
+                    line["account_item_id"] = account_item_id
+            if d.get("tax_code") is not None:
+                line["tax_code"] = d["tax_code"]
+            section_name = d.get("section_name") or entry.get("section_name")
+            if section_name:
+                section_id = _find_section_id(section_name, sections)
+                if section_id:
+                    line["section_id"] = section_id
+            tag_names = d.get("tag_names", [])
+            tag_ids = []
+            for tag_name in tag_names:
+                tid = _find_tag_id(tag_name, tags)
+                if tid:
+                    tag_ids.append(tid)
+            if tag_ids:
+                line["tag_ids"] = tag_ids
         lines.append(line)
 
     # freee請求書APIの必須フィールドを含むペイロード
@@ -524,8 +552,9 @@ def register_journal(sales_entry: Optional[dict],
 
 def register_invoice_and_deal(invoice_entry: dict, sales_entry: dict) -> dict:
     """
-    請求書を登録し、その後取引（仕訳）も登録する
-    （請求書登録タイプの場合に使用）
+    請求書を登録する（請求書登録タイプの場合に使用）
+    請求書の明細行に会計情報（account_item_id・section_id・tag_ids・tax_code）を
+    含めることで、freeeが自動的に取引（仕訳）を連携する。
     """
     cache = get_master_cache()
     result = {"invoice_id": None, "sales_id": None, "errors": []}
@@ -533,17 +562,12 @@ def register_invoice_and_deal(invoice_entry: dict, sales_entry: dict) -> dict:
     try:
         invoice = create_invoice(invoice_entry, cache)
         result["invoice_id"] = invoice.get("id")
+        # 請求書から取引が自動連携されるため、deal_idは請求書のレスポンスから取引する
+        deal_id = invoice.get("deal_id")
+        if deal_id:
+            result["sales_id"] = deal_id
     except Exception as e:
         result["errors"].append(f"請求書登録エラー: {str(e)}")
-        return result
-
-    # 請求書登録後に売上仕訳も登録
-    if sales_entry:
-        try:
-            deal = create_deal(sales_entry, "income", cache)
-            result["sales_id"] = deal.get("id")
-        except Exception as e:
-            result["errors"].append(f"売上仕訳エラー（請求書登録後）: {str(e)}")
 
     return result
 

@@ -426,10 +426,22 @@ def api_test_deal():
         token = get_valid_token()
         import requests as req
         payload = request.get_json()
+        # freeeのAPIは {"deal": {...}} 形式が必要
+        company_id = int(os.environ.get("FREEE_COMPANY_ID", "1856949"))
+        deal_payload = {
+            "company_id": company_id,
+            "issue_date": payload["issue_date"],
+            "type": payload.get("type", "income"),
+            "details": payload.get("details", []),
+        }
+        if payload.get("due_date"):
+            deal_payload["due_date"] = payload["due_date"]
+        if payload.get("partner_name"):
+            deal_payload["partner_name"] = payload["partner_name"]
         resp = req.post(
             "https://api.freee.co.jp/api/1/deals",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
+            json={"deal": deal_payload},
             timeout=30,
         )
         return jsonify({"status": resp.status_code, "body": resp.json()})
@@ -445,9 +457,9 @@ def api_test_invoice():
         import requests as req
         payload = request.get_json()
         resp = req.post(
-            "https://api.freee.co.jp/api/1/invoices",
+            "https://api.freee.co.jp/iv/invoices",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
+            json={"invoice": payload},
             timeout=30,
         )
         return jsonify({"status": resp.status_code, "body": resp.json()})

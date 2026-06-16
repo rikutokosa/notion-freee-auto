@@ -154,27 +154,37 @@ def get_partners() -> list:
 
 
 def get_items() -> list:
-    """品目一覧を取得する"""
-    resp = requests.get(
-        f"{FREEE_API_BASE}/items",
-        headers=_api_headers(),
-        params={"company_id": FREEE_COMPANY_ID},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json().get("items", [])
+    """品目一覧を取得する（権限がない場合は空リストを返す）"""
+    try:
+        resp = requests.get(
+            f"{FREEE_API_BASE}/items",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=30,
+        )
+        if resp.status_code == 403:
+            return []
+        resp.raise_for_status()
+        return resp.json().get("items", [])
+    except Exception:
+        return []
 
 
 def get_tags() -> list:
-    """メモタグ一覧を取得する"""
-    resp = requests.get(
-        f"{FREEE_API_BASE}/tags",
-        headers=_api_headers(),
-        params={"company_id": FREEE_COMPANY_ID},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json().get("tags", [])
+    """メモタグ一覧を取得する（権限がない場合は空リストを返す）"""
+    try:
+        resp = requests.get(
+            f"{FREEE_API_BASE}/tags",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=30,
+        )
+        if resp.status_code == 403:
+            return []
+        resp.raise_for_status()
+        return resp.json().get("tags", [])
+    except Exception:
+        return []
 
 
 # ============================================================

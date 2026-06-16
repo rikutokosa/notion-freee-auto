@@ -126,6 +126,32 @@ def get_record(page_id: str) -> dict:
     return resp.json()
 
 
+def get_jobseeker_name(record: dict) -> str:
+    """
+    レコードの求職者relationから求職者名を取得する
+    取得できない場合は空文字を返す
+    """
+    try:
+        props = record.get("properties", {})
+        jobseeker_rel = props.get("求職者", {}).get("relation", [])
+        if not jobseeker_rel:
+            return ""
+        page_id = jobseeker_rel[0]["id"]
+        url = f"{NOTION_BASE}/pages/{page_id}"
+        resp = requests.get(url, headers=_headers(), timeout=15)
+        if resp.status_code != 200:
+            return ""
+        page_data = resp.json()
+        page_props = page_data.get("properties", {})
+        for key, val in page_props.items():
+            if val.get("type") == "title":
+                texts = val.get("title", [])
+                return texts[0].get("plain_text", "") if texts else ""
+    except Exception:
+        pass
+    return ""
+
+
 def get_current_status(record: dict) -> str:
     """
     レコードの現在の請求ステータスを取得する

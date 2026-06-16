@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "notion-freee-secret-2026")
 
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "300"))
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
 
 # ============================================================
 # バックグラウンドポーリング

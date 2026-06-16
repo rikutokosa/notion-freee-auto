@@ -286,6 +286,10 @@ def _extract_props(record: dict) -> dict:
     pca_shiire = get_number("PCA仕入高")
     pca_kessai_str = get_date("PCA仕入決済期日")
 
+    # 求職者名を取得（relationから別ページを参照）
+    from notion_client import get_jobseeker_name
+    jobseeker_name = get_jobseeker_name(record)
+
     return {
         "phase": phase,
         "job_db": job_db,
@@ -307,6 +311,7 @@ def _extract_props(record: dict) -> dict:
         "pca_kessai": parse_date(pca_kessai_str),
         "db_type": record.get("_db_type", "honten"),
         "tanto_ca": tanto_ca,
+        "jobseeker_name": jobseeker_name,
     }
 
 
@@ -496,9 +501,11 @@ def build_journal_entries(record: dict) -> dict:
     issue_date = (p["seiyaku_date"] or p["nyusha_date"] or date.today()).isoformat()
     nyusha_date_str = p["nyusha_str"][:10] if p["nyusha_str"] else issue_date
 
-    # 備考: 担当CA名 + フェーズ（求職者名）
+    # 備考: 担当CA名 + 求職者名 + フェーズ
     tanto_ca = p.get("tanto_ca") or ""
-    biko = f"{tanto_ca} {phase}".strip() if tanto_ca else phase
+    jobseeker_name = p.get("jobseeker_name") or ""
+    biko_parts = [x for x in [tanto_ca, jobseeker_name, phase] if x]
+    biko = " ".join(biko_parts)
 
     # 売上仕訳
     if p["zeinuki_uriage"] and p["zeinuki_uriage"] > 0:
@@ -508,10 +515,16 @@ def build_journal_entries(record: dict) -> dict:
         if db_type == "pca":
             account_item = "PCA売上"
 
+        # 売上取引先: 求人データベース型の場合は取引先を設定（集客型は売上に取引先なし）
+        if rule.get("type") == "求人DB":
+            sales_partner = rule.get("supplier")
+        else:
+            sales_partner = None
+
         base["sales_entry"] = {
             "issue_date": issue_date,
             "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
-            "partner_name": None,
+            "partner_name": sales_partner,
             "details": [{
                 "account_item_name": account_item,
                 "tax_code": 1,

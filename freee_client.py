@@ -358,7 +358,7 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     resp = requests.post(
         f"{FREEE_API_BASE}/deals",
         headers=_api_headers(),
-        json={"deal": payload},
+        json=payload,
         timeout=30,
     )
 

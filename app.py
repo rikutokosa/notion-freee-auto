@@ -426,7 +426,7 @@ def api_test_deal():
         token = get_valid_token()
         import requests as req
         payload = request.get_json()
-        # freeeのAPIは {"deal": {...}} 形式が必要
+        # freeeのAPIはフラットなJSONを直接送る（dealラップ不要）
         company_id = int(os.environ.get("FREEE_COMPANY_ID", "1856949"))
         deal_payload = {
             "company_id": company_id,
@@ -438,10 +438,12 @@ def api_test_deal():
             deal_payload["due_date"] = payload["due_date"]
         if payload.get("partner_name"):
             deal_payload["partner_name"] = payload["partner_name"]
+        import logging
+        logging.getLogger(__name__).info(f"test_deal送信ペイロード: {deal_payload}")
         resp = req.post(
             "https://api.freee.co.jp/api/1/deals",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"deal": deal_payload},
+            json=deal_payload,
             timeout=30,
         )
         return jsonify({"status": resp.status_code, "body": resp.json()})

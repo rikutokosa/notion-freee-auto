@@ -232,7 +232,7 @@ def get_company_name(record: dict) -> str:
     """
     try:
         props = record.get("properties", {})
-        company_rel = props.get("決定企業（DB）", {}).get("relation", [])
+        company_rel = props.get("決定企業", {}).get("relation", [])
         if not company_rel:
             return ""
         page_id = company_rel[0]["id"]

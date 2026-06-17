@@ -82,7 +82,8 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
             "unit_price": abs(d.get("amount", 0)),
             "quantity": 1,
             "description": jobseeker_name,
-            "tax_code": d.get("tax_code", 1),
+            "tax_rate": 10,  # 税率10%（freee請求書API必須）
+            "tax_code": d.get("tax_code", 129),  # 課税売上10%（取引連携用）
         }
         # 取引連携用の会計情報を追加
         if account_item_name:

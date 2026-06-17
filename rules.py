@@ -469,7 +469,7 @@ def build_journal_entries(record: dict) -> dict:
                 "partner_name": None,
                 "details": [{
                     "account_item_name": "CA売上【自社】",
-                    "tax_code": 1,
+                    "tax_code": 129,
                     "amount": int(minus_uriage),  # 負の値
                     "description": f"返金 {phase}",
                     "item_name": "本店：CA",
@@ -487,7 +487,7 @@ def build_journal_entries(record: dict) -> dict:
                 "partner_name": rule.get("supplier"),
                 "details": [{
                     "account_item_name": "スカウト手数料",
-                    "tax_code": 7,
+                    "tax_code": 136,
                     "amount": int(minus_shukyaku),  # 負の値
                     "description": f"返金 {phase}",
                     "item_name": "本店：CA",
@@ -505,8 +505,8 @@ def build_journal_entries(record: dict) -> dict:
                     "due_date": None,
                     "partner_name": None,
                     "details": [{
-                        "account_item_name": "受け取り報酬料",
-                        "tax_code": 7,
+                    "account_item_name": "受け取り報酬料",
+                    "tax_code": 136,
                         "amount": pca_henkin,
                         "description": f"返金 {phase}",
                         "item_name": "本店：CA",
@@ -610,7 +610,7 @@ def build_journal_entries(record: dict) -> dict:
             "section_name": section_name,
             "details": [{
                 "account_item_name": account_item,
-                "tax_code": 1,
+                "tax_code": 129,
                 "amount": int(p["zeinuki_uriage"]),
                 "description": biko,
                 "tag_names": tag_names,
@@ -631,7 +631,7 @@ def build_journal_entries(record: dict) -> dict:
                 "section_name": purchase_section,
                 "details": [{
                     "account_item_name": "スカウト手数料",
-                    "tax_code": 7,
+                    "tax_code": 136,
                     "amount": int(p["zeinuki_shukyaku"]),
                     "description": biko,
                     "tag_names": tag_names,
@@ -651,8 +651,8 @@ def build_journal_entries(record: dict) -> dict:
             "partner_name": None,
             "section_name": "本店：PCA",
             "details": [{
-                "account_item_name": "PCA仕入高",
-                "tax_code": 7,
+                    "account_item_name": "PCA仕入高",
+                    "tax_code": 136,
                 "amount": int(p["pca_shiire"]),
                 "description": biko,
                 "tag_names": tag_names,

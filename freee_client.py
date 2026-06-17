@@ -451,12 +451,14 @@ def create_invoice(entry: dict, cache: dict) -> dict:
             }
         else:
             # 品目行
+            # freee請求書APIではtax_rate（0,8,10）が必須
+            # tax_codeは取引連携（下書き保存）用のオプション項目
             line = {
                 "type": "item",
                 "description": d.get("name", "人材紹介手数料"),
                 "quantity": d.get("quantity", 1),
                 "unit_price": str(d.get("unit_price", 0)),
-                "tax_rate": 10,  # 消費税10%
+                "tax_rate": d.get("tax_rate", 10),  # 税率10%（必須）
             }
             # 取引連携用の会計情報を追加（これにより請求書から取引が自動作成される）
             account_item_name = d.get("account_item_name")
@@ -464,6 +466,7 @@ def create_invoice(entry: dict, cache: dict) -> dict:
                 account_item_id = _find_account_item_id(account_item_name, account_items)
                 if account_item_id:
                     line["account_item_id"] = account_item_id
+            # tax_code: 取引登録の下書き保存で利用される（オプション）
             if d.get("tax_code") is not None:
                 line["tax_code"] = d["tax_code"]
             section_name = d.get("section_name") or entry.get("section_name")
@@ -524,8 +527,11 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         logger.error(f"請求書登録失敗: {resp.status_code} {resp.text[:1000]}")
         raise ValueError(f"freee請求書登録失敗: {resp.status_code} {resp.text[:500]}")
 
-    logger.info(f"請求書登録成功: ID={resp.json().get('id')}")
-    return resp.json()
+    resp_data = resp.json()
+    # レスポンスは {"invoice": {"id": ..., ...}} 形式
+    invoice_data = resp_data.get("invoice", resp_data)
+    logger.info(f"請求書登録成功: ID={invoice_data.get('id')}")
+    return invoice_data
 
 
 def send_invoice(invoice_id: int, contact_email: Optional[str] = None) -> dict:

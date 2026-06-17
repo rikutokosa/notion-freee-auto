@@ -352,6 +352,8 @@ def _extract_props(record: dict) -> dict:
     # 仕入決済期日: PCA DBは末尾にスペースあり
     shiire_kessai_str = get_date("仕入決済期日") or get_date("仕入決済期日 ")
 
+    # 退職日・辞退日（返金時の決済期日計算に使用）
+    taishoku_str = get_date("退職日•辞退日")
     henkin_ritsu_raw = get_number("返金料率") if db_type == "pca" else get_number("返金率")
     # 返金後入金売上（返金後の実際の売上額）
     henkin_go_uriage = get_number("返金後入金売上")
@@ -399,6 +401,7 @@ def _extract_props(record: dict) -> dict:
         "uriage_kessai": parse_date(uriage_kessai_str),
         "shiire_kessai": parse_date(shiire_kessai_str),
         "henkin_ritsu": henkin_ritsu_raw or 0,
+        "taishoku_date": parse_date(taishoku_str),
         "henkin_go_uriage": henkin_go_uriage,
         "henkin_go_shukyaku": henkin_go_shukyaku,
         "freee_sales_id": int(freee_sales_id) if freee_sales_id else None,
@@ -489,51 +492,91 @@ def build_journal_entries(record: dict) -> dict:
         henkin_uriage = p["henkin_go_uriage"]
         henkin_shukyaku = p["henkin_go_shukyaku"]
 
+        # 売上の返金額計算（税込）
         if henkin_uriage is not None:
             minus_uriage = henkin_uriage - original_uriage  # 負の値
         else:
             minus_uriage = -int(original_uriage * henkin_ritsu / 100)
+        # 税込に変換
+        minus_uriage_tax_incl = int(minus_uriage * 1.1)
 
+        # 仕入の返金額計算（税込）
         if henkin_shukyaku is not None:
             minus_shukyaku = henkin_shukyaku - original_shukyaku  # 負の値
         else:
             minus_shukyaku = -int(original_shukyaku * henkin_ritsu / 100)
+        # 税込に変換
+        minus_shukyaku_tax_incl = int(minus_shukyaku * 1.1)
 
         today_str = date.today().isoformat()
 
+        # 辞退日から決済期日を計算
+        taishoku_date = p.get("taishoku_date")
+        # 売上返金の決済期日: 辞退日の翌月末
+        if taishoku_date:
+            next_month = taishoku_date + relativedelta(months=1)
+            last_day = calendar.monthrange(next_month.year, next_month.month)[1]
+            sales_due_date = next_month.replace(day=last_day).isoformat()
+        else:
+            sales_due_date = None
+        # 仕入返金の決済期日: 辞退日 + 30日
+        if taishoku_date:
+            from datetime import timedelta
+            purchase_due_date = (taishoku_date + timedelta(days=30)).isoformat()
+        else:
+            purchase_due_date = None
+
+        # 備考: 求職者名 + 企業名（元の登録と同じルール）
+        jobseeker_name = p.get("jobseeker_name") or ""
+        company_name = p.get("company_name") or ""
+        biko_parts = [x for x in [jobseeker_name, company_name] if x]
+        biko = "返金 " + " ".join(biko_parts) if biko_parts else f"返金 {phase}"
+
+        # メモタグ: 担当CA名（元の登録と同じルール）
+        tanto_ca = p.get("tanto_ca") or ""
+        tag_names = [tanto_ca] if tanto_ca else []
+
+        # 部門（元の登録と同じルール）
+        section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
+
+        # ルール取得
+        rule = get_rule(job_db)
+
         # マイナス売上仕訳
-        if minus_uriage != 0:
+        if minus_uriage_tax_incl != 0:
+            account_item = "PCA売上" if db_type == "pca" else "CA売上【自社】"
             base["sales_entry"] = {
                 "issue_date": today_str,
-                "due_date": None,
-                "partner_name": None,
+                "due_date": sales_due_date,
+                "partner_name": rule.get("supplier") if rule and rule.get("type") == "求人BD" else None,
+                "partner_id": p["freee_sales_id"],
+                "section_name": section_name,
                 "details": [{
-                    "account_item_name": "CA売上【自社】",
+                    "account_item_name": account_item,
                     "tax_code": 129,
-                    "amount": int(minus_uriage),  # 負の値
-                    "description": f"返金 {phase}",
-                    "item_name": "本店：CA",
-                    "tag_names": [],
+                    "amount": minus_uriage_tax_incl,  # 負の値（税込）
+                    "description": biko,
+                    "tag_names": tag_names,
                 }],
-                "memo": f"返金 {phase}",
+                "memo": biko,
             }
 
         # マイナス仕入仕訳
-        rule = get_rule(job_db)
-        if rule and rule["payment_rule"] != "登録不要" and minus_shukyaku != 0:
+        if rule and rule["payment_rule"] != "登録不要" and minus_shukyaku_tax_incl != 0:
             base["purchase_entry"] = {
                 "issue_date": today_str,
-                "due_date": None,
+                "due_date": purchase_due_date,
                 "partner_name": rule.get("supplier"),
+                "partner_id": p["freee_purchase_id"],
+                "section_name": section_name,
                 "details": [{
                     "account_item_name": "スカウト手数料",
                     "tax_code": 136,
-                    "amount": int(minus_shukyaku),  # 負の値
-                    "description": f"返金 {phase}",
-                    "item_name": "本店：CA",
-                    "tag_names": [],
+                    "amount": minus_shukyaku_tax_incl,  # 負の値（税込）
+                    "description": biko,
+                    "tag_names": tag_names,
                 }],
-                "memo": f"返金 {phase}",
+                "memo": biko,
             }
 
         # PCA成約管理の場合: PCA支払のマイナス仕訳も追加
@@ -542,21 +585,22 @@ def build_journal_entries(record: dict) -> dict:
             if pca_henkin != 0:
                 base["pca_entry"] = {
                     "issue_date": today_str,
-                    "due_date": None,
+                    "due_date": purchase_due_date,  # 辞退日+30日
+                    "partner_id": p["pca_partner_id"],
                     "partner_name": None,
+                    "section_name": "本店：PCA",
                     "details": [{
-                    "account_item_name": "受け取り報酬料",
-                    "tax_code": 136,
-                        "amount": pca_henkin,
-                        "description": f"返金 {phase}",
-                        "item_name": "本店：CA",
-                        "tag_names": [],
+                        "account_item_name": "PCA仕入高",
+                        "tax_code": 136,
+                        "amount": pca_henkin,  # 負の値（税込）
+                        "description": biko,
+                        "tag_names": tag_names,
                     }],
-                    "memo": f"返金 {phase}",
+                    "memo": biko,
                 }
 
         base["action"] = "refund"
-        base["message"] = f"返金処理: 売上マイナス={minus_uriage}円, 仕入マイナス={minus_shukyaku}円"
+        base["message"] = f"返金処理: 売上マイナス={minus_uriage_tax_incl}円(税込), 仕入マイナス={minus_shukyaku_tax_incl}円(税込)"
         base["rule"] = rule
         return base
 

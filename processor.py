@@ -78,13 +78,18 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
     # 明細行を構築
     invoice_lines = []
     for d in details:
+        # item行のdescriptionは仕訳転記時に摘要として反映されるため、
+        # 求職者名 + 入社企業名を両方含める
+        desc_parts = [x for x in [jobseeker_name, company_name] if x]
+        item_description = " ".join(desc_parts) if desc_parts else "人材紹介手数料"
+
         # 明細1: 品目行（求職者名 + 金額）
         item_line = {
             "name": jobseeker_name or "人材紹介手数料",
             "unit_price": abs(d.get("amount", 0)),
             "quantity": 1,
-            "description": jobseeker_name,
-            "tax_rate": 10,  # 税率10%（freee請求書API必須）
+            "description": item_description,  # 求職者名 + 入社企業名（仕訳転記時に摘要に反映）
+            "tax_rate": 10,  # 税犘10%（freee請求書API必須）
             "tax_code": d.get("tax_code", 129),  # 課税売上10%（取引連携用）
         }
         # 取引連携用の会計情報を追加

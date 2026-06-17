@@ -35,16 +35,25 @@ DATE_RANGE_DAYS = 60
 AMOUNT_TOLERANCE = 0
 
 
-def get_unmatched_receipts(limit: int = 100) -> list:
+def get_unmatched_receipts(limit: int = 100, months_back: int = 6) -> list:
     """
     未登録（取引未紐づけ）の書類一覧を取得する
+
+    Args:
+        limit: 取得件数（最大3000）
+        months_back: 何ヶ月前までのアップロード日を対象にするか
 
     Returns:
         list of receipt dicts with OCR metadata
     """
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
+
     params = {
         "company_id": FREEE_COMPANY_ID,
         "category": "without_deal",
+        "start_date": start_date,
+        "end_date": end_date,
         "limit": limit,
         "offset": 0,
     }

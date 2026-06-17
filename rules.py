@@ -338,6 +338,8 @@ def _extract_props(record: dict) -> dict:
     # PCA専用: PCA仕入高（パートナーへの支払）
     pca_shiire = get_number("PCA仕入高")
     pca_kessai_str = get_date("PCA仕入決済期日")
+    # PCA専用: パートナー取引先ID（外注業者への支払用）
+    pca_partner_id = get_number("パートナー取引先")
     # 請求有無フィールド（フォーミュラ型）
     invoice_required_str = get_formula_string("請求有無")
 
@@ -366,6 +368,7 @@ def _extract_props(record: dict) -> dict:
         "freee_purchase_id": int(freee_purchase_id) if freee_purchase_id else None,
         "pca_shiire": pca_shiire,
         "pca_kessai": parse_date(pca_kessai_str),
+        "pca_partner_id": int(pca_partner_id) if pca_partner_id else None,
         "db_type": record.get("_db_type", "honten"),
         "tanto_ca": tanto_ca,
         "jobseeker_name": jobseeker_name,
@@ -641,7 +644,7 @@ def build_journal_entries(record: dict) -> dict:
                 "memo": biko,
             }
 
-    # PCA成約管理の場合: パートナーへの支払仕訳も追加
+    # PCA成約管理の場合: パートナー（外注業者）への支払仕訳も追加
     if db_type == "pca" and p["pca_shiire"] and p["pca_shiire"] > 0:
         pca_kessai = p["pca_kessai"]
         if not pca_kessai and p["nyusha_date"]:
@@ -650,11 +653,12 @@ def build_journal_entries(record: dict) -> dict:
         base["pca_entry"] = {
             "issue_date": nyusha_date_str,
             "due_date": pca_kessai.isoformat() if pca_kessai else None,
+            "partner_id": p["pca_partner_id"],  # Notionの「パートナー取引先」フィールド
             "partner_name": None,
             "section_name": "本店：PCA",
             "details": [{
-                    "account_item_name": "PCA仕入高",
-                    "tax_code": 136,
+                "account_item_name": "PCA仕入高",
+                "tax_code": 136,
                 "amount": int(p["pca_shiire"]),
                 "description": biko,
                 "tag_names": tag_names,

@@ -33,6 +33,8 @@ from freee_client import (
     register_invoice_and_deal,
     send_invoice,
     delete_deals,
+    create_deal,
+    get_master_cache,
 )
 
 logger = logging.getLogger(__name__)
@@ -265,7 +267,8 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
 
         # ============================================================
         # 通常登録（請求書あり: 要請求の場合）
-        # 請求書のみ自動登録。仕訳は手動で「取引登録」ボタンを押す。
+        # 請求書を登録し、仕入仕訳・PCA外注支払仕訳も登録する。
+        # 売上仕訳は請求書から手動で「取引登録」ボタンを押す。
         # ============================================================
         if journal.get("needs_invoice"):
             props = _extract_props(record)
@@ -283,17 +286,46 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 return result
 
             result["invoice_id"] = inv_result["invoice_id"]
-            # deals APIは呼ばない（仕訳はfreee管理画面で手動「取引登録」ボタンを押す）
+
+            # 仕入仕訳・PCA外注支払仕訳も登録（ある場合）
+            purchase_entry = journal.get("purchase_entry")
+            pca_entry = journal.get("pca_entry")
+            if purchase_entry or pca_entry:
+                cache = get_master_cache()
+                sub_errors = []
+                if purchase_entry:
+                    try:
+                        deal = create_deal(purchase_entry, "expense", cache)
+                        result["purchase_id"] = deal.get("id")
+                    except Exception as e:
+                        sub_errors.append(f"仕入仕訳エラー: {str(e)}")
+                if pca_entry:
+                    try:
+                        deal = create_deal(pca_entry, "expense", cache)
+                        result["pca_id"] = deal.get("id")
+                    except Exception as e:
+                        sub_errors.append(f"PCA外注支払仕訳エラー: {str(e)}")
+                if sub_errors:
+                    # 請求書は登録済みだが仕入/PCAが失敗した場合はエラーとして記録
+                    error_msg = f"請求書(ID={result['invoice_id']})登録済みだが: " + " / ".join(sub_errors)
+                    mark_as_error(page_id, error_msg)
+                    result["status"] = "error"
+                    result["message"] = error_msg
+                    result["errors"] = sub_errors
+                    return result
 
             mark_as_done(page_id, current_status,
                          db_type=db_type,
                          freee_status=FREEE_STATUS_INVOICE_REGISTERED,
                          invoice_id=result["invoice_id"])
             result["status"] = "success"
-            result["message"] = (
-                f"請求書(ID={result['invoice_id']})を登録しました"
-                "（仕訳はfreee管理画面で取引登録ボタンを押してください）"
-            )
+            msg_parts = [f"請求書(ID={result['invoice_id']})を登録しました"]
+            if result.get("purchase_id"):
+                msg_parts.append(f"仕入ID={result['purchase_id']}")
+            if result.get("pca_id"):
+                msg_parts.append(f"PCA外注支払ID={result['pca_id']}")
+            msg_parts.append("（仕訳はfreee管理画面で取引登録ボタンを押してください）")
+            result["message"] = " / ".join(msg_parts)
             return result
 
         # ============================================================

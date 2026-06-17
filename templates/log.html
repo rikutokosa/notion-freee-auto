@@ -24,10 +24,10 @@
   <tbody>
     {% for log in logs %}
     <tr>
-      <td style="white-space:nowrap; font-size:12px; color:var(--text-muted);" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+      <td style="white-space:nowrap; font-size:12px; color:#888;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
       <td style="font-weight:500;">{{ log.phase or '' }}</td>
-      <td style="color:var(--text-muted);">{{ log.job_db or '' }}</td>
-      <td style="color:var(--text-muted);">{{ log.nyusha_date or '' }}</td>
+      <td style="color:#666;">{{ log.job_db or '' }}</td>
+      <td style="color:#666;">{{ log.nyusha_date or '' }}</td>
       <td>
         {% if log.action == 'register' or log.action == 'register_sales_only' %}
           <span class="badge badge-ok">仕訳登録</span>
@@ -57,23 +57,23 @@
         {% elif log.status == 'skip' %}
           <span class="badge badge-skip">⏭ スキップ</span>
         {% else %}
-          <span class="badge" style="background:var(--surface2); color:var(--text-muted);">{{ log.status }}</span>
+          <span class="badge" style="background:#e9ecef; color:#666;">{{ log.status }}</span>
         {% endif %}
       </td>
-      <td style="font-size:12px; color:var(--text-muted); max-width:300px;">
+      <td style="font-size:12px; color:#555; max-width:300px;">
         {% if log.sales_id %}
-          <span style="color:var(--green);">売上ID: {{ log.sales_id }}</span>
+          <span style="color:#155724;">売上ID: {{ log.sales_id }}</span>
         {% endif %}
         {% if log.purchase_id %}
-          <span style="color:var(--text-muted);"> / 仕入ID: {{ log.purchase_id }}</span>
+          <span style="color:#555;"> / 仕入ID: {{ log.purchase_id }}</span>
         {% endif %}
         {% if log.invoice_id %}
-          <span style="color:var(--blue);"> / 請求書ID: {{ log.invoice_id }}</span>
+          <span style="color:#004085;"> / 請求書ID: {{ log.invoice_id }}</span>
         {% endif %}
         {% if log.status == 'skip' %}
           <span style="color:#aaa;">{{ log.message[:80] }}</span>
         {% elif log.message and not log.sales_id %}
-          <span style="color:{% if log.status == 'error' %}var(--red){% else %}var(--text-muted){% endif %};">
+          <span style="color:{% if log.status == 'error' %}#721c24{% else %}#555{% endif %};">
             {{ log.message[:120] }}
           </span>
         {% endif %}

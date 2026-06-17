@@ -8,52 +8,54 @@
 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:24px;">
 
   <!-- freee認証 -->
-  <div class="card" style="padding:20px 22px;">
-    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">freee 認証</div>
+  <div class="card" style="padding:18px 22px;">
+    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">freee 認証</div>
     {% if token_ok %}
-      <div style="display:flex; align-items:center; gap:8px;">
+      <div style="display:flex; align-items:center;">
         <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
-        <span style="font-size:16px; font-weight:700; color:var(--green);">接続済み</span>
+        <span style="font-size:16px; font-weight:700; color:#28a745;">接続済み</span>
       </div>
     {% else %}
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; margin-bottom:10px;">
         <span class="status-dot dot-red"></span>
-        <span style="font-size:16px; font-weight:700; color:var(--red);">未認証</span>
+        <span style="font-size:16px; font-weight:700; color:#dc3545;">未認証</span>
       </div>
       <a href="/auth/freee" class="btn btn-danger" style="font-size:12px; padding:6px 14px;">認証する</a>
     {% endif %}
   </div>
 
   <!-- freee自動転記 -->
-  <div class="card" style="padding:20px 22px;" id="polling-status-card">
-    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">freee 自動転記</div>
-    {% if polling_active %}
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-        <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
-        <span style="font-size:16px; font-weight:700; color:var(--green);">稼働中</span>
-      </div>
-      <div style="font-size:12px; color:var(--text-muted);">{{ (poll_interval // 60) }}分ごとに自動転記</div>
-      <div style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
-    {% else %}
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-        <span class="status-dot dot-gray"></span>
-        <span style="font-size:16px; font-weight:700; color:var(--text-muted);">停止中</span>
-      </div>
-      <div style="font-size:12px; color:var(--text-muted);">手動で「再開」を押すまで停止</div>
-    {% endif %}
+  <div class="card" style="padding:18px 22px;" id="polling-status-card">
+    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">freee 自動転記</div>
+    <div id="polling-status-display">
+      {% if polling_active %}
+        <div style="display:flex; align-items:center; margin-bottom:4px;">
+          <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
+          <span style="font-size:16px; font-weight:700; color:#28a745;">稼働中</span>
+        </div>
+        <div style="font-size:12px; color:#888;">{{ (poll_interval // 60) }}分ごとに自動転記</div>
+        <div style="font-size:12px; color:#aaa; margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
+      {% else %}
+        <div style="display:flex; align-items:center; margin-bottom:4px;">
+          <span class="status-dot dot-gray"></span>
+          <span style="font-size:16px; font-weight:700; color:#888;">停止中</span>
+        </div>
+        <div style="font-size:12px; color:#aaa;">手動で「再開」を押すまで停止</div>
+      {% endif %}
+    </div>
   </div>
 
   <!-- 処理件数 -->
-  <div class="card" style="padding:20px 22px;">
-    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">処理件数（今セッション）</div>
-    <div style="font-size:36px; font-weight:700; background:linear-gradient(135deg, #6c63ff, #00d4aa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ logs|length }}</div>
+  <div class="card" style="padding:18px 22px;">
+    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">処理件数（今セッション）</div>
+    <div style="font-size:36px; font-weight:700; color:#1a1a2e;">{{ logs|length }}</div>
   </div>
 
 </div>
 
 {% if not token_ok %}
 <div class="alert alert-warning">
-  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold; color:var(--yellow);">こちらから認証</a>してください。
+  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold;">こちらから認証</a>してください。
 </div>
 {% endif %}
 
@@ -64,24 +66,24 @@
     <button class="btn btn-success" onclick="runNow('all')">▶ 全件処理（本店CA＋PCA）</button>
     <button class="btn btn-primary" onclick="runNow('honten')">本店CAのみ</button>
     <button class="btn btn-primary" onclick="runNow('pca')">PCAのみ</button>
-    <a href="/preview" class="btn btn-secondary">👁 仕訳プレビュー</a>
+    <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
     <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
 
-    <!-- 自動転記 開始/停止ボタン -->
+    <!-- 自動転記 開始/停止ボタン（JSで動的切替） -->
     {% if polling_active %}
       <button class="btn btn-danger" id="polling-btn" onclick="stopPolling()">⏸ 自動転記 停止</button>
     {% else %}
       <button class="btn btn-warning" id="polling-btn" onclick="startPolling()">▶ 自動転記 再開</button>
     {% endif %}
   </div>
-  <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap; color:var(--text-muted);"></div>
+  <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap;"></div>
 </div>
 
 <!-- 処理ログ -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
     <h2 style="margin-bottom:0;">処理ログ（直近50件）</h2>
-    <a href="/log" style="font-size:12px; color:var(--text-muted); text-decoration:none;">すべて見る →</a>
+    <a href="/log" style="font-size:12px; color:#888; text-decoration:none;">すべて見る →</a>
   </div>
   {% if logs %}
   <table>
@@ -98,10 +100,10 @@
     <tbody>
       {% for log in logs %}
       <tr>
-        <td style="white-space:nowrap; color:var(--text-muted); font-size:12px;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+        <td style="white-space:nowrap; color:#888; font-size:12px;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
         <td style="font-weight:500;">{{ log.phase or '' }}</td>
-        <td style="color:var(--text-muted);">{{ log.job_db or '' }}</td>
-        <td style="color:var(--text-muted);">{{ log.nyusha_date or '' }}</td>
+        <td style="color:#666;">{{ log.job_db or '' }}</td>
+        <td style="color:#666;">{{ log.nyusha_date or '' }}</td>
         <td>
           {% if log.status == 'success' %}
             <span class="badge badge-ok">✅ 成功</span>
@@ -114,14 +116,14 @@
           {% elif log.status == 'skip' %}
             <span class="badge badge-skip">⏭ スキップ</span>
           {% else %}
-            <span class="badge" style="background:var(--surface2); color:var(--text-muted);">{{ log.status }}</span>
+            <span class="badge" style="background:#e9ecef; color:#666;">{{ log.status }}</span>
           {% endif %}
         </td>
-        <td style="font-size:12px; color:var(--text-muted);">
+        <td style="font-size:12px; color:#666;">
           {% if log.status == 'skip' %}
-            <span style="color:var(--text-muted);">{{ log.message[:60] }}</span>
+            <span style="color:#aaa;">{{ log.message[:60] }}</span>
           {% elif log.sales_id %}
-            <span style="color:var(--green);">売上ID: {{ log.sales_id }}</span>{% if log.purchase_id %} <span style="color:var(--text-muted);">/ 仕入ID: {{ log.purchase_id }}</span>{% endif %}
+            <span style="color:#155724;">売上ID: {{ log.sales_id }}</span>{% if log.purchase_id %} <span style="color:#666;">/ 仕入ID: {{ log.purchase_id }}</span>{% endif %}
           {% elif log.message %}
             {{ log.message[:80] }}
           {% endif %}
@@ -131,7 +133,7 @@
     </tbody>
   </table>
   {% else %}
-  <div style="text-align:center; padding:40px; color:var(--text-muted);">
+  <div style="text-align:center; padding:40px; color:#888;">
     <div style="font-size:32px; margin-bottom:8px;">📭</div>
     <p>まだ処理履歴がありません。</p>
   </div>
@@ -165,7 +167,7 @@ document.querySelectorAll('.ts-cell').forEach(cell => {
 });
 
 // ============================================================
-// 次回実行時刻の表示（ポーリング稼働中のみ）
+// 次回実行時刻の表示（稼働中のみ）
 // ============================================================
 const nextRunLabel = document.getElementById('next-run-label');
 if (nextRunLabel) {
@@ -199,7 +201,7 @@ if (nextRunLabel) {
 async function runNow(dbType = 'all') {
   const res = document.getElementById('run-result');
   res.textContent = '処理中...';
-  res.style.color = 'var(--text-muted)';
+  res.style.color = '#555';
   try {
     const r = await fetch('/run', {
       method: 'POST',
@@ -220,33 +222,61 @@ async function runNow(dbType = 'all') {
         if (r.status === 'review') msg += `  ⚠️ ${r.phase}: ${r.message}\n`;
       });
       if (!data.results || data.results.length === 0) msg += '経理対応待ちのレコードはありませんでした。';
-      res.style.color = data.errors > 0 ? 'var(--red)' : 'var(--green)';
+      res.style.color = data.errors > 0 ? '#dc3545' : '#155724';
       res.textContent = msg;
     } else {
-      res.style.color = 'var(--red)';
+      res.style.color = '#dc3545';
       res.textContent = 'エラー: ' + data.message;
     }
   } catch(e) {
-    res.style.color = 'var(--red)';
+    res.style.color = '#dc3545';
     res.textContent = 'エラー: ' + e.message;
   }
   setTimeout(() => location.reload(), 4000);
 }
 
 // ============================================================
-// 自動転記 開始/停止
+// 自動転記 停止 → ボタンを即「再開」に切り替え
+// ============================================================
+async function stopPolling() {
+  const btn = document.getElementById('polling-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '停止中...'; }
+
+  try {
+    await fetch('/polling/stop', {method: 'POST'});
+  } catch(e) {}
+
+  // ボタンを「再開」に切り替え
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = '▶ 自動転記 再開';
+    btn.className = 'btn btn-warning';
+    btn.onclick = startPolling;
+  }
+
+  // ステータスカードも更新
+  const statusDiv = document.getElementById('polling-status-display');
+  if (statusDiv) {
+    statusDiv.innerHTML = `
+      <div style="display:flex; align-items:center; margin-bottom:4px;">
+        <span class="status-dot dot-gray"></span>
+        <span style="font-size:16px; font-weight:700; color:#888;">停止中</span>
+      </div>
+      <div style="font-size:12px; color:#aaa;">手動で「再開」を押すまで停止</div>
+    `;
+  }
+  // 次回実行ラベルを消す
+  const nrl = document.getElementById('next-run-label');
+  if (nrl) nrl.remove();
+}
+
+// ============================================================
+// 自動転記 再開
 // ============================================================
 async function startPolling() {
   const btn = document.getElementById('polling-btn');
   if (btn) { btn.disabled = true; btn.textContent = '開始中...'; }
   await fetch('/polling/start', {method: 'POST'});
-  location.reload();
-}
-
-async function stopPolling() {
-  const btn = document.getElementById('polling-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '停止中...'; }
-  await fetch('/polling/stop', {method: 'POST'});
   location.reload();
 }
 </script>

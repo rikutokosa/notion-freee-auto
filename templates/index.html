@@ -15,13 +15,15 @@
       <a href="/auth/freee" class="btn btn-primary" style="margin-top:8px; font-size:12px; padding:5px 12px;">freee認証する</a>
     {% endif %}
   </div>
-  <div class="card" style="padding:16px 20px;">
+  <div class="card" style="padding:16px 20px;" id="polling-status-card">
     <div style="font-size:12px; color:#888; margin-bottom:4px;">freee自動転記</div>
     {% if polling_active %}
-      <div><span class="status-dot dot-green"></span><strong style="color:#28a745;">稼働中</strong></div>
-      <div style="font-size:11px; color:#888; margin-top:4px;">１時間ごとに自動転記</div>
+      <div><span class="status-dot dot-green" style="animation:blink 1.5s infinite;"></span><strong style="color:#28a745;">稼働中 ▶</strong></div>
+      <div style="font-size:11px; color:#888; margin-top:4px;">{{ (poll_interval // 60) }}分ごとに自動転記</div>
+      <div style="font-size:11px; color:#aaa; margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
     {% else %}
-      <div><span class="status-dot dot-gray"></span><strong style="color:#888;">停止中</strong></div>
+      <div><span class="status-dot dot-gray"></span><strong style="color:#888;">停止中 ⏸</strong></div>
+      <div style="font-size:11px; color:#aaa; margin-top:4px;">自動転記は動いていません</div>
     {% endif %}
   </div>
   <div class="card" style="padding:16px 20px;">
@@ -46,9 +48,9 @@
     <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
     <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
     {% if not polling_active %}
-      <button class="btn btn-primary" onclick="startPolling()">🔄 freee自動転記開始</button>
+      <button class="btn btn-primary" id="polling-btn" onclick="startPolling()">🔄 freee自動転記 開始</button>
     {% else %}
-      <button class="btn btn-secondary" onclick="stopPolling()">⏸ freee自動転記停止</button>
+      <button class="btn btn-secondary" id="polling-btn" onclick="stopPolling()" style="background:#dc3545; color:#fff; border-color:#dc3545;">⏸ freee自動転記 停止</button>
     {% endif %}
   </div>
   <div id="run-result" style="margin-top:12px; font-size:13px; white-space:pre-wrap;"></div>
@@ -61,7 +63,7 @@
   <table>
     <thead>
       <tr>
-        <th>日時</th>
+        <th>日時（JST）</th>
         <th>求職者/フェーズ</th>
         <th>集客経路</th>
         <th>入社日</th>
@@ -72,7 +74,7 @@
     <tbody>
       {% for log in logs %}
       <tr>
-        <td style="white-space:nowrap;">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+        <td style="white-space:nowrap;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
         <td>{{ log.phase or '' }}</td>
         <td>{{ log.job_db or '' }}</td>
         <td>{{ log.nyusha_date or '' }}</td>
@@ -85,14 +87,20 @@
             <span class="badge badge-skip">👁 プレビュー</span>
           {% elif log.status == 'review' %}
             <span class="badge badge-review">⚠️ 要確認</span>
+          {% elif log.status == 'skip' %}
+            <span class="badge" style="background:#e9ecef; color:#6c757d;">⏭ スキップ</span>
           {% else %}
             <span class="badge">{{ log.status }}</span>
           {% endif %}
         </td>
         <td style="font-size:12px; color:#666;">
-          {% if log.sales_id %}売上ID: {{ log.sales_id }}{% endif %}
-          {% if log.purchase_id %} / 仕入ID: {{ log.purchase_id }}{% endif %}
-          {% if log.message and not log.sales_id %}{{ log.message[:80] }}{% endif %}
+          {% if log.status == 'skip' %}
+            <span style="color:#aaa;">{{ log.message[:60] }}</span>
+          {% elif log.sales_id %}
+            売上ID: {{ log.sales_id }}{% if log.purchase_id %} / 仕入ID: {{ log.purchase_id }}{% endif %}
+          {% elif log.message and not log.sales_id %}
+            {{ log.message[:80] }}
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -103,13 +111,93 @@
   {% endif %}
 </div>
 
+<style>
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+</style>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ============================================================
+// タイムスタンプをJST（日本時間）に変換して表示
+// ============================================================
+function toJST(isoStr) {
+  if (!isoStr) return '';
+  try {
+    // ISO文字列がZやオフセットなしの場合はUTCとして扱う
+    let s = isoStr;
+    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) {
+      s = s + 'Z';
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return isoStr.slice(0, 16);
+    return d.toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  } catch(e) {
+    return isoStr.slice(0, 16);
+  }
+}
+
+// ログテーブルの日時セルをJSTに変換
+document.querySelectorAll('.ts-cell').forEach(cell => {
+  const ts = cell.getAttribute('data-ts');
+  if (ts) cell.textContent = toJST(ts);
+});
+
+// ============================================================
+// 次回実行時刻の表示（ポーリング稼働中のみ）
+// ============================================================
+const nextRunLabel = document.getElementById('next-run-label');
+if (nextRunLabel) {
+  const pollInterval = {{ poll_interval }} * 1000;
+  // 最後のログのタイムスタンプから次回実行を推定
+  const lastTs = '{{ logs[0].timestamp if logs else "" }}';
+  let nextRun = null;
+  if (lastTs) {
+    let s = lastTs;
+    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
+    const lastDate = new Date(s);
+    if (!isNaN(lastDate.getTime())) {
+      nextRun = new Date(lastDate.getTime() + pollInterval);
+    }
+  }
+  if (!nextRun) {
+    nextRun = new Date(Date.now() + pollInterval);
+  }
+
+  function updateNextRunLabel() {
+    const now = new Date();
+    const diff = nextRun - now;
+    if (diff <= 0) {
+      nextRunLabel.textContent = '次回実行: まもなく';
+      return;
+    }
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    const jstStr = nextRun.toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      hour: '2-digit', minute: '2-digit'
+    });
+    nextRunLabel.textContent = `次回実行: ${jstStr}（あと${mins}分${secs}秒）`;
+  }
+  updateNextRunLabel();
+  setInterval(updateNextRunLabel, 1000);
+}
+
+// ============================================================
+// 全件処理
+// ============================================================
 async function runNow(dbType = 'all') {
   const res = document.getElementById('run-result');
   res.textContent = '処理中...';
+  res.style.color = '#555';
   try {
     const r = await fetch('/run', {
       method:'POST',
@@ -118,10 +206,12 @@ async function runNow(dbType = 'all') {
     });
     const data = await r.json();
     if (data.status === 'ok') {
+      const skips = (data.results || []).filter(r => r.status === 'skip').length;
       let msg = `処理完了: ${data.total}件\n`;
       if (data.success) msg += `✅ 成功: ${data.success}件\n`;
       if (data.reviews) msg += `⚠️ 要確認: ${data.reviews}件\n`;
       if (data.errors) msg += `❌ エラー: ${data.errors}件\n`;
+      if (skips) msg += `⏭ スキップ（請求不要）: ${skips}件\n`;
       (data.results || []).forEach(r => {
         if (r.status === 'success') msg += `  ✅ ${r.phase}: ${r.message}\n`;
         if (r.status === 'error') msg += `  ❌ ${r.phase}: ${r.message}\n`;
@@ -142,11 +232,15 @@ async function runNow(dbType = 'all') {
 }
 
 async function startPolling() {
+  const btn = document.getElementById('polling-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '開始中...'; }
   await fetch('/polling/start', {method:'POST'});
   location.reload();
 }
 
 async function stopPolling() {
+  const btn = document.getElementById('polling-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '停止中...'; }
   await fetch('/polling/stop', {method:'POST'});
   location.reload();
 }

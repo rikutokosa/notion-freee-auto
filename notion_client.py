@@ -387,6 +387,25 @@ def clear_error(page_id: str) -> bool:
                 "rich_text": []
             },
             "freee処理状態": {
+                "select": None  # クリア（空欄に戻す）
+            }
+        }
+    }
+    resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    return resp.status_code == 200
+
+
+def clear_error_set_processing(page_id: str) -> bool:
+    """
+    エラー内容をクリアして「処理中」にセットする（実際の処理開始前に呼ぶ）
+    """
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    payload = {
+        "properties": {
+            "エラー内容": {
+                "rich_text": []
+            },
+            "freee処理状態": {
                 "select": {"name": FREEE_STATUS_PROCESSING}
             }
         }

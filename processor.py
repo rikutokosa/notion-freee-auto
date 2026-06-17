@@ -22,6 +22,7 @@ from notion_client import (
     mark_as_done,
     mark_as_error,
     clear_error,
+    clear_error_set_processing,
     FREEE_STATUS_SHIWAKE_SUCCESS,
     FREEE_STATUS_INVOICE_REGISTERED,
     FREEE_STATUS_INVOICE_SUCCESS,
@@ -149,6 +150,17 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         db_type = record.get("_db_type", "honten")
 
         # ============================================================
+        # スキップ（入社済・請求不要など）
+        # ============================================================
+        if journal["action"] == "skip":
+            result["status"] = "skip"
+            result["message"] = journal["message"]
+            # Notionのエラー状態をクリア（エラーになっていた場合は解除）
+            if not dry_run:
+                clear_error(page_id)
+            return result
+
+        # ============================================================
         # 手動確認が必要なケース
         # ============================================================
         if journal["action"] in ("review", "error"):
@@ -167,7 +179,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             return result
 
         # 処理中マーク
-        clear_error(page_id)
+        clear_error_set_processing(page_id)
 
         # ============================================================
         # 入社前辞退: 取引を削除

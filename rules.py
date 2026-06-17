@@ -527,8 +527,9 @@ def build_journal_entries(record: dict) -> dict:
         # 請求有無を確認（フォーミュラフィールドまたはRULESで判定）
         invoice_required = _is_invoice_required(p, job_db)
         if not invoice_required:
-            base["action"] = "review"
-            base["message"] = "入社済ですが、請求不要のため請求書送付をスキップします。手動で確認してください。"
+            # 請求不要の場合は何もしない（スキップ）
+            base["action"] = "skip"
+            base["message"] = "入社済・請求不要のためスキップ"
             return base
 
         base["action"] = "send_invoice"

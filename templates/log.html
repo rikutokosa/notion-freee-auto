@@ -12,7 +12,7 @@
 <table style="width:100%; border-collapse:collapse; font-size:13px;">
   <thead>
     <tr style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
-      <th style="padding:10px 8px; text-align:left;">日時</th>
+      <th style="padding:10px 8px; text-align:left;">日時（JST）</th>
       <th style="padding:10px 8px; text-align:left;">フェーズ（求職者）</th>
       <th style="padding:10px 8px; text-align:left;">求人DB</th>
       <th style="padding:10px 8px; text-align:left;">入社日</th>
@@ -24,8 +24,8 @@
   <tbody>
     {% for log in logs %}
     <tr style="border-bottom:1px solid #dee2e6; {% if loop.index is odd %}background:#fff;{% else %}background:#f8f9fa;{% endif %}">
-      <td style="padding:8px; white-space:nowrap; font-size:11px; color:#666;">
-        {{ log.timestamp[:19].replace('T', ' ') if log.timestamp else '' }}
+      <td style="padding:8px; white-space:nowrap; font-size:11px; color:#666;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">
+        {{ log.timestamp[:16] if log.timestamp else '' }}
       </td>
       <td style="padding:8px; font-weight:500;">{{ log.phase or '' }}</td>
       <td style="padding:8px; font-size:12px; color:#555;">{{ log.job_db or '' }}</td>
@@ -39,6 +39,10 @@
           <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">返金処理</span>
         {% elif log.action == 'review' %}
           <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">要確認</span>
+        {% elif log.action == 'send_invoice' %}
+          <span style="background:#cce5ff; color:#004085; padding:2px 8px; border-radius:4px; font-size:11px;">請求書送付</span>
+        {% elif log.action == 'skip' %}
+          <span style="background:#e9ecef; color:#6c757d; padding:2px 8px; border-radius:4px; font-size:11px;">スキップ</span>
         {% else %}
           <span style="background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:4px; font-size:11px;">{{ log.action or '-' }}</span>
         {% endif %}
@@ -52,6 +56,8 @@
           <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">⚠️ 要確認</span>
         {% elif log.status == 'dry_run' %}
           <span style="background:#cce5ff; color:#004085; padding:2px 8px; border-radius:4px; font-size:11px;">👁 プレビュー</span>
+        {% elif log.status == 'skip' %}
+          <span style="background:#e9ecef; color:#6c757d; padding:2px 8px; border-radius:4px; font-size:11px;">⏭ スキップ</span>
         {% else %}
           <span style="background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:4px; font-size:11px;">{{ log.status }}</span>
         {% endif %}
@@ -66,7 +72,9 @@
         {% if log.invoice_id %}
           <span style="color:#004085;"> / 請求書ID: {{ log.invoice_id }}</span>
         {% endif %}
-        {% if log.message and not log.sales_id %}
+        {% if log.status == 'skip' %}
+          <span style="color:#aaa;">{{ log.message[:80] }}</span>
+        {% elif log.message and not log.sales_id %}
           <span style="color:{% if log.status == 'error' %}#721c24{% else %}#555{% endif %};">
             {{ log.message[:120] }}
           </span>
@@ -90,4 +98,27 @@
   <a href="/" style="display:inline-block; margin-top:16px; padding:10px 24px; background:#007bff; color:#fff; border-radius:6px; text-decoration:none;">ダッシュボードへ</a>
 </div>
 {% endif %}
+
+{% block scripts %}
+<script>
+function toJST(isoStr) {
+  if (!isoStr) return '';
+  try {
+    let s = isoStr;
+    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return isoStr.slice(0, 16);
+    return d.toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  } catch(e) { return isoStr.slice(0, 16); }
+}
+document.querySelectorAll('.ts-cell').forEach(cell => {
+  const ts = cell.getAttribute('data-ts');
+  if (ts) cell.textContent = toJST(ts);
+});
+</script>
+{% endblock %}
 {% endblock %}

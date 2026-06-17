@@ -56,17 +56,39 @@ app.secret_key = os.environ.get("SECRET_KEY", "notion-freee-secret-2026")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
 
 # ============================================================
-# バックグラウンドポーリング
+# バックグラウンド自動転記
 # ============================================================
 _polling_thread = None
 _polling_active = False
 
+# 停止フラグの永続化ファイル（停止中はこのファイルが存在する）
+_STOP_FLAG_FILE = Path("/tmp/freee_auto_stopped.flag")
 
-def start_polling():
+
+def _is_manually_stopped() -> bool:
+    """ユーザーが手動で停止した状態かどうかを返す"""
+    return _STOP_FLAG_FILE.exists()
+
+
+def _set_manually_stopped(stopped: bool):
+    """停止フラグを設定/解除する"""
+    if stopped:
+        _STOP_FLAG_FILE.touch()
+    else:
+        _STOP_FLAG_FILE.unlink(missing_ok=True)
+
+
+def start_polling(force: bool = False):
+    """自動転記を開始する。force=Trueの場合は手動停止フラグを無視して開始。"""
     global _polling_thread, _polling_active
+    # 手動停止中は開始しない（forceの場合のみ例外）
+    if not force and _is_manually_stopped():
+        logger.info("自動転記: 手動停止中のため自動開始をスキップ")
+        return
     if _polling_thread and _polling_thread.is_alive():
         return
     _polling_active = True
+    _set_manually_stopped(False)
 
     def loop():
         import time
@@ -197,7 +219,8 @@ def auth_freee_callback():
         if base_url:
             redirect_uri = f"{base_url}/auth/freee/callback"
         exchange_code_for_token(code, redirect_uri)
-        start_polling()
+        # 手動停止中の場合は自動開始しない
+        start_polling(force=False)
         return redirect(url_for("index"))
     except Exception as e:
         logger.exception("トークン取得エラー")
@@ -251,15 +274,18 @@ def run_single():
 
 @app.route("/polling/start", methods=["POST"])
 def polling_start():
-    start_polling()
+    """freee自動転記を手動で開始（手動停止フラグをクリアして強制開始）"""
+    start_polling(force=True)
     return jsonify({"status": "ok", "message": "freee自動転記開始"})
 
 
 @app.route("/polling/stop", methods=["POST"])
 def polling_stop():
+    """freee自動転記を手動停止（フラグをファイルに保存して再認証後も自動開始しない）"""
     global _polling_active
     _polling_active = False
-    return jsonify({"status": "ok", "message": "freee自動転記停止（再起動まで）"})
+    _set_manually_stopped(True)
+    return jsonify({"status": "ok", "message": "freee自動転記を停止しました。手動で「自動転記開始」を押すまで停止します。"})
 
 
 # ============================================================
@@ -392,6 +418,7 @@ def api_status():
     return jsonify({
         "token_ok": token_ok,
         "polling_active": _polling_thread is not None and _polling_thread.is_alive(),
+        "manually_stopped": _is_manually_stopped(),
         "log_count": len(processing_log),
         "poll_interval": POLL_INTERVAL,
     })

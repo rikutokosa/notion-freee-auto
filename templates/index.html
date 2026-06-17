@@ -61,6 +61,17 @@
   <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap;"></div>
 </div>
 
+<!-- 書類照合 -->
+<div class="card" style="border-left:4px solid #4a90d9;">
+  <h2 style="margin-bottom:6px;">📎 freee書類照合</h2>
+  <p style="font-size:13px; color:#666; margin-bottom:14px;">freeeのファイルボックスにある未登録書類を、既存の仕訳と自動照合・紐づけします。<br>金額・発行日・取引先名をもとに最も一致する仕訳を選んで紐づけます。</p>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+    <button class="btn btn-primary" onclick="runMatching(false)" id="btn-match">🔗 書類を照合する</button>
+    <button class="btn btn-secondary" onclick="runMatching(true)" id="btn-match-dry">👁 照合プレビュー（紐づけしない）</button>
+  </div>
+  <div id="match-result" style="margin-top:14px;"></div>
+</div>
+
 <!-- 処理ログ -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -187,6 +198,107 @@ async function runNow(dbType = 'all') {
 
   if (statusText) { statusText.textContent = '待機中'; statusText.style.color = '#4a90d9'; }
   setTimeout(() => location.reload(), 4000);
+}
+
+// ============================================================
+// 書類照合
+// ============================================================
+async function runMatching(dryRun = false) {
+  const resultDiv = document.getElementById('match-result');
+  const btnMatch = document.getElementById('btn-match');
+  const btnDry = document.getElementById('btn-match-dry');
+
+  resultDiv.innerHTML = '<div style="color:#555; font-size:13px;">照合中...（数秒かかる場合があります）</div>';
+  if (btnMatch) btnMatch.disabled = true;
+  if (btnDry) btnDry.disabled = true;
+
+  try {
+    const r = await fetch('/api/match_receipts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: dryRun})
+    });
+    const data = await r.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${data.error}</div>`;
+      return;
+    }
+
+    let html = '';
+    const modeLabel = dryRun ? 'プレビュー（未紐づけ）' : '実行済み';
+    html += `<div style="font-size:13px; margin-bottom:12px;">`;
+    html += `<strong>対象書類: ${data.total_receipts}件</strong>　`;
+    html += `<span style="color:#28a745;">✅ 照合成功: ${data.matched_count}件</span>　`;
+    html += `<span style="color:#888;">✕ 未照合: ${data.unmatched_count}件</span>`;
+    if (dryRun) html += `　<span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">プレビューモード</span>`;
+    html += `</div>`;
+
+    // 照合成功一覧
+    if (data.matched && data.matched.length > 0) {
+      html += `<div style="margin-bottom:12px;">`;
+      html += `<div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#155724;">✅ 照合成功 (${data.matched.length}件)</div>`;
+      html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
+      html += `<thead><tr style="background:#f8f9fa;">`;
+      html += `<th style="padding:6px 8px; text-align:left; border-bottom:1px solid #dee2e6;">書類ID</th>`;
+      html += `<th style="padding:6px 8px; text-align:left; border-bottom:1px solid #dee2e6;">書類内容</th>`;
+      html += `<th style="padding:6px 8px; text-align:right; border-bottom:1px solid #dee2e6;">金額</th>`;
+      html += `<th style="padding:6px 8px; text-align:left; border-bottom:1px solid #dee2e6;">発行日</th>`;
+      html += `<th style="padding:6px 8px; text-align:left; border-bottom:1px solid #dee2e6;">紐づけ先仕訳</th>`;
+      html += `<th style="padding:6px 8px; text-align:left; border-bottom:1px solid #dee2e6;">状態</th>`;
+      html += `</tr></thead><tbody>`;
+      data.matched.forEach(m => {
+        const statusBadge = m.attached
+          ? '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:3px;">紐づけ済</span>'
+          : '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:3px;">未紐づけ</span>';
+        html += `<tr style="border-bottom:1px solid #f0f0f0;">`;
+        html += `<td style="padding:6px 8px;">#${m.receipt_id}</td>`;
+        html += `<td style="padding:6px 8px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${m.receipt_description || ''}">` +
+          `${m.receipt_partner || m.receipt_description || '-'}</td>`;
+        html += `<td style="padding:6px 8px; text-align:right;">￥${(m.receipt_amount || 0).toLocaleString()}</td>`;
+        html += `<td style="padding:6px 8px;">${m.receipt_date || '-'}</td>`;
+        html += `<td style="padding:6px 8px;">ID:${m.deal_id} ${m.deal_partner || ''} (${m.deal_date || ''})</td>`;
+        html += `<td style="padding:6px 8px;">${statusBadge}</td>`;
+        html += `</tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+
+    // 未照合一覧
+    if (data.unmatched && data.unmatched.length > 0) {
+      html += `<details style="margin-top:8px;">`;
+      html += `<summary style="font-weight:600; font-size:13px; color:#856404; cursor:pointer;">⚠️ 未照合 (${data.unmatched.length}件) — クリックで詳細表示</summary>`;
+      html += `<table style="width:100%; font-size:12px; border-collapse:collapse; margin-top:8px;">`;
+      html += `<thead><tr style="background:#fff3cd;"><th style="padding:6px 8px; text-align:left;">書類ID</th><th style="padding:6px 8px; text-align:left;">内容</th><th style="padding:6px 8px; text-align:right;">金額</th><th style="padding:6px 8px; text-align:left;">発行日</th><th style="padding:6px 8px; text-align:left;">未照合理由</th></tr></thead><tbody>`;
+      data.unmatched.forEach(u => {
+        html += `<tr style="border-bottom:1px solid #f0f0f0;">`;
+        html += `<td style="padding:6px 8px;">#${u.receipt_id}</td>`;
+        html += `<td style="padding:6px 8px;">${u.partner_name || u.description || '-'}</td>`;
+        html += `<td style="padding:6px 8px; text-align:right;">${u.amount ? '￥' + u.amount.toLocaleString() : '-'}</td>`;
+        html += `<td style="padding:6px 8px;">${u.issue_date || '-'}</td>`;
+        html += `<td style="padding:6px 8px; color:#856404;">${u.reason}</td>`;
+        html += `</tr>`;
+      });
+      html += `</tbody></table></details>`;
+    }
+
+    // エラー
+    if (data.errors && data.errors.length > 0) {
+      html += `<div style="margin-top:8px; color:#dc3545; font-size:12px;">`;
+      html += `<strong>エラー:</strong> ${data.errors.join('<br>')}</div>`;
+    }
+
+    if (!data.total_receipts) {
+      html = '<div style="color:#888; font-size:13px;">未登録の書類はありませんでした。</div>';
+    }
+
+    resultDiv.innerHTML = html;
+  } catch(e) {
+    resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
+  } finally {
+    if (btnMatch) btnMatch.disabled = false;
+    if (btnDry) btnDry.disabled = false;
+  }
 }
 </script>
 {% endblock %}

@@ -34,6 +34,7 @@ from freee_client import (
     get_sections, get_tags, get_account_items, get_partners,
     create_deal, upload_receipt,
 )
+from matcher import run_matching
 from notion_client import fetch_pending_records, get_record
 from rules import build_journal_entries
 from processor import run_once, process_single_by_id, processing_log
@@ -424,6 +425,24 @@ def api_status():
 def api_refresh_cache():
     clear_master_cache()
     return jsonify({"message": "マスタキャッシュをクリアしました"})
+
+
+# ============================================================
+# 書類照合
+# ============================================================
+@app.route("/api/match_receipts", methods=["POST"])
+def api_match_receipts():
+    """
+    freeeファイルボックスの未登録書類を既存仕訳と自動照合・紐づけする
+    """
+    data = request.get_json() or {}
+    dry_run = data.get("dry_run", False)
+    try:
+        result = run_matching(dry_run=dry_run)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("書類照合エラー")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/iv_companies")

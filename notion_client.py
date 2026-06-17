@@ -35,7 +35,7 @@ PENDING_STATUSES_HONTEN = [
 PENDING_STATUSES_PCA = [
     "本部確認済",
     "入社前辞退",
-    "返金発生",
+    "●返金（短期離職）",
 ]
 
 # 処理完了後のステータスマッピング（本店CA）
@@ -50,7 +50,7 @@ STATUS_DONE_MAP_HONTEN = {
 STATUS_DONE_MAP_PCA = {
     "本部確認済": "承諾→freee登録済",
     "入社前辞退": "入社前辞退→freee更新済",
-    "返金発生": "返金→freee・請求書更新済",
+    "●返金（短期離職）": "返金→freee・請求書更新済",
 }
 
 # freee処理状態の値（Notionのselectオプション名と一致させること）
@@ -146,19 +146,27 @@ def fetch_pending_records(db_type: str = "honten") -> list[dict]:
 
     db_type: "honten" | "pca" | "all"
     """
+    import logging
+    logger = logging.getLogger(__name__)
     records = []
 
     if db_type in ("honten", "all"):
-        honten = _query_db(NOTION_DB_ID_HONTEN, PENDING_STATUSES_HONTEN)
-        for r in honten:
-            r["_db_type"] = "honten"
-        records.extend(honten)
+        try:
+            honten = _query_db(NOTION_DB_ID_HONTEN, PENDING_STATUSES_HONTEN)
+            for r in honten:
+                r["_db_type"] = "honten"
+            records.extend(honten)
+        except Exception as e:
+            logger.error(f"本店CA DBクエリ失敗: {e}")
 
     if db_type in ("pca", "all"):
-        pca = _query_db(NOTION_DB_ID_PCA, PENDING_STATUSES_PCA)
-        for r in pca:
-            r["_db_type"] = "pca"
-        records.extend(pca)
+        try:
+            pca = _query_db(NOTION_DB_ID_PCA, PENDING_STATUSES_PCA)
+            for r in pca:
+                r["_db_type"] = "pca"
+            records.extend(pca)
+        except Exception as e:
+            logger.error(f"PCA DBクエリ失敗: {e}")
 
     return records
 
@@ -168,23 +176,31 @@ def fetch_pending_manual_journal_records(db_type: str = "all") -> list[dict]:
     freee処理状態が「請求登録成功（要仕訳転記）」のレコードを取得する
     （freee管理画面で手動「取引登録」ボタンを押す必要があるレコード）
     """
+    import logging
+    logger = logging.getLogger(__name__)
     records = []
 
     if db_type in ("honten", "all"):
-        honten = _query_db_by_freee_status(
-            NOTION_DB_ID_HONTEN, FREEE_STATUS_INVOICE_REGISTERED
-        )
-        for r in honten:
-            r["_db_type"] = "honten"
-        records.extend(honten)
+        try:
+            honten = _query_db_by_freee_status(
+                NOTION_DB_ID_HONTEN, FREEE_STATUS_INVOICE_REGISTERED
+            )
+            for r in honten:
+                r["_db_type"] = "honten"
+            records.extend(honten)
+        except Exception as e:
+            logger.error(f"本店CA DB(要仕訳転記)クエリ失敗: {e}")
 
     if db_type in ("pca", "all"):
-        pca = _query_db_by_freee_status(
-            NOTION_DB_ID_PCA, FREEE_STATUS_INVOICE_REGISTERED
-        )
-        for r in pca:
-            r["_db_type"] = "pca"
-        records.extend(pca)
+        try:
+            pca = _query_db_by_freee_status(
+                NOTION_DB_ID_PCA, FREEE_STATUS_INVOICE_REGISTERED
+            )
+            for r in pca:
+                r["_db_type"] = "pca"
+            records.extend(pca)
+        except Exception as e:
+            logger.error(f"PCA DB(要仕訳転記)クエリ失敗: {e}")
 
     return records
 

@@ -219,9 +219,15 @@ def get_rule(job_db_value: str) -> Optional[dict]:
     if job_db_value in RULES:
         return RULES[job_db_value]
 
-    # 部分一致（キーが含まれているか、または値がキーに含まれているか）
+    # 大文字小文字無視で完全一致
+    lower_val = job_db_value.lower()
     for key, rule in RULES.items():
-        if key in job_db_value or job_db_value in key:
+        if key.lower() == lower_val:
+            return rule
+
+    # 部分一致（大文字小文字無視）
+    for key, rule in RULES.items():
+        if key.lower() in lower_val or lower_val in key.lower():
             return rule
 
     return None
@@ -318,36 +324,64 @@ def _extract_props(record: dict) -> dict:
             return None
 
     phase = get_title("フェーズ")
-    tanto_ca = get_rollup_select("担当CA")
+    db_type = record.get("_db_type", "honten")
+
+    # 担当: 本店CAはrollup「担当CA」、PCAはselect「担当パートナー」
+    if db_type == "pca":
+        tanto_ca = get_select("担当パートナー")
+    else:
+        tanto_ca = get_rollup_select("担当CA")
+
     job_db = get_select("求人データベース")
-    shukyaku_keiro = get_rollup_select("集客経路")  # rollupから取得
+
+    # 集客経路: 本店CAはrollup、PCAはselect
+    if db_type == "pca":
+        shukyaku_keiro = get_select("集客経路")
+    else:
+        shukyaku_keiro = get_rollup_select("集客経路")
+
     current_status = get_select("請求ステータス")
     nyusha_str = get_date("入社日")
     seiyaku_str = get_date("成約日")
     zeinuki_uriage = get_number("税抜売上")
     zeinuki_shukyaku = get_number("税抜集客手数料")
     uriage_kessai_str = get_date("売上決済期日")
-    shiire_kessai_str = get_date("仕入決済期日")
-    henkin_ritsu_raw = get_number("返金率")
+
+    # 仕入決済期日: PCA DBは末尾にスペースあり
+    shiire_kessai_str = get_date("仕入決済期日") or get_date("仕入決済期日 ")
+
+    henkin_ritsu_raw = get_number("返金料率") if db_type == "pca" else get_number("返金率")
     # 返金後入金売上（返金後の実際の売上額）
     henkin_go_uriage = get_number("返金後入金売上")
     henkin_go_shukyaku = get_number("返金後集客手数料")
     # freee取引先ID（売上側・仕入側） - 請求書・仕訳登録時のpartner_idとして使用
     freee_sales_id = get_number("freee売上取引ID")
     freee_purchase_id = get_number("freee支出取引ID")
-    # PCA専用: PCA仕入高（パートナーへの支払）
-    pca_shiire = get_number("PCA仕入高")
-    pca_kessai_str = get_date("PCA仕入決済期日")
+    # PCA専用: パートナーへの支払額（「受取報酬料（税込）」を使用）
+    pca_shiire = get_number("受取報酬料（税込）") if db_type == "pca" else get_number("PCA仕入高")
+    # PCA専用: パートナー決済期日（末尾スペースあり）
+    pca_kessai_str = get_date("パートナー決済期日 ") if db_type == "pca" else get_date("PCA仕入決済期日")
     # PCA専用: パートナー取引先ID（外注業者への支払用）
     pca_partner_id = get_number("パートナー取引先")
     # 請求有無フィールド（フォーミュラ型）
     invoice_required_str = get_formula_string("請求有無")
 
-    # 求職者名を取得（relationから別ページを参照）
+    # 求職者名を取得
     from notion_client import get_jobseeker_name, get_company_name
-    jobseeker_name = get_jobseeker_name(record)
-    # 入社企業名を取得（決定企業（DB）relationから）
-    company_name = get_company_name(record)
+    if db_type == "pca":
+        # PCA: 「求職者」はtitle型なので直接取得
+        jobseeker_name = get_title("求職者")
+    else:
+        # 本店CA: 「求職者」はrelation型なので別ページ参照
+        jobseeker_name = get_jobseeker_name(record)
+
+    # 入社企業名を取得
+    if db_type == "pca":
+        # PCA: 「決定企業」はrich_text型なので直接取得
+        company_name = get_rich_text("決定企業")
+    else:
+        # 本店CA: 「決定企業」はrelation型なので別ページ参照
+        company_name = get_company_name(record)
 
     return {
         "phase": phase,

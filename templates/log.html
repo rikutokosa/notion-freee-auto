@@ -3,79 +3,77 @@
 
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-  <h2 style="margin:0;">📋 処理ログ</h2>
-  <a href="/" style="text-decoration:none; color:#666; font-size:14px;">← ダッシュボードに戻る</a>
+  <h2 style="margin:0; font-size:20px; font-weight:700;">📋 処理ログ</h2>
+  <a href="/" style="text-decoration:none; color:var(--text-muted); font-size:13px;">← ダッシュボードに戻る</a>
 </div>
 
 {% if logs %}
-<p style="color:#666; font-size:13px;">直近 {{ logs|length }} 件の処理結果</p>
-<table style="width:100%; border-collapse:collapse; font-size:13px;">
+<p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">直近 {{ logs|length }} 件の処理結果</p>
+<table>
   <thead>
-    <tr style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
-      <th style="padding:10px 8px; text-align:left;">日時（JST）</th>
-      <th style="padding:10px 8px; text-align:left;">フェーズ（求職者）</th>
-      <th style="padding:10px 8px; text-align:left;">求人DB</th>
-      <th style="padding:10px 8px; text-align:left;">入社日</th>
-      <th style="padding:10px 8px; text-align:left;">処理</th>
-      <th style="padding:10px 8px; text-align:left;">結果</th>
-      <th style="padding:10px 8px; text-align:left;">詳細</th>
+    <tr>
+      <th>日時（JST）</th>
+      <th>フェーズ（求職者）</th>
+      <th>求人DB</th>
+      <th>入社日</th>
+      <th>処理</th>
+      <th>結果</th>
+      <th>詳細</th>
     </tr>
   </thead>
   <tbody>
     {% for log in logs %}
-    <tr style="border-bottom:1px solid #dee2e6; {% if loop.index is odd %}background:#fff;{% else %}background:#f8f9fa;{% endif %}">
-      <td style="padding:8px; white-space:nowrap; font-size:11px; color:#666;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">
-        {{ log.timestamp[:16] if log.timestamp else '' }}
-      </td>
-      <td style="padding:8px; font-weight:500;">{{ log.phase or '' }}</td>
-      <td style="padding:8px; font-size:12px; color:#555;">{{ log.job_db or '' }}</td>
-      <td style="padding:8px; font-size:12px; color:#555;">{{ log.nyusha_date or '' }}</td>
-      <td style="padding:8px;">
+    <tr>
+      <td style="white-space:nowrap; font-size:12px; color:var(--text-muted);" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+      <td style="font-weight:500;">{{ log.phase or '' }}</td>
+      <td style="color:var(--text-muted);">{{ log.job_db or '' }}</td>
+      <td style="color:var(--text-muted);">{{ log.nyusha_date or '' }}</td>
+      <td>
         {% if log.action == 'register' or log.action == 'register_sales_only' %}
-          <span style="background:#d4edda; color:#155724; padding:2px 8px; border-radius:4px; font-size:11px;">仕訳登録</span>
+          <span class="badge badge-ok">仕訳登録</span>
         {% elif log.action == 'delete' %}
-          <span style="background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:4px; font-size:11px;">取引削除</span>
+          <span class="badge badge-error">取引削除</span>
         {% elif log.action == 'refund' %}
-          <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">返金処理</span>
+          <span class="badge badge-review">返金処理</span>
         {% elif log.action == 'review' %}
-          <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">要確認</span>
+          <span class="badge badge-review">要確認</span>
         {% elif log.action == 'send_invoice' %}
-          <span style="background:#cce5ff; color:#004085; padding:2px 8px; border-radius:4px; font-size:11px;">請求書送付</span>
+          <span class="badge badge-skip">請求書送付</span>
         {% elif log.action == 'skip' %}
-          <span style="background:#e9ecef; color:#6c757d; padding:2px 8px; border-radius:4px; font-size:11px;">スキップ</span>
+          <span class="badge badge-skip">スキップ</span>
         {% else %}
-          <span style="background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:4px; font-size:11px;">{{ log.action or '-' }}</span>
+          <span class="badge" style="background:var(--surface2); color:var(--text-muted);">{{ log.action or '-' }}</span>
         {% endif %}
       </td>
-      <td style="padding:8px;">
+      <td>
         {% if log.status == 'success' %}
-          <span style="background:#d4edda; color:#155724; padding:2px 8px; border-radius:4px; font-size:11px;">✅ 成功</span>
+          <span class="badge badge-ok">✅ 成功</span>
         {% elif log.status == 'error' %}
-          <span style="background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:4px; font-size:11px;">❌ エラー</span>
+          <span class="badge badge-error">❌ エラー</span>
         {% elif log.status == 'review' %}
-          <span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px; font-size:11px;">⚠️ 要確認</span>
+          <span class="badge badge-review">⚠️ 要確認</span>
         {% elif log.status == 'dry_run' %}
-          <span style="background:#cce5ff; color:#004085; padding:2px 8px; border-radius:4px; font-size:11px;">👁 プレビュー</span>
+          <span class="badge badge-skip">👁 プレビュー</span>
         {% elif log.status == 'skip' %}
-          <span style="background:#e9ecef; color:#6c757d; padding:2px 8px; border-radius:4px; font-size:11px;">⏭ スキップ</span>
+          <span class="badge badge-skip">⏭ スキップ</span>
         {% else %}
-          <span style="background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:4px; font-size:11px;">{{ log.status }}</span>
+          <span class="badge" style="background:var(--surface2); color:var(--text-muted);">{{ log.status }}</span>
         {% endif %}
       </td>
-      <td style="padding:8px; font-size:11px; color:#555; max-width:300px;">
+      <td style="font-size:12px; color:var(--text-muted); max-width:300px;">
         {% if log.sales_id %}
-          <span style="color:#155724;">売上ID: {{ log.sales_id }}</span>
+          <span style="color:var(--green);">売上ID: {{ log.sales_id }}</span>
         {% endif %}
         {% if log.purchase_id %}
-          <span style="color:#155724;"> / 仕入ID: {{ log.purchase_id }}</span>
+          <span style="color:var(--text-muted);"> / 仕入ID: {{ log.purchase_id }}</span>
         {% endif %}
         {% if log.invoice_id %}
-          <span style="color:#004085;"> / 請求書ID: {{ log.invoice_id }}</span>
+          <span style="color:var(--blue);"> / 請求書ID: {{ log.invoice_id }}</span>
         {% endif %}
         {% if log.status == 'skip' %}
           <span style="color:#aaa;">{{ log.message[:80] }}</span>
         {% elif log.message and not log.sales_id %}
-          <span style="color:{% if log.status == 'error' %}#721c24{% else %}#555{% endif %};">
+          <span style="color:{% if log.status == 'error' %}var(--red){% else %}var(--text-muted){% endif %};">
             {{ log.message[:120] }}
           </span>
         {% endif %}
@@ -92,10 +90,11 @@
   </tbody>
 </table>
 {% else %}
-<div style="text-align:center; padding:60px; color:#888;">
-  <p style="font-size:16px;">まだ処理履歴がありません。</p>
-  <p style="font-size:13px;">ダッシュボードから「今すぐ処理」を実行すると、ここに結果が表示されます。</p>
-  <a href="/" style="display:inline-block; margin-top:16px; padding:10px 24px; background:#007bff; color:#fff; border-radius:6px; text-decoration:none;">ダッシュボードへ</a>
+<div style="text-align:center; padding:60px; color:var(--text-muted);">
+  <div style="font-size:40px; margin-bottom:12px;">📭</div>
+  <p style="font-size:15px;">まだ処理履歴がありません。</p>
+  <p style="font-size:13px; margin-top:6px;">ダッシュボードから「今すぐ処理」を実行すると、ここに結果が表示されます。</p>
+  <a href="/" class="btn btn-primary" style="margin-top:20px;">ダッシュボードへ</a>
 </div>
 {% endif %}
 

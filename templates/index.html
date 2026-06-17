@@ -2,69 +2,93 @@
 {% block title %}ダッシュボード - Notion→freee{% endblock %}
 {% block content %}
 
-<h1 style="font-size:22px; font-weight:bold; margin-bottom:20px;">ダッシュボード</h1>
+<h1 class="page-title">ダッシュボード</h1>
 
 <!-- ステータスカード -->
-<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:20px;">
-  <div class="card" style="padding:16px 20px;">
-    <div style="font-size:12px; color:#888; margin-bottom:4px;">freee認証</div>
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:24px;">
+
+  <!-- freee認証 -->
+  <div class="card" style="padding:20px 22px;">
+    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">freee 認証</div>
     {% if token_ok %}
-      <div><span class="status-dot dot-green"></span><strong style="color:#28a745;">接続済み</strong></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
+        <span style="font-size:16px; font-weight:700; color:var(--green);">接続済み</span>
+      </div>
     {% else %}
-      <div><span class="status-dot dot-red"></span><strong style="color:#dc3545;">未認証</strong></div>
-      <a href="/auth/freee" class="btn btn-primary" style="margin-top:8px; font-size:12px; padding:5px 12px;">freee認証する</a>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+        <span class="status-dot dot-red"></span>
+        <span style="font-size:16px; font-weight:700; color:var(--red);">未認証</span>
+      </div>
+      <a href="/auth/freee" class="btn btn-danger" style="font-size:12px; padding:6px 14px;">認証する</a>
     {% endif %}
   </div>
-  <div class="card" style="padding:16px 20px;" id="polling-status-card">
-    <div style="font-size:12px; color:#888; margin-bottom:4px;">freee自動転記</div>
+
+  <!-- freee自動転記 -->
+  <div class="card" style="padding:20px 22px;" id="polling-status-card">
+    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">freee 自動転記</div>
     {% if polling_active %}
-      <div><span class="status-dot dot-green" style="animation:blink 1.5s infinite;"></span><strong style="color:#28a745;">稼働中 ▶</strong></div>
-      <div style="font-size:11px; color:#888; margin-top:4px;">{{ (poll_interval // 60) }}分ごとに自動転記</div>
-      <div style="font-size:11px; color:#aaa; margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
+        <span style="font-size:16px; font-weight:700; color:var(--green);">稼働中</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted);">{{ (poll_interval // 60) }}分ごとに自動転記</div>
+      <div style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
     {% else %}
-      <div><span class="status-dot dot-gray"></span><strong style="color:#888;">停止中 ⏸</strong></div>
-      <div style="font-size:11px; color:#aaa; margin-top:4px;">自動転記は動いていません</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <span class="status-dot dot-gray"></span>
+        <span style="font-size:16px; font-weight:700; color:var(--text-muted);">停止中</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted);">手動で「再開」を押すまで停止</div>
     {% endif %}
   </div>
-  <div class="card" style="padding:16px 20px;">
-    <div style="font-size:12px; color:#888; margin-bottom:4px;">処理件数（今セッション）</div>
-    <div style="font-size:28px; font-weight:bold; color:#1a1a2e;">{{ logs|length }}</div>
+
+  <!-- 処理件数 -->
+  <div class="card" style="padding:20px 22px;">
+    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); margin-bottom:10px;">処理件数（今セッション）</div>
+    <div style="font-size:36px; font-weight:700; background:linear-gradient(135deg, #6c63ff, #00d4aa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ logs|length }}</div>
   </div>
+
 </div>
 
 {% if not token_ok %}
 <div class="alert alert-warning">
-  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold;">こちらから認証</a>してください。
+  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold; color:var(--yellow);">こちらから認証</a>してください。
 </div>
 {% endif %}
 
 <!-- 操作ボタン -->
 <div class="card">
   <h2>操作</h2>
-  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
     <button class="btn btn-success" onclick="runNow('all')">▶ 全件処理（本店CA＋PCA）</button>
     <button class="btn btn-primary" onclick="runNow('honten')">本店CAのみ</button>
     <button class="btn btn-primary" onclick="runNow('pca')">PCAのみ</button>
-    <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
+    <a href="/preview" class="btn btn-secondary">👁 仕訳プレビュー</a>
     <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
-    {% if not polling_active %}
-      <button class="btn btn-primary" id="polling-btn" onclick="startPolling()">🔄 freee自動転記 開始</button>
+
+    <!-- 自動転記 開始/停止ボタン -->
+    {% if polling_active %}
+      <button class="btn btn-danger" id="polling-btn" onclick="stopPolling()">⏸ 自動転記 停止</button>
     {% else %}
-      <button class="btn btn-secondary" id="polling-btn" onclick="stopPolling()" style="background:#dc3545; color:#fff; border-color:#dc3545;">⏸ freee自動転記 停止</button>
+      <button class="btn btn-warning" id="polling-btn" onclick="startPolling()">▶ 自動転記 再開</button>
     {% endif %}
   </div>
-  <div id="run-result" style="margin-top:12px; font-size:13px; white-space:pre-wrap;"></div>
+  <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap; color:var(--text-muted);"></div>
 </div>
 
 <!-- 処理ログ -->
 <div class="card">
-  <h2>処理ログ（直近50件）</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <h2 style="margin-bottom:0;">処理ログ（直近50件）</h2>
+    <a href="/log" style="font-size:12px; color:var(--text-muted); text-decoration:none;">すべて見る →</a>
+  </div>
   {% if logs %}
   <table>
     <thead>
       <tr>
         <th>日時（JST）</th>
-        <th>求職者/フェーズ</th>
+        <th>求職者 / フェーズ</th>
         <th>集客経路</th>
         <th>入社日</th>
         <th>結果</th>
@@ -74,10 +98,10 @@
     <tbody>
       {% for log in logs %}
       <tr>
-        <td style="white-space:nowrap;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
-        <td>{{ log.phase or '' }}</td>
-        <td>{{ log.job_db or '' }}</td>
-        <td>{{ log.nyusha_date or '' }}</td>
+        <td style="white-space:nowrap; color:var(--text-muted); font-size:12px;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
+        <td style="font-weight:500;">{{ log.phase or '' }}</td>
+        <td style="color:var(--text-muted);">{{ log.job_db or '' }}</td>
+        <td style="color:var(--text-muted);">{{ log.nyusha_date or '' }}</td>
         <td>
           {% if log.status == 'success' %}
             <span class="badge badge-ok">✅ 成功</span>
@@ -88,17 +112,17 @@
           {% elif log.status == 'review' %}
             <span class="badge badge-review">⚠️ 要確認</span>
           {% elif log.status == 'skip' %}
-            <span class="badge" style="background:#e9ecef; color:#6c757d;">⏭ スキップ</span>
+            <span class="badge badge-skip">⏭ スキップ</span>
           {% else %}
-            <span class="badge">{{ log.status }}</span>
+            <span class="badge" style="background:var(--surface2); color:var(--text-muted);">{{ log.status }}</span>
           {% endif %}
         </td>
-        <td style="font-size:12px; color:#666;">
+        <td style="font-size:12px; color:var(--text-muted);">
           {% if log.status == 'skip' %}
-            <span style="color:#aaa;">{{ log.message[:60] }}</span>
+            <span style="color:var(--text-muted);">{{ log.message[:60] }}</span>
           {% elif log.sales_id %}
-            売上ID: {{ log.sales_id }}{% if log.purchase_id %} / 仕入ID: {{ log.purchase_id }}{% endif %}
-          {% elif log.message and not log.sales_id %}
+            <span style="color:var(--green);">売上ID: {{ log.sales_id }}</span>{% if log.purchase_id %} <span style="color:var(--text-muted);">/ 仕入ID: {{ log.purchase_id }}</span>{% endif %}
+          {% elif log.message %}
             {{ log.message[:80] }}
           {% endif %}
         </td>
@@ -107,16 +131,12 @@
     </tbody>
   </table>
   {% else %}
-  <p style="color:#888; font-size:14px;">まだ処理履歴がありません。</p>
+  <div style="text-align:center; padding:40px; color:var(--text-muted);">
+    <div style="font-size:32px; margin-bottom:8px;">📭</div>
+    <p>まだ処理履歴がありません。</p>
+  </div>
   {% endif %}
 </div>
-
-<style>
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-</style>
 
 {% endblock %}
 
@@ -128,11 +148,8 @@
 function toJST(isoStr) {
   if (!isoStr) return '';
   try {
-    // ISO文字列がZやオフセットなしの場合はUTCとして扱う
     let s = isoStr;
-    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) {
-      s = s + 'Z';
-    }
+    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
     const d = new Date(s);
     if (isNaN(d.getTime())) return isoStr.slice(0, 16);
     return d.toLocaleString('ja-JP', {
@@ -140,12 +157,8 @@ function toJST(isoStr) {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit'
     });
-  } catch(e) {
-    return isoStr.slice(0, 16);
-  }
+  } catch(e) { return isoStr.slice(0, 16); }
 }
-
-// ログテーブルの日時セルをJSTに変換
 document.querySelectorAll('.ts-cell').forEach(cell => {
   const ts = cell.getAttribute('data-ts');
   if (ts) cell.textContent = toJST(ts);
@@ -157,34 +170,23 @@ document.querySelectorAll('.ts-cell').forEach(cell => {
 const nextRunLabel = document.getElementById('next-run-label');
 if (nextRunLabel) {
   const pollInterval = {{ poll_interval }} * 1000;
-  // 最後のログのタイムスタンプから次回実行を推定
   const lastTs = '{{ logs[0].timestamp if logs else "" }}';
   let nextRun = null;
   if (lastTs) {
     let s = lastTs;
     if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
     const lastDate = new Date(s);
-    if (!isNaN(lastDate.getTime())) {
-      nextRun = new Date(lastDate.getTime() + pollInterval);
-    }
+    if (!isNaN(lastDate.getTime())) nextRun = new Date(lastDate.getTime() + pollInterval);
   }
-  if (!nextRun) {
-    nextRun = new Date(Date.now() + pollInterval);
-  }
+  if (!nextRun) nextRun = new Date(Date.now() + pollInterval);
 
   function updateNextRunLabel() {
     const now = new Date();
     const diff = nextRun - now;
-    if (diff <= 0) {
-      nextRunLabel.textContent = '次回実行: まもなく';
-      return;
-    }
+    if (diff <= 0) { nextRunLabel.textContent = '次回実行: まもなく'; return; }
     const mins = Math.floor(diff / 60000);
     const secs = Math.floor((diff % 60000) / 1000);
-    const jstStr = nextRun.toLocaleString('ja-JP', {
-      timeZone: 'Asia/Tokyo',
-      hour: '2-digit', minute: '2-digit'
-    });
+    const jstStr = nextRun.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
     nextRunLabel.textContent = `次回実行: ${jstStr}（あと${mins}分${secs}秒）`;
   }
   updateNextRunLabel();
@@ -197,11 +199,11 @@ if (nextRunLabel) {
 async function runNow(dbType = 'all') {
   const res = document.getElementById('run-result');
   res.textContent = '処理中...';
-  res.style.color = '#555';
+  res.style.color = 'var(--text-muted)';
   try {
     const r = await fetch('/run', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({db_type: dbType})
     });
     const data = await r.json();
@@ -218,30 +220,33 @@ async function runNow(dbType = 'all') {
         if (r.status === 'review') msg += `  ⚠️ ${r.phase}: ${r.message}\n`;
       });
       if (!data.results || data.results.length === 0) msg += '経理対応待ちのレコードはありませんでした。';
-      res.style.color = data.errors > 0 ? '#dc3545' : '#155724';
+      res.style.color = data.errors > 0 ? 'var(--red)' : 'var(--green)';
       res.textContent = msg;
     } else {
-      res.style.color = '#dc3545';
+      res.style.color = 'var(--red)';
       res.textContent = 'エラー: ' + data.message;
     }
   } catch(e) {
-    res.style.color = '#dc3545';
+    res.style.color = 'var(--red)';
     res.textContent = 'エラー: ' + e.message;
   }
   setTimeout(() => location.reload(), 4000);
 }
 
+// ============================================================
+// 自動転記 開始/停止
+// ============================================================
 async function startPolling() {
   const btn = document.getElementById('polling-btn');
   if (btn) { btn.disabled = true; btn.textContent = '開始中...'; }
-  await fetch('/polling/start', {method:'POST'});
+  await fetch('/polling/start', {method: 'POST'});
   location.reload();
 }
 
 async function stopPolling() {
   const btn = document.getElementById('polling-btn');
   if (btn) { btn.disabled = true; btn.textContent = '停止中...'; }
-  await fetch('/polling/stop', {method:'POST'});
+  await fetch('/polling/stop', {method: 'POST'});
   location.reload();
 }
 </script>

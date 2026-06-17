@@ -445,6 +445,34 @@ def api_match_receipts():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/debug_receipts")
+def api_debug_receipts():
+    """デバッグ用: freee receipts APIの生レスポンスを返す"""
+    try:
+        import requests as req
+        from datetime import datetime, timedelta
+        token = get_valid_token()
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
+        # 一覧
+        params = {"company_id": FREEE_COMPANY_ID, "category": "without_deal",
+                  "start_date": start_date, "end_date": end_date, "limit": 2}
+        resp = req.get(f"{FREEE_API_BASE}/receipts", headers=_api_headers(), params=params, timeout=30)
+        list_data = resp.json()
+        # 個別
+        detail_data = None
+        receipts = list_data.get("receipts", [])
+        if receipts:
+            rid = receipts[0]["id"]
+            resp2 = req.get(f"{FREEE_API_BASE}/receipts/{rid}",
+                           headers=_api_headers(), params={"company_id": FREEE_COMPANY_ID}, timeout=30)
+            detail_data = resp2.json()
+        return jsonify({"list_response": list_data, "detail_response": detail_data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/iv_companies")
 def api_iv_companies():
     """デバッグ用: freee請求書APIのcompany_id一覧を返す"""

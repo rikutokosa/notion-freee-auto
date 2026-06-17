@@ -127,9 +127,7 @@ def index():
     return render_template(
         "index.html",
         token_ok=token_ok,
-        polling_active=_polling_active and _polling_thread is not None and _polling_thread.is_alive() and not _is_manually_stopped(),
         logs=processing_log[:50],
-        poll_interval=POLL_INTERVAL,
     )
 
 
@@ -221,8 +219,6 @@ def auth_freee_callback():
         if base_url:
             redirect_uri = f"{base_url}/auth/freee/callback"
         exchange_code_for_token(code, redirect_uri)
-        # 手動停止中の場合は自動開始しない
-        start_polling(force=False)
         return redirect(url_for("index"))
     except Exception as e:
         logger.exception("トークン取得エラー")
@@ -419,10 +415,8 @@ def api_status():
         pass
     return jsonify({
         "token_ok": token_ok,
-        "polling_active": _polling_thread is not None and _polling_thread.is_alive(),
-        "manually_stopped": _is_manually_stopped(),
+        "mode": "manual",
         "log_count": len(processing_log),
-        "poll_interval": POLL_INTERVAL,
     })
 
 
@@ -905,11 +899,7 @@ def _ocr_image_with_openai(image_path: str) -> str:
 if __name__ == "__main__":
     try:
         get_valid_token()
-        if _is_manually_stopped():
-            logger.info("トークン有効だが、手動停止中（FREEE_AUTO_STOPPED=1）のため自動転記は開始しません")
-        else:
-            start_polling()
-            logger.info("トークン有効 → 自動転記開始")
+        logger.info("トークン有効。手動実行待機中。")
     except Exception:
         logger.warning("freeeトークン未設定 → /auth/freee から認証してください")
 

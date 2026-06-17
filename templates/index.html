@@ -24,25 +24,14 @@
     {% endif %}
   </div>
 
-  <!-- freee自動転記 -->
-  <div class="card" style="padding:18px 22px;" id="polling-status-card">
-    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">freee 自動転記</div>
-    <div id="polling-status-display">
-      {% if polling_active %}
-        <div style="display:flex; align-items:center; margin-bottom:4px;">
-          <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
-          <span style="font-size:16px; font-weight:700; color:#28a745;">稼働中</span>
-        </div>
-        <div style="font-size:12px; color:#888;">{{ (poll_interval // 60) }}分ごとに自動転記</div>
-        <div style="font-size:12px; color:#aaa; margin-top:2px;" id="next-run-label">次回実行: 計算中...</div>
-      {% else %}
-        <div style="display:flex; align-items:center; margin-bottom:4px;">
-          <span class="status-dot dot-gray"></span>
-          <span style="font-size:16px; font-weight:700; color:#888;">停止中</span>
-        </div>
-        <div style="font-size:12px; color:#aaa;">手動で「再開」を押すまで停止</div>
-      {% endif %}
+  <!-- システム状態 -->
+  <div class="card" style="padding:18px 22px;">
+    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">システム状態</div>
+    <div style="display:flex; align-items:center;">
+      <span class="status-dot dot-blue"></span>
+      <span style="font-size:16px; font-weight:700; color:#4a90d9;" id="system-status-text">待機中</span>
     </div>
+    <div style="font-size:12px; color:#aaa; margin-top:4px;">ボタンを押したときだけ処理を実行します</div>
   </div>
 
   <!-- 処理件数 -->
@@ -63,18 +52,11 @@
 <div class="card">
   <h2>操作</h2>
   <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-    <button class="btn btn-success" onclick="runNow('all')">▶ 全件処理（本店CA＋PCA）</button>
+    <button class="btn btn-success" onclick="runNow('all')" id="btn-run-all">▶ 全件処理（本店CA＋PCA）</button>
     <button class="btn btn-primary" onclick="runNow('honten')">本店CAのみ</button>
     <button class="btn btn-primary" onclick="runNow('pca')">PCAのみ</button>
     <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
     <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
-
-    <!-- 自動転記 開始/停止ボタン（JSで動的切替） -->
-    {% if polling_active %}
-      <button class="btn btn-danger" id="polling-btn" onclick="stopPolling()">⏸ 自動転記 停止</button>
-    {% else %}
-      <button class="btn btn-warning" id="polling-btn" onclick="startPolling()">▶ 自動転記 再開</button>
-    {% endif %}
   </div>
   <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap;"></div>
 </div>
@@ -114,16 +96,12 @@
             <span class="badge badge-skip">👁 プレビュー</span>
           {% elif log.status == 'review' %}
             <span class="badge badge-review">⚠️ 要確認</span>
-          {% elif log.status == 'skip' %}
-            <span class="badge badge-skip">⏭ スキップ</span>
           {% else %}
             <span class="badge" style="background:#e9ecef; color:#666;">{{ log.status }}</span>
           {% endif %}
         </td>
         <td style="font-size:12px; color:#666;">
-          {% if log.status == 'skip' %}
-            <span style="color:#aaa;">{{ log.message[:60] }}</span>
-          {% elif log.sales_id %}
+          {% if log.sales_id %}
             <span style="color:#155724;">売上ID: {{ log.sales_id }}</span>{% if log.purchase_id %} <span style="color:#666;">/ 仕入ID: {{ log.purchase_id }}</span>{% endif %}
           {% elif log.message %}
             {{ log.message[:80] }}
@@ -169,41 +147,15 @@ document.querySelectorAll('.ts-cell').forEach(cell => {
 });
 
 // ============================================================
-// 次回実行時刻の表示（稼働中のみ）
-// ============================================================
-const nextRunLabel = document.getElementById('next-run-label');
-if (nextRunLabel) {
-  const pollInterval = {{ poll_interval }} * 1000;
-  const lastTs = '{{ logs[0].timestamp if logs else "" }}';
-  let nextRun = null;
-  if (lastTs) {
-    let s = lastTs;
-    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
-    const lastDate = new Date(s);
-    if (!isNaN(lastDate.getTime())) nextRun = new Date(lastDate.getTime() + pollInterval);
-  }
-  if (!nextRun) nextRun = new Date(Date.now() + pollInterval);
-
-  function updateNextRunLabel() {
-    const now = new Date();
-    const diff = nextRun - now;
-    if (diff <= 0) { nextRunLabel.textContent = '次回実行: まもなく'; return; }
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
-    const jstStr = nextRun.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
-    nextRunLabel.textContent = `次回実行: ${jstStr}（あと${mins}分${secs}秒）`;
-  }
-  updateNextRunLabel();
-  setInterval(updateNextRunLabel, 1000);
-}
-
-// ============================================================
-// 全件処理
+// 全件処理（手動実行）
 // ============================================================
 async function runNow(dbType = 'all') {
   const res = document.getElementById('run-result');
+  const statusText = document.getElementById('system-status-text');
   res.textContent = '処理中...';
   res.style.color = '#555';
+  if (statusText) { statusText.textContent = '処理中...'; statusText.style.color = '#e67e22'; }
+
   try {
     const r = await fetch('/run', {
       method: 'POST',
@@ -212,12 +164,10 @@ async function runNow(dbType = 'all') {
     });
     const data = await r.json();
     if (data.status === 'ok') {
-      const skips = (data.results || []).filter(r => r.status === 'skip').length;
       let msg = `処理完了: ${data.total}件\n`;
       if (data.success) msg += `✅ 成功: ${data.success}件\n`;
       if (data.reviews) msg += `⚠️ 要確認: ${data.reviews}件\n`;
       if (data.errors) msg += `❌ エラー: ${data.errors}件\n`;
-      if (skips) msg += `⏭ スキップ（請求不要）: ${skips}件\n`;
       (data.results || []).forEach(r => {
         if (r.status === 'success') msg += `  ✅ ${r.phase}: ${r.message}\n`;
         if (r.status === 'error') msg += `  ❌ ${r.phase}: ${r.message}\n`;
@@ -234,52 +184,9 @@ async function runNow(dbType = 'all') {
     res.style.color = '#dc3545';
     res.textContent = 'エラー: ' + e.message;
   }
+
+  if (statusText) { statusText.textContent = '待機中'; statusText.style.color = '#4a90d9'; }
   setTimeout(() => location.reload(), 4000);
-}
-
-// ============================================================
-// 自動転記 停止 → ボタンを即「再開」に切り替え
-// ============================================================
-async function stopPolling() {
-  const btn = document.getElementById('polling-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '停止中...'; }
-
-  try {
-    await fetch('/polling/stop', {method: 'POST'});
-  } catch(e) {}
-
-  // ボタンを「再開」に切り替え
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = '▶ 自動転記 再開';
-    btn.className = 'btn btn-warning';
-    btn.onclick = startPolling;
-  }
-
-  // ステータスカードも更新
-  const statusDiv = document.getElementById('polling-status-display');
-  if (statusDiv) {
-    statusDiv.innerHTML = `
-      <div style="display:flex; align-items:center; margin-bottom:4px;">
-        <span class="status-dot dot-gray"></span>
-        <span style="font-size:16px; font-weight:700; color:#888;">停止中</span>
-      </div>
-      <div style="font-size:12px; color:#aaa;">手動で「再開」を押すまで停止</div>
-    `;
-  }
-  // 次回実行ラベルを消す
-  const nrl = document.getElementById('next-run-label');
-  if (nrl) nrl.remove();
-}
-
-// ============================================================
-// 自動転記 再開
-// ============================================================
-async function startPolling() {
-  const btn = document.getElementById('polling-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '開始中...'; }
-  await fetch('/polling/start', {method: 'POST'});
-  location.reload();
 }
 </script>
 {% endblock %}

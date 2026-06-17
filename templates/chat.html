@@ -36,8 +36,7 @@
     <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="quickSend('今すぐ処理して')">▶ 今すぐ処理</button>
     <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="quickSend('何件ある？')">📊 件数確認</button>
     <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="quickSend('ログ見せて')">📋 ログ確認</button>
-    <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="startAutoTransfer()">🔄 自動転記 開始</button>
-    <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px; background:#dc3545; color:#fff; border-color:#dc3545;" onclick="stopAutoTransfer()">⏸ 自動転記 停止</button>
+
   </div>
 </div>
 
@@ -93,26 +92,6 @@ function quickSend(text) {
   sendMessage();
 }
 
-async function startAutoTransfer() {
-  appendMessage('自動転記を開始します...', 'user');
-  try {
-    const r = await fetch('/polling/start', {method: 'POST'});
-    const data = await r.json();
-    appendMessage('✅ ' + (data.message || '自動転記を開始しました。'), 'bot');
-  } catch(e) {
-    appendMessage('❌ エラー: ' + e.message, 'bot');
-  }
-}
 
-async function stopAutoTransfer() {
-  appendMessage('自動転記を停止します...', 'user');
-  try {
-    const r = await fetch('/polling/stop', {method: 'POST'});
-    const data = await r.json();
-    appendMessage('⏸ ' + (data.message || '自動転記を停止しました。'), 'bot');
-  } catch(e) {
-    appendMessage('❌ エラー: ' + e.message, 'bot');
-  }
-}
 </script>
 {% endblock %}

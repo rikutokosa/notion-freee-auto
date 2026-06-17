@@ -61,21 +61,23 @@ POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
 _polling_thread = None
 _polling_active = False
 
-# 停止フラグの永続化ファイル（停止中はこのファイルが存在する）
-_STOP_FLAG_FILE = Path("/tmp/freee_auto_stopped.flag")
+# 停止フラグ：Railway環境変数 FREEE_AUTO_STOPPED=1 で永続化
+# ファイルはコンテナ再起動で消えるため使わない
+# メモリ内フラグ（プロセス内永続）
+_manually_stopped: bool = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
 
 
 def _is_manually_stopped() -> bool:
-    """ユーザーが手動で停止した状態かどうかを返す"""
-    return _STOP_FLAG_FILE.exists()
+    """手動停止中かどうかを返す（メモリ内フラグ）"""
+    return _manually_stopped
 
 
 def _set_manually_stopped(stopped: bool):
-    """停止フラグを設定/解除する"""
-    if stopped:
-        _STOP_FLAG_FILE.touch()
-    else:
-        _STOP_FLAG_FILE.unlink(missing_ok=True)
+    """停止フラグをメモリ内に設定する"""
+    global _manually_stopped
+    _manually_stopped = stopped
+    # Railway環境変数にも書き込む（プロセス内のみ有効、再起動後は環境変数の初期値に戻る）
+    os.environ["FREEE_AUTO_STOPPED"] = "1" if stopped else "0"
 
 
 def start_polling(force: bool = False):
@@ -125,7 +127,7 @@ def index():
     return render_template(
         "index.html",
         token_ok=token_ok,
-        polling_active=_polling_thread is not None and _polling_thread.is_alive(),
+        polling_active=_polling_active and _polling_thread is not None and _polling_thread.is_alive() and not _is_manually_stopped(),
         logs=processing_log[:50],
         poll_interval=POLL_INTERVAL,
     )
@@ -903,8 +905,11 @@ def _ocr_image_with_openai(image_path: str) -> str:
 if __name__ == "__main__":
     try:
         get_valid_token()
-        start_polling()
-        logger.info("トークン有効 → ポーリング自動開始")
+        if _is_manually_stopped():
+            logger.info("トークン有効だが、手動停止中（FREEE_AUTO_STOPPED=1）のため自動転記は開始しません")
+        else:
+            start_polling()
+            logger.info("トークン有効 → 自動転記開始")
     except Exception:
         logger.warning("freeeトークン未設定 → /auth/freee から認証してください")
 

@@ -99,6 +99,7 @@
     </thead>
     <tbody>
       {% for log in logs %}
+      {% if log.status == 'skip' %}{% continue %}{% endif %}
       <tr>
         <td style="white-space:nowrap; color:#888; font-size:12px;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
         <td style="font-weight:500;">{{ log.phase or '' }}</td>

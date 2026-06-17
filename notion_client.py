@@ -327,6 +327,8 @@ def mark_as_done(page_id: str, original_status: str,
     freee登録完了後にNotionのステータスを更新する
     original_status に応じて遷移先ステータスを決定する
     freee_status で「freee処理状態」の値を指定する（デフォルト: 仕訳成功）
+    
+    注意: invoice_idはログ用に受け取るが、Notionには「freee請求書ID」プロパティが存在しないため書き込まない
     """
     done_status = get_done_status(original_status, db_type)
 
@@ -342,15 +344,17 @@ def mark_as_done(page_id: str, original_status: str,
             "date": {"start": datetime.now(timezone.utc).isoformat()}
         }
     }
-    if sales_id:
-        props["freee売上取引ID"] = {"number": sales_id}
-    if purchase_id:
-        props["freee支出取引ID"] = {"number": purchase_id}
-    if invoice_id:
-        props["freee請求書ID"] = {"number": invoice_id}
+    # 注意: freee売上取引ID・freee支出取引IDは取引先IDとして使用しているため、上書きしない
+    # invoice_idはNotionに「freee請求書ID」プロパティが存在しないため書き込まない
 
     payload = {"properties": props}
     resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    if resp.status_code != 200:
+        import logging
+        logging.getLogger(__name__).error(
+            f"mark_as_done失敗: page_id={page_id}, status={resp.status_code}, "
+            f"freee_status={freee_status}, resp={resp.text[:500]}"
+        )
     return resp.status_code == 200
 
 

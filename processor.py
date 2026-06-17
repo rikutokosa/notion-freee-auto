@@ -104,6 +104,7 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
         "issue_date": sales_entry.get("issue_date", datetime.now().strftime("%Y-%m-%d")),
         "due_date": sales_entry.get("due_date"),
         "partner_name": sales_entry.get("partner_name"),
+        "partner_id": sales_entry.get("partner_id"),  # Notionのfreee売上取引ID（取引先ID）
         "title": "人材紹介手数料",
         "invoice_note": "振込手数料は貴社負担でお願いいたします。",
         "memo": section_memo,

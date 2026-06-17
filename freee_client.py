@@ -300,10 +300,10 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     tags = cache["tags"]
     sections = cache.get("sections", [])
 
-    # 取引先ID
-    partner_id = None
+    # 取引先ID: Notionに直接入力されたIDを優先、ない場合は名前で検索
+    partner_id = entry.get("partner_id")
     partner_name = entry.get("partner_name")
-    if partner_name:
+    if not partner_id and partner_name:
         partner_id = _find_partner_id(partner_name, partners)
 
     # 明細行を構築
@@ -360,7 +360,7 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     if entry.get("due_date"):
         payload["due_date"] = entry["due_date"]
     if partner_id:
-        payload["partner_id"] = partner_id
+        payload["partner_id"] = int(partner_id)
     elif partner_name:
         payload["partner_name"] = partner_name
 
@@ -434,9 +434,10 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     tags = cache.get("tags", [])
     sections = cache.get("sections", [])
 
-    partner_id = None
+    # 取引先ID: Notionに直接入力されたIDを優先、ない場合は名前で検索
+    partner_id = entry.get("partner_id")
     partner_name = entry.get("partner_name")
-    if partner_name:
+    if not partner_id and partner_name:
         partner_id = _find_partner_id(partner_name, partners)
 
     # 明細行（freee請求書APIの正しい形式）
@@ -503,7 +504,7 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     if entry.get("memo"):
         payload["memo"] = entry["memo"]
     if partner_id:
-        payload["partner_id"] = partner_id
+        payload["partner_id"] = int(partner_id)
     elif partner_name:
         logger.warning(f"請求書登録: 取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
         raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")

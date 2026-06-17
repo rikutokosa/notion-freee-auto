@@ -332,7 +332,7 @@ def _extract_props(record: dict) -> dict:
     # 返金後入金売上（返金後の実際の売上額）
     henkin_go_uriage = get_number("返金後入金売上")
     henkin_go_shukyaku = get_number("返金後集客手数料")
-    # 既存のfreee取引ID（入社前辞退・返金時の削除に使用）
+    # freee取引先ID（売上側・仕入側） - 請求書・仕訳登録時のpartner_idとして使用
     freee_sales_id = get_number("freee売上取引ID")
     freee_purchase_id = get_number("freee支出取引ID")
     # PCA専用: PCA仕入高（パートナーへの支払）
@@ -607,6 +607,7 @@ def build_journal_entries(record: dict) -> dict:
             "issue_date": issue_date,
             "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
             "partner_name": sales_partner,
+            "partner_id": p["freee_sales_id"],  # Notionの「freee売上取引ID」= 売上側取引先ID
             "section_name": section_name,
             "details": [{
                 "account_item_name": account_item,
@@ -628,6 +629,7 @@ def build_journal_entries(record: dict) -> dict:
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
                 "partner_name": purchase_partner,
+                "partner_id": p["freee_purchase_id"],  # Notionの「freee支出取引ID」= 仕入側取引先ID
                 "section_name": purchase_section,
                 "details": [{
                     "account_item_name": "スカウト手数料",

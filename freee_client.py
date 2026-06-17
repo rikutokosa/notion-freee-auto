@@ -454,9 +454,11 @@ def create_invoice(entry: dict, cache: dict) -> dict:
             # 品目行
             # freee請求書APIではtax_rate（0,8,10）が必須
             # tax_codeは取引連携（下書き保存）用のオプション項目
+            # description: 請求書の品目名として表示され、仕訳転記時に「備考」に入る
+            # d["description"]には「求職者名 + 入社企業名」が入っている
             line = {
                 "type": "item",
-                "description": d.get("name", "人材紹介手数料"),
+                "description": d.get("description") or d.get("name", "人材紹介手数料"),
                 "quantity": d.get("quantity", 1),
                 "unit_price": str(d.get("unit_price", 0)),
                 "tax_rate": d.get("tax_rate", 10),  # 税率10%（必須）

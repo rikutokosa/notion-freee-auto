@@ -345,6 +345,8 @@ def _extract_props(record: dict) -> dict:
     seiyaku_str = get_date("成約日")
     zeinuki_uriage = get_number("税抜売上")
     zeinuki_shukyaku = get_number("税抜集客手数料")
+    # 税込集客手数料: 本店CAは末尾スペースあり、PCAはなし
+    zeikomi_shukyaku = get_number("税込集客手数料 ") or get_number("税込集客手数料")
     uriage_kessai_str = get_date("売上決済期日")
 
     # 仕入決済期日: PCA DBは末尾にスペースあり
@@ -393,6 +395,7 @@ def _extract_props(record: dict) -> dict:
         "seiyaku_date": parse_date(seiyaku_str),
         "zeinuki_uriage": zeinuki_uriage,
         "zeinuki_shukyaku": zeinuki_shukyaku,
+        "zeikomi_shukyaku": zeikomi_shukyaku,
         "uriage_kessai": parse_date(uriage_kessai_str),
         "shiire_kessai": parse_date(shiire_kessai_str),
         "henkin_ritsu": henkin_ritsu_raw or 0,
@@ -662,6 +665,8 @@ def build_journal_entries(record: dict) -> dict:
             purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
             shukyaku_rule = get_rule(p.get("shukyaku_keiro") or "")
             purchase_partner = shukyaku_rule.get("supplier") if shukyaku_rule else rule.get("supplier")
+            # 税込集客手数料を使用（ない場合は税抜×1.1でフォールバック）
+            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else int(p["zeinuki_shukyaku"] * 1.1)
             base["purchase_entry"] = {
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
@@ -671,7 +676,7 @@ def build_journal_entries(record: dict) -> dict:
                 "details": [{
                     "account_item_name": "スカウト手数料",
                     "tax_code": 136,
-                    "amount": int(p["zeinuki_shukyaku"]),
+                    "amount": purchase_amount,
                     "description": biko,
                     "tag_names": tag_names,
                 }],

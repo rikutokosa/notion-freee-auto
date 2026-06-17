@@ -42,14 +42,14 @@
     flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
     font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px;
   }
-  .ai-messages { min-height: 200px; max-height: 400px; overflow-y: auto; }
+  .ai-messages { min-height: 200px; max-height: 500px; overflow-y: auto; }
   .ai-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
   .ai-msg.user { background: #e8f0fe; color: #1a1a2e; margin-left: 40px; }
   .ai-msg.assistant { background: #fff; border: 1px solid #e0e0e0; margin-right: 40px; }
   .ai-msg.error { background: #f8d7da; color: #721c24; }
   .ai-msg pre { white-space: pre-wrap; font-family: inherit; }
 
-  .preview-table { margin-top: 12px; }
+  .preview-table { margin-top: 12px; overflow-x: auto; }
   .preview-table table { font-size: 12px; }
   .preview-table th { background: #e8f0fe; }
 
@@ -60,11 +60,69 @@
   .result-box.success { background: #d4edda; color: #155724; border: 1px solid #28a745; }
   .result-box.error { background: #f8d7da; color: #721c24; border: 1px solid #dc3545; }
 
-  .repeat-section { background: #fffbe6; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-top: 8px; }
+  /* 繰り返し登録セクション */
+  .repeat-section {
+    background: #fffbe6; border: 1px solid #ffc107; border-radius: 6px;
+    padding: 12px; margin-top: 8px;
+  }
   .repeat-section label { font-size: 12px; font-weight: bold; color: #856404; }
+  .repeat-info {
+    background: #fff8e1; border-left: 3px solid #ffc107;
+    padding: 8px 12px; margin-top: 8px; font-size: 12px; color: #6d4c00;
+    border-radius: 0 4px 4px 0;
+  }
+  .repeat-info ul { margin: 4px 0 0 16px; padding: 0; }
+  .repeat-info li { margin-bottom: 2px; }
+
+  /* ファイル添付セクション */
+  .attachment-section {
+    background: #f0f7ff; border: 1px solid #4a90d9; border-radius: 6px;
+    padding: 12px; margin-top: 8px;
+  }
+  .attachment-section label { font-size: 12px; font-weight: bold; color: #1a5276; }
+  .file-drop-zone {
+    border: 2px dashed #4a90d9; border-radius: 6px; padding: 20px;
+    text-align: center; cursor: pointer; transition: background 0.2s;
+    background: #fff; margin-top: 8px;
+  }
+  .file-drop-zone:hover { background: #e8f0fe; }
+  .file-drop-zone.dragover { background: #cce5ff; border-color: #0066cc; }
+  .file-drop-zone input[type="file"] { display: none; }
+  .file-list { margin-top: 8px; }
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid #cce5ff; border-radius: 4px;
+    padding: 6px 10px; margin-bottom: 4px; font-size: 12px;
+  }
+  .file-item .file-name { flex: 1; }
+  .file-item .file-remove {
+    background: none; border: none; color: #dc3545; cursor: pointer;
+    font-size: 14px; padding: 0 4px;
+  }
+  .file-item .file-status { font-size: 11px; color: #666; }
+
+  /* AI指示タブのファイルアップロード */
+  .ai-file-zone {
+    border: 1px dashed #aaa; border-radius: 6px; padding: 10px 14px;
+    background: #fafafa; cursor: pointer; font-size: 12px; color: #555;
+    display: flex; align-items: center; gap: 8px; transition: background 0.2s;
+  }
+  .ai-file-zone:hover { background: #f0f7ff; border-color: #4a90d9; }
+  .ai-file-zone input[type="file"] { display: none; }
+  .ai-file-badge {
+    background: #4a90d9; color: #fff; border-radius: 12px;
+    padding: 2px 8px; font-size: 11px; font-weight: bold;
+  }
 
   .spinner { display: none; margin-left: 8px; }
   .spinner.active { display: inline-block; }
+
+  /* 繰り返しプレビュー */
+  .repeat-preview {
+    background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;
+    padding: 10px; margin-top: 8px; font-size: 12px;
+  }
+  .repeat-preview table { font-size: 11px; }
 </style>
 
 <div class="card">
@@ -74,8 +132,8 @@
   </p>
 
   <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab('ai')">🤖 AI指示（自然言語）</button>
-    <button class="tab-btn" onclick="switchTab('form')">📝 フォーム入力</button>
+    <button class="tab-btn active" onclick="switchTab('ai', this)">🤖 AI指示（自然言語）</button>
+    <button class="tab-btn" onclick="switchTab('form', this)">📝 フォーム入力</button>
   </div>
 
   <!-- ===== AI指示タブ ===== -->
@@ -88,11 +146,23 @@
           ・「長期借入金の返済 元金100,000円・利息3,000円を毎月1日で12ヶ月分登録して」<br>
           ・「2026年7月1日 本店：CA部門 売掛金 500,000円 備考：テスト」<br>
           ・「マイナビへの広告費 税抜50,000円を今月末で登録」<br><br>
+          📎 <strong>ファイルを添付</strong>すると、返済スケジュール表・請求書・領収書などを読み取って自動で仕訳を提案します。<br>
           freeeに登録されている勘定科目・取引先・部門・メモタグを自動で参照します。
         </div>
       </div>
+
+      <!-- ファイル添付エリア（AI指示タブ） -->
+      <div class="ai-file-zone" onclick="document.getElementById('aiFileInput').click()" id="aiFileZone">
+        <input type="file" id="aiFileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv"
+               onchange="handleAiFileSelect(this)">
+        <span>📎</span>
+        <span>ファイルを添付（PDF・画像・Excel・CSV）</span>
+        <span id="aiFileBadge" style="display:none;" class="ai-file-badge"></span>
+      </div>
+      <div id="aiFileList" class="file-list" style="display:none;"></div>
+
       <div class="ai-input-area">
-        <textarea id="aiInput" placeholder="仕訳の内容を自然言語で入力してください..." onkeydown="handleAiKey(event)"></textarea>
+        <textarea id="aiInput" placeholder="仕訳の内容を自然言語で入力してください...（Ctrl+Enterで送信）" onkeydown="handleAiKey(event)"></textarea>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <button class="btn btn-primary" onclick="sendAiMessage()" id="aiSendBtn">送信</button>
           <button class="btn btn-secondary" onclick="clearAiChat()" style="font-size:12px;">クリア</button>
@@ -116,11 +186,11 @@
         </div>
         <div class="form-group flex-1">
           <label>発生日 *</label>
-          <input type="date" id="issueDate" name="issue_date" required>
+          <input type="date" id="issueDate" name="issue_date" required onchange="updateRepeatPreview()">
         </div>
         <div class="form-group flex-1">
           <label>決済期日</label>
-          <input type="date" id="dueDate" name="due_date">
+          <input type="date" id="dueDate" name="due_date" onchange="updateRepeatPreview()">
         </div>
         <div class="form-group flex-2">
           <label>取引先</label>
@@ -131,17 +201,33 @@
 
       <!-- 繰り返し設定 -->
       <div class="repeat-section">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
           <input type="checkbox" id="repeatEnabled" onchange="toggleRepeat()">
-          <label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">🔁 繰り返し登録（毎月同じ仕訳を複数回登録）</label>
+          <label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">
+            🔁 繰り返し登録（毎月同じ仕訳を複数回登録）
+          </label>
         </div>
-        <div id="repeatOptions" style="display:none;">
+        <div class="repeat-info">
+          <strong>繰り返し登録のルール：</strong>
+          <ul>
+            <li>発生日は毎月<strong>同じ日付</strong>で登録されます（例：7/1 → 8/1 → 9/1…）</li>
+            <li>決済期日も毎月<strong>同じ日付</strong>でずれて登録されます（例：7/31 → 8/31 → 9/30…）</li>
+            <li>月末日を指定した場合は各月の末日に自動調整されます（例：1/31 → 2/28 → 3/31）</li>
+          </ul>
+        </div>
+        <div id="repeatOptions" style="display:none;margin-top:10px;">
           <div class="form-row">
             <div class="form-group flex-1">
               <label>繰り返し回数</label>
-              <input type="number" id="repeatCount" value="12" min="1" max="60" style="width:80px;">
-              <span style="font-size:12px;color:#666;margin-top:4px;">回（発生日から毎月）</span>
+              <input type="number" id="repeatCount" value="12" min="1" max="60"
+                     style="width:80px;" onchange="updateRepeatPreview()">
+              <span style="font-size:12px;color:#666;margin-top:4px;">回（発生日から毎月同日）</span>
             </div>
+          </div>
+          <!-- 繰り返しプレビュー -->
+          <div class="repeat-preview" id="repeatPreview" style="display:none;">
+            <strong style="font-size:12px;">📅 登録予定日一覧：</strong>
+            <div id="repeatPreviewList" style="margin-top:6px;"></div>
           </div>
         </div>
       </div>
@@ -153,6 +239,30 @@
           <button type="button" class="btn btn-secondary" onclick="addDetailRow()" style="font-size:12px;padding:4px 12px;">+ 明細追加</button>
         </div>
         <div id="detailRows"></div>
+      </div>
+
+      <!-- 証憑添付 -->
+      <div class="attachment-section" style="margin-top:16px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span>📎</span>
+          <label style="font-size:13px;font-weight:bold;color:#1a5276;">証憑ファイルを添付（freeeにアップロード）</label>
+          <span style="font-size:11px;color:#666;">任意 ・ PDF / 画像 / Excel</span>
+        </div>
+        <p style="font-size:12px;color:#555;margin:0 0 8px 0;">
+          添付したファイルは登録後にfreeeの証憑として自動アップロードされ、取引に紐付けられます。
+        </p>
+        <div class="file-drop-zone" id="formDropZone"
+             onclick="document.getElementById('formFileInput').click()"
+             ondragover="handleDragOver(event, 'formDropZone')"
+             ondragleave="handleDragLeave('formDropZone')"
+             ondrop="handleDrop(event, 'formFileInput')">
+          <input type="file" id="formFileInput" multiple
+                 accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv"
+                 onchange="handleFormFileSelect(this)">
+          <div>📂 クリックまたはドラッグ＆ドロップでファイルを選択</div>
+          <div style="font-size:11px;color:#888;margin-top:4px;">PDF・PNG・JPG・Excel・CSV（複数可）</div>
+        </div>
+        <div id="formFileList" class="file-list"></div>
       </div>
 
       <!-- 登録ボタン -->
@@ -171,6 +281,8 @@
 <script>
 let masterData = { sections: [], tags: [], account_items: [], partners: [] };
 let aiHistory = [];
+let aiFiles = [];       // AI指示タブの添付ファイル
+let formFiles = [];     // フォームタブの添付ファイル
 
 // ページ読み込み時にマスタデータを取得
 async function loadMaster() {
@@ -196,11 +308,11 @@ async function loadMaster() {
 }
 
 // タブ切り替え
-function switchTab(name) {
+function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  event.target.classList.add('active');
+  btn.classList.add('active');
 }
 
 // 今日の日付をデフォルト設定
@@ -209,6 +321,58 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('issueDate').value = today;
   loadMaster();
 });
+
+// ===== 繰り返し設定 =====
+function toggleRepeat() {
+  const enabled = document.getElementById('repeatEnabled').checked;
+  document.getElementById('repeatOptions').style.display = enabled ? 'block' : 'none';
+  if (enabled) updateRepeatPreview();
+  else document.getElementById('repeatPreview').style.display = 'none';
+}
+
+function updateRepeatPreview() {
+  if (!document.getElementById('repeatEnabled').checked) return;
+
+  const issueDate = document.getElementById('issueDate').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const count = parseInt(document.getElementById('repeatCount').value) || 1;
+
+  if (!issueDate) return;
+
+  const previewEl = document.getElementById('repeatPreview');
+  const listEl = document.getElementById('repeatPreviewList');
+  previewEl.style.display = 'block';
+
+  const rows = [];
+  const base = new Date(issueDate);
+  const baseDue = dueDate ? new Date(dueDate) : null;
+
+  for (let i = 0; i < Math.min(count, 24); i++) {
+    // 発生日: 毎月同日
+    const d = new Date(base.getFullYear(), base.getMonth() + i, base.getDate());
+    // 月末を超える場合は月末に調整（例: 1/31 → 2/28）
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    if (d.getDate() > lastDay) d.setDate(lastDay);
+
+    // 決済期日: 毎月同日
+    let dueStr = '-';
+    if (baseDue) {
+      const due = new Date(baseDue.getFullYear(), baseDue.getMonth() + i, baseDue.getDate());
+      const dueLastDay = new Date(due.getFullYear(), due.getMonth() + 1, 0).getDate();
+      if (due.getDate() > dueLastDay) due.setDate(dueLastDay);
+      dueStr = due.toISOString().split('T')[0];
+    }
+
+    rows.push(`<span style="display:inline-block;margin-right:16px;margin-bottom:4px;">
+      ${i+1}回目: <strong>${d.toISOString().split('T')[0]}</strong>
+      ${dueStr !== '-' ? `→ 決済: <strong>${dueStr}</strong>` : ''}
+    </span>`);
+  }
+  if (count > 24) {
+    rows.push(`<span style="color:#888;font-size:11px;">… 他 ${count - 24} 件</span>`);
+  }
+  listEl.innerHTML = rows.join('');
+}
 
 // ===== フォーム機能 =====
 function addDetailRow() {
@@ -283,11 +447,94 @@ function removeDetailRow(btn) {
   }
 }
 
-function toggleRepeat() {
-  const enabled = document.getElementById('repeatEnabled').checked;
-  document.getElementById('repeatOptions').style.display = enabled ? 'block' : 'none';
+// ===== ファイル操作（フォームタブ） =====
+function handleFormFileSelect(input) {
+  for (const file of input.files) {
+    if (!formFiles.find(f => f.name === file.name && f.size === file.size)) {
+      formFiles.push(file);
+    }
+  }
+  renderFormFileList();
+  input.value = '';
 }
 
+function renderFormFileList() {
+  const listEl = document.getElementById('formFileList');
+  if (formFiles.length === 0) { listEl.innerHTML = ''; return; }
+  listEl.innerHTML = formFiles.map((f, i) => `
+    <div class="file-item">
+      <span>📄</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-status">${(f.size / 1024).toFixed(0)} KB</span>
+      <button class="file-remove" onclick="removeFormFile(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeFormFile(idx) {
+  formFiles.splice(idx, 1);
+  renderFormFileList();
+}
+
+function handleDragOver(e, zoneId) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.add('dragover');
+}
+
+function handleDragLeave(zoneId) {
+  document.getElementById(zoneId).classList.remove('dragover');
+}
+
+function handleDrop(e, inputId) {
+  e.preventDefault();
+  document.getElementById('formDropZone').classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  for (const file of files) {
+    if (!formFiles.find(f => f.name === file.name && f.size === file.size)) {
+      formFiles.push(file);
+    }
+  }
+  renderFormFileList();
+}
+
+// ===== ファイル操作（AI指示タブ） =====
+function handleAiFileSelect(input) {
+  for (const file of input.files) {
+    if (!aiFiles.find(f => f.name === file.name && f.size === file.size)) {
+      aiFiles.push(file);
+    }
+  }
+  renderAiFileList();
+  input.value = '';
+}
+
+function renderAiFileList() {
+  const listEl = document.getElementById('aiFileList');
+  const badge = document.getElementById('aiFileBadge');
+  if (aiFiles.length === 0) {
+    listEl.style.display = 'none';
+    badge.style.display = 'none';
+    return;
+  }
+  badge.textContent = `${aiFiles.length}件`;
+  badge.style.display = 'inline-block';
+  listEl.style.display = 'block';
+  listEl.innerHTML = aiFiles.map((f, i) => `
+    <div class="file-item">
+      <span>📄</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-status">${(f.size / 1024).toFixed(0)} KB</span>
+      <button class="file-remove" onclick="removeAiFile(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeAiFile(idx) {
+  aiFiles.splice(idx, 1);
+  renderAiFileList();
+}
+
+// ===== フォーム登録 =====
 async function submitForm() {
   const btn = document.getElementById('formSubmitBtn');
   const spinner = document.getElementById('formSpinner');
@@ -347,9 +594,17 @@ async function submitForm() {
     const data = await res.json();
 
     if (data.status === 'ok') {
+      // 証憑ファイルがある場合はアップロード
+      let receiptMsg = '';
+      if (formFiles.length > 0 && data.ids && data.ids.length > 0) {
+        const uploadResult = await uploadReceiptsToDeals(formFiles, data.ids);
+        receiptMsg = `<br>📎 証憑: ${uploadResult}`;
+      }
       resultBox.className = 'result-box success';
       resultBox.innerHTML = `✅ 登録完了！${data.registered}件登録しました。<br>` +
-        (data.ids ? `登録ID: ${data.ids.join(', ')}` : '');
+        (data.ids ? `登録ID: ${data.ids.join(', ')}` : '') + receiptMsg;
+      formFiles = [];
+      renderFormFileList();
     } else {
       resultBox.className = 'result-box error';
       resultBox.innerHTML = `❌ エラー: ${data.message || JSON.stringify(data)}`;
@@ -363,6 +618,32 @@ async function submitForm() {
     btn.disabled = false;
     spinner.classList.remove('active');
   }
+}
+
+// 証憑ファイルをアップロードして取引に紐付ける
+async function uploadReceiptsToDeals(files, dealIds) {
+  const results = [];
+  for (const file of files) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('deal_id', dealIds[0]);  // 最初の取引IDに紐付け
+      formData.append('description', file.name);
+      const res = await fetch('/api/assistant/upload_receipt', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        results.push(`${file.name} ✅`);
+      } else {
+        results.push(`${file.name} ❌(${data.message})`);
+      }
+    } catch(e) {
+      results.push(`${file.name} ❌(通信エラー)`);
+    }
+  }
+  return results.join(', ');
 }
 
 // ===== AI指示機能 =====
@@ -384,6 +665,8 @@ function addAiMessage(role, text) {
 
 function clearAiChat() {
   aiHistory = [];
+  aiFiles = [];
+  renderAiFileList();
   const container = document.getElementById('aiMessages');
   container.innerHTML = `<div class="ai-msg assistant">
     チャット履歴をクリアしました。新しい仕訳の指示をどうぞ。
@@ -394,20 +677,47 @@ async function sendAiMessage() {
   const input = document.getElementById('aiInput');
   const btn = document.getElementById('aiSendBtn');
   const message = input.value.trim();
-  if (!message) return;
+  if (!message && aiFiles.length === 0) return;
 
-  addAiMessage('user', message);
+  const displayMsg = message + (aiFiles.length > 0 ? ` 📎 ${aiFiles.map(f=>f.name).join(', ')}` : '');
+  addAiMessage('user', displayMsg);
   input.value = '';
   btn.disabled = true;
 
   const thinkingDiv = addAiMessage('assistant', '⏳ 考え中...');
 
   try {
+    let fileContents = [];
+
+    // ファイルがある場合はサーバーに送ってテキスト抽出
+    if (aiFiles.length > 0) {
+      thinkingDiv.innerHTML = '⏳ ファイルを読み取り中...';
+      const formData = new FormData();
+      for (const file of aiFiles) {
+        formData.append('files', file);
+      }
+      formData.append('message', message);
+      const extractRes = await fetch('/api/assistant/extract_file', {
+        method: 'POST',
+        body: formData,
+      });
+      const extractData = await extractRes.json();
+      if (extractData.contents) {
+        fileContents = extractData.contents;
+      }
+      thinkingDiv.innerHTML = '⏳ AIが仕訳を提案中...';
+    }
+
+    // AI仕訳提案を取得
+    const aiMessage = fileContents.length > 0
+      ? `${message}\n\n【添付ファイルの内容】\n${fileContents.join('\n\n---\n\n')}`
+      : message;
+
     const res = await fetch('/api/assistant/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: message,
+        message: aiMessage,
         history: aiHistory,
         master: masterData,
       })
@@ -418,7 +728,7 @@ async function sendAiMessage() {
     if (data.error) {
       addAiMessage('error', `❌ エラー: ${data.error}`);
     } else {
-      aiHistory.push({ role: 'user', content: message });
+      aiHistory.push({ role: 'user', content: aiMessage });
       aiHistory.push({ role: 'assistant', content: data.reply });
 
       let replyHtml = data.reply.replace(/\n/g, '<br>');
@@ -443,12 +753,32 @@ async function sendAiMessage() {
         });
         replyHtml += `</table></div>`;
 
+        // 添付ファイルがある場合は証憑として一緒に登録するオプションを表示
+        const hasFiles = aiFiles.length > 0;
+        const filesJson = hasFiles ? JSON.stringify(aiFiles.map(f => f.name)) : '[]';
         const entriesJson = JSON.stringify(data.entries).replace(/"/g, '&quot;');
-        replyHtml += `<br><button class="btn btn-success" onclick='registerAiEntries(${entriesJson})'>▶ この内容でfreeeに登録する（${data.entries.length}件）</button>`;
+
+        replyHtml += `<br>`;
+        if (hasFiles) {
+          replyHtml += `<div style="font-size:12px;color:#555;margin-bottom:8px;">
+            📎 添付ファイル（${aiFiles.length}件）も証憑として一緒にアップロードされます
+          </div>`;
+        }
+        replyHtml += `<button class="btn btn-success" onclick='registerAiEntries(${entriesJson})'>
+          ▶ この内容でfreeeに登録する（${data.entries.length}件）
+        </button>`;
+        if (hasFiles) {
+          replyHtml += ` <button class="btn btn-secondary" style="font-size:12px;" onclick='registerAiEntries(${entriesJson}, false)'>
+            証憑なしで登録
+          </button>`;
+        }
       }
 
       addAiMessage('assistant', replyHtml);
     }
+    // ファイルをクリア（送信後）
+    aiFiles = [];
+    renderAiFileList();
   } catch(e) {
     thinkingDiv.remove();
     addAiMessage('error', `❌ 通信エラー: ${e.message}`);
@@ -457,7 +787,7 @@ async function sendAiMessage() {
   }
 }
 
-async function registerAiEntries(entries) {
+async function registerAiEntries(entries, withFiles = true) {
   const resultDiv = addAiMessage('assistant', '⏳ freeeに登録中...');
   try {
     const res = await fetch('/api/assistant/register_bulk', {
@@ -466,10 +796,23 @@ async function registerAiEntries(entries) {
       body: JSON.stringify({ entries: entries })
     });
     const data = await res.json();
-    resultDiv.remove();
+
     if (data.status === 'ok') {
-      addAiMessage('assistant', `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids || []).join(', ')}`);
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids || []).join(', ')}`;
+
+      // 証憑ファイルがある場合はアップロード
+      if (withFiles && aiFiles.length > 0 && data.ids && data.ids.length > 0) {
+        resultDiv.innerHTML = '⏳ 証憑ファイルをアップロード中...';
+        const uploadResult = await uploadReceiptsToDeals(aiFiles, data.ids);
+        msg += `<br>📎 証憑: ${uploadResult}`;
+        aiFiles = [];
+        renderAiFileList();
+      }
+
+      resultDiv.remove();
+      addAiMessage('assistant', msg);
     } else {
+      resultDiv.remove();
       addAiMessage('error', `❌ 登録エラー: ${data.message}`);
     }
   } catch(e) {

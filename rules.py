@@ -4,8 +4,14 @@
 
 対応ステータス:
   - 本部確認済: 通常の売上＋仕入仕訳（または請求書）登録
+  - ●入社済: 請求書送付（要請求の場合のみ）
   - ●入社前辞退: 元の取引を削除
   - ●返金（短期離職）: 返金率に応じたマイナス仕訳を追加登録
+
+請求有無の判定:
+  - Notionの「請求有無」フォーミュラフィールドが「要請求」の場合は請求書登録
+  - 「請求不要」の場合は仕訳登録のみ
+  - フィールドが存在しない場合はRULESのneeds_invoiceで判定（後方互換）
 """
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -18,7 +24,65 @@ from typing import Optional
 # キー = Notionの「求人データベース」selectの実際の値
 # ============================================================
 RULES = {
-    # --- 求人DB ---
+    # --- 求人DB（新しいプロパティ名） ---
+    "Circus": {
+        "type": "求人DB",
+        "supplier": "circus株式会社",
+        "payment_rule": "入社翌々月10日",
+        "billing_type": "仕訳登録のみ",
+        "needs_invoice": False,
+    },
+    "Zキャリア": {
+        "type": "求人DB",
+        "supplier": "株式会社ROXX",
+        "payment_rule": "入社翌々月10日",
+        "billing_type": "仕訳登録のみ",
+        "needs_invoice": False,
+    },
+    "クラウドエージェント": {
+        "type": "求人DB",
+        "supplier": "株式会社Grooves",
+        "payment_rule": "入社翌々月4日",
+        "billing_type": "仕訳登録のみ",
+        "needs_invoice": False,
+    },
+    "マイナビJOBシェアリング": {
+        "type": "求人DB",
+        "supplier": "株式会社マイナビ",
+        "payment_rule": "入社翌月末",
+        "billing_type": "請求書登録",
+        "needs_invoice": True,
+    },
+    "Bee": {
+        "type": "求人DB",
+        "supplier": "株式会社ネオキャリア",
+        "payment_rule": "入社翌月末",
+        "billing_type": "請求書登録",
+        "needs_invoice": True,
+    },
+    # CSS求人はスカウト手数料のみ登録（売上仕訳のみ、仕入なし）
+    "CSS求人": {
+        "type": "求人DB",
+        "supplier": None,
+        "payment_rule": "登録不要",
+        "billing_type": "仕訳登録のみ",
+        "needs_invoice": False,
+    },
+    "本店自社求人": {
+        "type": "求人DB",
+        "supplier": None,
+        "payment_rule": "都度確認",
+        "billing_type": "請求書登録",
+        "needs_invoice": True,
+    },
+    "Hitolink": {
+        "type": "求人DB",
+        "supplier": None,
+        "payment_rule": "入社翌月末",
+        "billing_type": "申請フォーム",
+        "needs_invoice": False,
+    },
+    # --- 旧キー名（後方互換のため残す） ---
     "Circus | 請求不要": {
         "type": "求人DB",
         "supplier": "circus株式会社",
@@ -40,21 +104,6 @@ RULES = {
         "billing_type": "仕訳登録のみ",
         "needs_invoice": False,
     },
-    "マイナビJOBシェアリング": {
-        "type": "求人DB",
-        "supplier": "株式会社マイナビ",
-        "payment_rule": "入社翌月末",
-        "billing_type": "請求書登録",
-        "needs_invoice": True,
-    },
-    "Bee": {
-        "type": "求人DB",
-        "supplier": "株式会社ネオキャリア",
-        "payment_rule": "入社翌月末",
-        "billing_type": "請求書登録",
-        "needs_invoice": True,
-    },
-    # CSS自社求人はスカウト手数料のみ登録（売上仕訳のみ、仕入なし）
     "CSS自社求人│スカウト手数料のみ登録": {
         "type": "求人DB",
         "supplier": None,
@@ -67,20 +116,6 @@ RULES = {
         "supplier": None,
         "payment_rule": "登録不要",
         "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
-    "本店自社求人": {
-        "type": "求人DB",
-        "supplier": None,
-        "payment_rule": "都度確認",
-        "billing_type": "請求書登録",
-        "needs_invoice": True,
-    },
-    "Hitolink": {
-        "type": "求人DB",
-        "supplier": None,
-        "payment_rule": "入社翌月末",
-        "billing_type": "申請フォーム",
         "needs_invoice": False,
     },
     # --- 集客 ---
@@ -245,6 +280,23 @@ def _extract_props(record: dict) -> dict:
         texts = info.get("rich_text", [])
         return "".join([x.get("plain_text", "") for x in texts])
 
+    def get_formula_string(key: str) -> Optional[str]:
+        """フォーミュラ型の文字列値を取得する"""
+        info = props.get(key, {})
+        t = info.get("type", "")
+        if t == "formula":
+            f = info.get("formula", {})
+            ft = f.get("type", "")
+            if ft == "string":
+                return f.get("string")
+        elif t == "select":
+            sel = info.get("select")
+            return sel.get("name") if sel else None
+        elif t == "rich_text":
+            texts = info.get("rich_text", [])
+            return "".join([x.get("plain_text", "") for x in texts]) or None
+        return None
+
     def get_rollup_select(key: str) -> Optional[str]:
         """rollup(array of select)から最初の値を取得する"""
         info = props.get(key, {})
@@ -286,6 +338,8 @@ def _extract_props(record: dict) -> dict:
     # PCA専用: PCA仕入高（パートナーへの支払）
     pca_shiire = get_number("PCA仕入高")
     pca_kessai_str = get_date("PCA仕入決済期日")
+    # 請求有無フィールド（フォーミュラ型）
+    invoice_required_str = get_formula_string("請求有無")
 
     # 求職者名を取得（relationから別ページを参照）
     from notion_client import get_jobseeker_name, get_company_name
@@ -317,6 +371,7 @@ def _extract_props(record: dict) -> dict:
         "jobseeker_name": jobseeker_name,
         "company_name": company_name,
         "shukyaku_keiro": shukyaku_keiro,
+        "invoice_required_str": invoice_required_str,  # 「要請求」または「請求不要」
     }
 
 
@@ -326,7 +381,7 @@ def build_journal_entries(record: dict) -> dict:
 
     返り値:
     {
-        "action": "register" | "delete" | "refund" | "skip" | "review" | "error",
+        "action": "register" | "delete" | "refund" | "skip" | "review" | "error" | "send_invoice",
         "message": str,
         "sales_entry": dict | None,
         "purchase_entry": dict | None,
@@ -388,15 +443,12 @@ def build_journal_entries(record: dict) -> dict:
             base["message"] = "返金ですが、返金率が0%または未設定です。手動で確認してください。"
             return base
 
-        # 返金後の金額を使う（設定されていれば）
-        # 返金額 = 元の金額 × 返金率
         original_uriage = p["zeinuki_uriage"] or 0
         original_shukyaku = p["zeinuki_shukyaku"] or 0
 
         henkin_uriage = p["henkin_go_uriage"]
         henkin_shukyaku = p["henkin_go_shukyaku"]
 
-        # 返金後売上が設定されていれば差額をマイナス計上
         if henkin_uriage is not None:
             minus_uriage = henkin_uriage - original_uriage  # 負の値
         else:
@@ -451,7 +503,7 @@ def build_journal_entries(record: dict) -> dict:
                 base["pca_entry"] = {
                     "issue_date": today_str,
                     "due_date": None,
-                    "partner_name": None,  # 担当パートナー（要確認）
+                    "partner_name": None,
                     "details": [{
                         "account_item_name": "受け取り報酬料",
                         "tax_code": 7,
@@ -469,7 +521,23 @@ def build_journal_entries(record: dict) -> dict:
         return base
 
     # ============================================================
-    # ③ 本部確認済: 通常の売上＋仕入仕訳登録
+    # ③ 入社済: 請求書送付（要請求の場合のみ）
+    # ============================================================
+    if current_status == "●入社済":
+        # 請求有無を確認（フォーミュラフィールドまたはRULESで判定）
+        invoice_required = _is_invoice_required(p, job_db)
+        if not invoice_required:
+            base["action"] = "review"
+            base["message"] = "入社済ですが、請求不要のため請求書送付をスキップします。手動で確認してください。"
+            return base
+
+        base["action"] = "send_invoice"
+        base["message"] = f"入社済: 請求書を送付します（freee請求書IDが必要）"
+        base["needs_invoice"] = True
+        return base
+
+    # ============================================================
+    # ④ 本部確認済: 通常の売上＋仕入仕訳登録
     # ============================================================
     if current_status != "本部確認済":
         base["action"] = "review"
@@ -496,6 +564,9 @@ def build_journal_entries(record: dict) -> dict:
         base["message"] = f"「{job_db}」は申請フォームでの処理が必要です。手動で処理してください。"
         return base
 
+    # 請求有無を判定（Notionの「請求有無」フィールド優先、なければRULESで判定）
+    needs_invoice = _is_invoice_required(p, job_db)
+
     # 決済期日（Notionのformulaが取れない場合は自前計算）
     uriage_kessai = p["uriage_kessai"]
     shiire_kessai = p["shiire_kessai"]
@@ -518,8 +589,6 @@ def build_journal_entries(record: dict) -> dict:
 
     # 売上仕訳
     if p["zeinuki_uriage"] and p["zeinuki_uriage"] > 0:
-        # 請求書登録の場合は売上仕訳は請求書から自動生成されるが、
-        # 仕訳データとして構築しておく（請求書登録フローで使用）
         account_item = "CA売上【自社】"
         if db_type == "pca":
             account_item = "PCA売上"
@@ -551,9 +620,7 @@ def build_journal_entries(record: dict) -> dict:
     # 仕入仕訳（登録不要の場合はスキップ）
     if rule["payment_rule"] != "登録不要":
         if p["zeinuki_shukyaku"] and p["zeinuki_shukyaku"] > 0:
-            # 仕入の部門も同じ設定
             purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
-            # 仕入取引先は集客経路のルールから取得（集客経路がなければ求人データベースのルールを使用）
             shukyaku_rule = get_rule(p.get("shukyaku_keiro") or "")
             purchase_partner = shukyaku_rule.get("supplier") if shukyaku_rule else rule.get("supplier")
             base["purchase_entry"] = {
@@ -580,7 +647,7 @@ def build_journal_entries(record: dict) -> dict:
         base["pca_entry"] = {
             "issue_date": nyusha_date_str,
             "due_date": pca_kessai.isoformat() if pca_kessai else None,
-            "partner_name": None,  # 担当パートナー名（Notionの「担当パートナー」から取得要）
+            "partner_name": None,
             "section_name": "本店：PCA",
             "details": [{
                 "account_item_name": "PCA仕入高",
@@ -596,10 +663,27 @@ def build_journal_entries(record: dict) -> dict:
     if rule["payment_rule"] == "登録不要":
         base["action"] = "register_sales_only"
         base["message"] = f"「{job_db}」は仕入仕訳登録不要です。売上仕訳のみ登録します。"
-        base["needs_invoice"] = rule.get("needs_invoice", False)
+        base["needs_invoice"] = needs_invoice
         return base
 
     base["action"] = "register"
     base["message"] = "仕訳データを生成しました"
-    base["needs_invoice"] = rule.get("needs_invoice", False)
+    base["needs_invoice"] = needs_invoice
     return base
+
+
+def _is_invoice_required(p: dict, job_db: str) -> bool:
+    """
+    請求書が必要かどうかを判定する
+    Notionの「請求有無」フォーミュラフィールドが「要請求」の場合はTrue
+    フィールドが存在しない場合はRULESのneeds_invoiceで判定（後方互換）
+    """
+    invoice_required_str = p.get("invoice_required_str")
+    if invoice_required_str is not None:
+        return invoice_required_str == "要請求"
+
+    # フィールドが存在しない場合はRULESで判定
+    rule = get_rule(job_db)
+    if rule:
+        return rule.get("needs_invoice", False)
+    return False

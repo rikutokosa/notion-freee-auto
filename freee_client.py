@@ -1,6 +1,6 @@
 """
 freee会計 APIクライアント
-OAuth2認証・トークン自動更新・取引（仕訳）登録・請求書登録・取引削除を担当する
+OAuth2認証・トークン自動更新・取引（仕訳）登録・請求書登録・取引削除・証憑アップロードを担当する
 """
 import os
 import json
@@ -223,7 +223,10 @@ def get_master_cache() -> dict:
             items = get_items()
             tags = get_tags()
             sections = get_sections()
-            logger.info(f"マスタキャッシュ取得: 勘定科目={len(account_items)}件, 取引先={len(partners)}件, タグ={len(tags)}件, 部門={len(sections)}件")
+            logger.info(
+                f"マスタキャッシュ取得: 勘定科目={len(account_items)}件, "
+                f"取引先={len(partners)}件, タグ={len(tags)}件, 部門={len(sections)}件"
+            )
             _cache = {
                 "account_items": account_items,
                 "partners": partners,
@@ -309,8 +312,14 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
         account_item_id = _find_account_item_id(d["account_item_name"], account_items)
         if not account_item_id:
             import logging
-            logging.getLogger(__name__).error(f"勘定科目が見つかりません: '{d['account_item_name']}' / 登録済み科目数={len(account_items)}")
-            raise ValueError(f"勘定科目「{d['account_item_name']}」が見つかりません（freeeに登録されていないか名称が異なります）")
+            logging.getLogger(__name__).error(
+                f"勘定科目が見つかりません: '{d['account_item_name']}' "
+                f"/ 登録済み科目数={len(account_items)}"
+            )
+            raise ValueError(
+                f"勘定科目「{d['account_item_name']}」が見つかりません"
+                "（freeeに登録されていないか名称が異なります）"
+            )
 
         item_id = _find_item_id(d.get("item_name", ""), items) if d.get("item_name") else None
 
@@ -364,7 +373,11 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
 
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"仕訳登録リクエスト: type={deal_type}, issue_date={entry['issue_date']}, details={len(details)}件, section={entry.get('section_name')}, tags={[d.get('tag_names') for d in entry.get('details', [])]}")
+    logger.info(
+        f"仕訳登録リクエスト: type={deal_type}, issue_date={entry['issue_date']}, "
+        f"details={len(details)}件, section={entry.get('section_name')}, "
+        f"tags={[d.get('tag_names') for d in entry.get('details', [])]}"
+    )
 
     if resp.status_code not in (200, 201):
         logger.error(f"仕訳登録失敗: {resp.status_code} {resp.text[:1000]}")
@@ -483,19 +496,21 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     if entry.get("title"):
         payload["subject"] = entry["title"]
     if entry.get("invoice_note"):
-        payload["invoice_note"] = entry["invoice_note"]  # 備考（振込手数料は貴社負担でお願いいたします。）
+        payload["invoice_note"] = entry["invoice_note"]
     if entry.get("memo"):
-        payload["memo"] = entry["memo"]  # 社内メモ（本店：CA または 本店：PCA）
+        payload["memo"] = entry["memo"]
     if partner_id:
         payload["partner_id"] = partner_id
     elif partner_name:
-        # partner_nameはサポート外のためpartner_idが必須。取引先が見つからない場合はエラーにする
         logger.warning(f"請求書登録: 取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
-        raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取弒先を登録してください。")
+        raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
     if entry.get("invoice_number"):
         payload["invoice_number"] = entry["invoice_number"]
 
-    logger.info(f"請求書登録リクエスト: partner={partner_name}(id={partner_id}), billing_date={entry['issue_date']}, lines={len(lines)}件")
+    logger.info(
+        f"請求書登録リクエスト: partner={partner_name}(id={partner_id}), "
+        f"billing_date={entry['issue_date']}, lines={len(lines)}件"
+    )
     logger.info(f"請求書ペイロード: {payload}")
 
     resp = requests.post(
@@ -511,6 +526,104 @@ def create_invoice(entry: dict, cache: dict) -> dict:
 
     logger.info(f"請求書登録成功: ID={resp.json().get('id')}")
     return resp.json()
+
+
+def send_invoice(invoice_id: int, contact_email: Optional[str] = None) -> dict:
+    """
+    freee請求書を送付する（PUT /iv/invoices/{id}）
+    sending_status を "sent" に変更することでメール送付が実行される
+
+    invoice_id: freee請求書ID
+    contact_email: 送付先メールアドレス（省略時はfreeeに登録済みの取引先メールを使用）
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    payload = {
+        "company_id": FREEE_COMPANY_ID,
+        "sending_status": "sent",
+    }
+    if contact_email:
+        payload["partner_contact_email_to"] = contact_email
+
+    logger.info(f"請求書送付リクエスト: invoice_id={invoice_id}, payload={payload}")
+
+    resp = requests.put(
+        f"{FREEE_IV_BASE}/invoices/{invoice_id}",
+        headers=_api_headers(),
+        json=payload,
+        timeout=30,
+    )
+
+    if resp.status_code not in (200, 201):
+        error_msg = f"freee請求書送付失敗: {resp.status_code} {resp.text[:500]}"
+        logger.error(error_msg)
+        return {"error": error_msg}
+
+    logger.info(f"請求書送付成功: ID={invoice_id}")
+    return {"invoice_id": invoice_id, "status": "sent"}
+
+
+# ============================================================
+# 証憑アップロード
+# ============================================================
+def upload_receipt(file_path: str, deal_id: Optional[int] = None,
+                   description: str = "") -> dict:
+    """
+    freeeに証憑ファイルをアップロードする
+
+    file_path: アップロードするファイルのパス
+    deal_id: 紐付ける取引ID（省略可）
+    description: 証憑の説明（省略可）
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    token = get_valid_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+    }
+
+    with open(file_path, "rb") as f:
+        files = {"receipt": (Path(file_path).name, f)}
+        data = {"company_id": str(FREEE_COMPANY_ID)}
+        if description:
+            data["description"] = description
+
+        resp = requests.post(
+            f"{FREEE_API_BASE}/receipts",
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=60,
+        )
+
+    if resp.status_code not in (200, 201):
+        error_msg = f"証憑アップロード失敗: {resp.status_code} {resp.text[:500]}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    receipt_data = resp.json().get("receipt", {})
+    receipt_id = receipt_data.get("id")
+    logger.info(f"証憑アップロード成功: ID={receipt_id}")
+
+    # 取引IDが指定されている場合は紐付ける
+    if deal_id and receipt_id:
+        try:
+            link_resp = requests.post(
+                f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+                headers={**headers, "Content-Type": "application/json"},
+                json={"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id},
+                timeout=30,
+            )
+            if link_resp.status_code not in (200, 201):
+                logger.warning(
+                    f"証憑と取引の紐付け失敗: {link_resp.status_code} {link_resp.text[:300]}"
+                )
+        except Exception as e:
+            logger.warning(f"証憑と取引の紐付けエラー: {e}")
+
+    return receipt_data
 
 
 # ============================================================
@@ -562,7 +675,7 @@ def register_invoice_and_deal(invoice_entry: dict, sales_entry: dict) -> dict:
     try:
         invoice = create_invoice(invoice_entry, cache)
         result["invoice_id"] = invoice.get("id")
-        # 請求書から取引が自動連携されるため、deal_idは請求書のレスポンスから取引する
+        # 請求書から取引が自動連携されるため、deal_idは請求書のレスポンスから取得
         deal_id = invoice.get("deal_id")
         if deal_id:
             result["sales_id"] = deal_id

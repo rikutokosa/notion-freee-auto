@@ -24,13 +24,15 @@ import json
 import logging
 import threading
 from datetime import datetime
+import tempfile
+from pathlib import Path
 from flask import Flask, render_template, request, redirect, jsonify, url_for
 
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
     load_token, is_token_expired, clear_master_cache, get_master_cache,
     get_sections, get_tags, get_account_items, get_partners,
-    create_deal,
+    create_deal, upload_receipt,
 )
 from notion_client import fetch_pending_records, get_record
 from rules import build_journal_entries
@@ -688,6 +690,184 @@ def api_assistant_ai():
     except Exception as e:
         logger.exception("AI仕訳生成エラー")
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# 証憑アップロード
+# ============================================================
+@app.route("/api/assistant/upload_receipt", methods=["POST"])
+def api_upload_receipt():
+    """証憑ファイルをfreeeにアップロードして取引に紐付ける"""
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "ファイルが指定されていません"}), 400
+    file = request.files['file']
+    deal_id = request.form.get('deal_id')
+    description = request.form.get('description', file.filename)
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
+            file.save(tmp.name)
+            receipt = upload_receipt(
+                tmp.name,
+                deal_id=int(deal_id) if deal_id else None,
+                description=description,
+            )
+        return jsonify({"status": "ok", "receipt_id": receipt.get("id")})
+    except Exception as e:
+        logger.exception("証憑アップロードエラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ============================================================
+# ファイル読み取り（AI仕訳提案用）
+# ============================================================
+@app.route("/api/assistant/extract_file", methods=["POST"])
+def api_extract_file():
+    """
+    アップロードされたファイルからテキストを抽出してAIに渡す
+    対応形式: PDF, 画像(PNG/JPG), Excel(xlsx/xls), CSV
+    """
+    files = request.files.getlist('files')
+    user_message = request.form.get('message', '')
+    if not files:
+        return jsonify({"contents": []})
+
+    contents = []
+    for file in files:
+        filename = file.filename
+        suffix = Path(filename).suffix.lower()
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                file.save(tmp.name)
+                tmp_path = tmp.name
+
+            text = _extract_file_text(tmp_path, filename, suffix)
+            if text:
+                contents.append(f"【{filename}】\n{text}")
+        except Exception as e:
+            logger.exception(f"ファイル読み取りエラー: {filename}")
+            contents.append(f"【{filename}】読み取りエラー: {str(e)}")
+
+    return jsonify({"contents": contents})
+
+
+def _extract_file_text(path: str, filename: str, suffix: str) -> str:
+    """ファイルからテキストを抽出する"""
+    import subprocess
+
+    # CSV
+    if suffix == '.csv':
+        import csv
+        rows = []
+        with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            reader = csv.reader(f)
+            for i, row in enumerate(reader):
+                rows.append(','.join(row))
+                if i > 200:  # 最大200行
+                    rows.append('...(以下省略)')
+                    break
+        return '\n'.join(rows)
+
+    # Excel
+    if suffix in ('.xlsx', '.xls'):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            lines = []
+            for sheet in wb.sheetnames[:3]:  # 最大3シート
+                ws = wb[sheet]
+                lines.append(f'=== シート: {sheet} ===')
+                for i, row in enumerate(ws.iter_rows(values_only=True)):
+                    if any(c is not None for c in row):
+                        lines.append('\t'.join([str(c) if c is not None else '' for c in row]))
+                    if i > 300:
+                        lines.append('...(以下省略)')
+                        break
+            return '\n'.join(lines)
+        except Exception:
+            pass
+        # xlsはxlrdで試みる
+        try:
+            import xlrd
+            wb = xlrd.open_workbook(path)
+            lines = []
+            for sheet in wb.sheets()[:3]:
+                lines.append(f'=== シート: {sheet.name} ===')
+                for i in range(min(sheet.nrows, 300)):
+                    lines.append('\t'.join([str(sheet.cell_value(i, j)) for j in range(sheet.ncols)]))
+            return '\n'.join(lines)
+        except Exception:
+            pass
+        return ''
+
+    # PDF
+    if suffix == '.pdf':
+        try:
+            result = subprocess.run(
+                ['pdftotext', '-layout', path, '-'],
+                capture_output=True, text=True, timeout=30
+            )
+            text = result.stdout.strip()
+            if text:
+                return text[:8000]  # 最大8000文字
+        except Exception:
+            pass
+        # pdftotext失敗時はpdf2imageで画像化してOCR
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(path, first_page=1, last_page=3, dpi=150)
+            texts = []
+            for img in images:
+                img_path = path + '_page.png'
+                img.save(img_path, 'PNG')
+                t = _ocr_image_with_openai(img_path)
+                if t:
+                    texts.append(t)
+            return '\n'.join(texts)[:8000]
+        except Exception:
+            pass
+        return ''
+
+    # 画像（PNG/JPG）
+    if suffix in ('.png', '.jpg', '.jpeg'):
+        return _ocr_image_with_openai(path)
+
+    return ''
+
+
+def _ocr_image_with_openai(image_path: str) -> str:
+    """OpenAI Vision APIで画像からテキストを抽出する"""
+    import base64
+    import requests as req
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    if not openai_key:
+        return ''
+    try:
+        with open(image_path, 'rb') as f:
+            b64 = base64.b64encode(f.read()).decode()
+        suffix = Path(image_path).suffix.lower().lstrip('.')
+        mime = 'image/png' if suffix == 'png' else 'image/jpeg'
+        resp = req.post(
+            f"{openai_base}/chat/completions",
+            headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "この画像（請求書・領収書・返済スケジュール表など）のテキスト内容をすべて抽出してください。表形式の場合は表のまま出力してください。"},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    ]
+                }],
+                "max_tokens": 2000,
+            },
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.warning(f"OCRエラー: {e}")
+    return ''
 
 
 # ============================================================

@@ -4,7 +4,8 @@ Notionの②経理対応待ちレコードを取得し、freeeに登録する
 
 対応処理パターン:
   - register / register_sales_only: 通常の仕訳登録（仕訳のみ）
-  - register + needs_invoice: 請求書登録＋仕訳登録
+  - register + needs_invoice: 請求書登録（仕訳は手動でfreee管理画面から）
+  - send_invoice: 請求書送付（●入社済ステータス）
   - delete: 入社前辞退（取引削除）
   - refund: 返金（マイナス仕訳登録）
   - review: 手動確認が必要
@@ -17,14 +18,19 @@ from typing import Optional
 from notion_client import (
     fetch_pending_records,
     get_record,
+    get_invoice_id_from_record,
     mark_as_done,
     mark_as_error,
     clear_error,
+    FREEE_STATUS_SHIWAKE_SUCCESS,
+    FREEE_STATUS_INVOICE_REGISTERED,
+    FREEE_STATUS_INVOICE_SUCCESS,
 )
 from rules import build_journal_entries, _extract_props
 from freee_client import (
     register_journal,
     register_invoice_and_deal,
+    send_invoice,
     delete_deals,
 )
 
@@ -140,6 +146,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         result["job_db"] = journal.get("job_db", "")
         result["nyusha_date"] = journal.get("nyusha_date", "")
         current_status = journal.get("original_status", "")
+        db_type = record.get("_db_type", "honten")
 
         # ============================================================
         # 手動確認が必要なケース
@@ -177,7 +184,9 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = error_msg
                 result["errors"] = del_result["errors"]
             else:
-                mark_as_done(page_id, current_status)
+                mark_as_done(page_id, current_status,
+                             db_type=db_type,
+                             freee_status=FREEE_STATUS_SHIWAKE_SUCCESS)
                 result["status"] = "success"
                 result["message"] = "入社前辞退: 取引を削除しました"
             return result
@@ -202,6 +211,8 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["purchase_id"] = reg_result["purchase_id"]
                 result["pca_id"] = reg_result["pca_id"]
                 mark_as_done(page_id, current_status,
+                             db_type=db_type,
+                             freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
                              sales_id=reg_result["sales_id"],
                              purchase_id=reg_result["purchase_id"])
                 result["status"] = "success"
@@ -209,7 +220,38 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             return result
 
         # ============================================================
-        # 通常登録（請求書あり）
+        # 入社済: 請求書を送付（●入社済ステータス）
+        # ============================================================
+        if journal["action"] == "send_invoice":
+            invoice_id = get_invoice_id_from_record(record)
+            if not invoice_id:
+                error_msg = "freee請求書IDが見つかりません。本部確認済の処理で請求書が登録されているか確認してください。"
+                mark_as_error(page_id, error_msg)
+                result["status"] = "error"
+                result["message"] = error_msg
+                result["errors"] = [error_msg]
+                return result
+
+            send_result = send_invoice(invoice_id)
+            if send_result.get("error"):
+                error_msg = send_result["error"]
+                mark_as_error(page_id, error_msg)
+                result["status"] = "error"
+                result["message"] = error_msg
+                result["errors"] = [error_msg]
+            else:
+                result["invoice_id"] = invoice_id
+                mark_as_done(page_id, current_status,
+                             db_type=db_type,
+                             freee_status=FREEE_STATUS_INVOICE_SUCCESS,
+                             invoice_id=invoice_id)
+                result["status"] = "success"
+                result["message"] = f"請求書(ID={invoice_id})を送付しました"
+            return result
+
+        # ============================================================
+        # 通常登録（請求書あり: 要請求の場合）
+        # 請求書のみ自動登録。仕訳は手動で「取引登録」ボタンを押す。
         # ============================================================
         if journal.get("needs_invoice"):
             props = _extract_props(record)
@@ -227,31 +269,17 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 return result
 
             result["invoice_id"] = inv_result["invoice_id"]
-            result["sales_id"] = inv_result["sales_id"]
-
-            # 仕入仕訳も別途登録
-            if journal.get("purchase_entry") or journal.get("pca_entry"):
-                pur_result = register_journal(
-                    None,
-                    journal.get("purchase_entry"),
-                    journal.get("pca_entry"),
-                )
-                result["purchase_id"] = pur_result.get("purchase_id")
-                result["pca_id"] = pur_result.get("pca_id")
-                if pur_result.get("errors"):
-                    error_msg = " / ".join(pur_result["errors"])
-                    mark_as_error(page_id, error_msg)
-                    result["status"] = "error"
-                    result["message"] = error_msg
-                    result["errors"] = pur_result["errors"]
-                    return result
+            # deals APIは呼ばない（仕訳はfreee管理画面で手動「取引登録」ボタンを押す）
 
             mark_as_done(page_id, current_status,
-                         sales_id=result["sales_id"],
-                         purchase_id=result["purchase_id"],
+                         db_type=db_type,
+                         freee_status=FREEE_STATUS_INVOICE_REGISTERED,
                          invoice_id=result["invoice_id"])
             result["status"] = "success"
-            result["message"] = f"請求書(ID={result['invoice_id']})と仕訳を登録しました"
+            result["message"] = (
+                f"請求書(ID={result['invoice_id']})を登録しました"
+                "（仕訳はfreee管理画面で取引登録ボタンを押してください）"
+            )
             return result
 
         # ============================================================
@@ -273,10 +301,15 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             result["purchase_id"] = reg_result["purchase_id"]
             result["pca_id"] = reg_result["pca_id"]
             mark_as_done(page_id, current_status,
+                         db_type=db_type,
+                         freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
                          sales_id=reg_result["sales_id"],
                          purchase_id=reg_result["purchase_id"])
             result["status"] = "success"
-            result["message"] = f"仕訳を登録しました (売上ID={result['sales_id']}, 仕入ID={result['purchase_id']})"
+            result["message"] = (
+                f"仕訳を登録しました "
+                f"(売上ID={result['sales_id']}, 仕入ID={result['purchase_id']})"
+            )
 
     except Exception as e:
         logger.exception(f"[EXCEPTION] {phase}: {e}")

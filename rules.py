@@ -344,6 +344,7 @@ def _extract_props(record: dict) -> dict:
     nyusha_str = get_date("入社日")
     seiyaku_str = get_date("成約日")
     zeinuki_uriage = get_number("税抜売上")
+    zeikomi_uriage = get_number("税込売上")  # 税込売上（freee仕訳登録に使用）
     zeinuki_shukyaku = get_number("税抜集客手数料")
     # 税込集客手数料: 本店CAは末尾スペースあり、PCAはなし
     zeikomi_shukyaku = get_number("税込集客手数料 ") or get_number("税込集客手数料")
@@ -396,6 +397,7 @@ def _extract_props(record: dict) -> dict:
         "seiyaku_str": seiyaku_str,
         "seiyaku_date": parse_date(seiyaku_str),
         "zeinuki_uriage": zeinuki_uriage,
+        "zeikomi_uriage": zeikomi_uriage,  # 税込売上
         "zeinuki_shukyaku": zeinuki_shukyaku,
         "zeikomi_shukyaku": zeikomi_shukyaku,
         "uriage_kessai": parse_date(uriage_kessai_str),
@@ -673,7 +675,9 @@ def build_journal_entries(record: dict) -> dict:
     tag_names = [tanto_ca] if tanto_ca else []
 
     # 売上仕訳
-    if p["zeinuki_uriage"] and p["zeinuki_uriage"] > 0:
+    # 税込売上を優先使用。なければ税抜×1.1でフォールバック
+    uriage_amount = int(p["zeikomi_uriage"]) if p.get("zeikomi_uriage") else int(p["zeinuki_uriage"] * 1.1) if p.get("zeinuki_uriage") else 0
+    if uriage_amount > 0:
         account_item = "CA売上【自社】"
         if db_type == "pca":
             account_item = "PCA売上"
@@ -696,7 +700,7 @@ def build_journal_entries(record: dict) -> dict:
             "details": [{
                 "account_item_name": account_item,
                 "tax_code": 129,
-                "amount": int(p["zeinuki_uriage"]),
+                "amount": uriage_amount,  # 税込売上
                 "description": biko,
                 "tag_names": tag_names,
             }],

@@ -913,7 +913,7 @@ def api_assistant_ai():
                         "required": ["deal_ids", "confirmation_message"],
                         "properties": {
                             "deal_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する仕訳IDのリスト。search_dealsの結果から取得した実際のid値のみ使用すること。"},
-                            "confirmation_message": {"type": "string", "description": "ユーザーに表示する削除内容の説明"},
+                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会社Stellifyの2026年9月以降の仕訳を削除します。」"},
                         },
                     },
                 },
@@ -928,7 +928,7 @@ def api_assistant_ai():
                         "required": ["invoice_ids", "confirmation_message"],
                         "properties": {
                             "invoice_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する請求書IDのリスト。search_invoicesの結果から取得した実際のid値のみ使用すること。"},
-                            "confirmation_message": {"type": "string", "description": "ユーザーに表示する削除内容の説明"},
+                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会社Stellifyの2026年9月以降の請求書を取消します。」"},
                         },
                     },
                 },

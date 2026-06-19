@@ -693,8 +693,8 @@ def api_assistant_ai():
         account_items_list = ", ".join([a["name"] for a in master.get("account_items", [])])
         partners_list = ", ".join([p["name"] for p in master.get("partners", [])][:50])
 
-        system_prompt = f"""あなたはfreee会計の仕訳登録アシスタントです。
-ユーザーの自然言語の指示を解釈し、freeeに登録するための仕訳データをJSON形式で生成してください。
+        system_prompt = f"""あなたはfreee会計の仕訳管理アシスタントです。
+ユーザーの自然言語の指示を解釈し、「登録」または「削除」の操作をJSON形式で返してください。
 
 【freeeに登録されているマスタデータ】
 部門: {sections_list}
@@ -704,12 +704,14 @@ def api_assistant_ai():
 
 【出力形式】
 回答は以下の形式で返してください：
-1. まず日本語で仕訳の内容を説明する
-2. 次に以下のJSON形式でエントリを返す（```json と ``` で囲む）
+1. まず日本語で操作内容を説明する
+2. 次に以下のJSON形式でアクションを返す（```json と ``` で囲む）
 
+【登録の場合】action="register" を含める：
 ```json
 [
   {{
+    "action": "register",
     "deal_type": "income" または "expense",
     "issue_date": "YYYY-MM-DD",
     "due_date": "YYYY-MM-DD" または null,
@@ -728,8 +730,23 @@ def api_assistant_ai():
 ]
 ```
 
-繰り返し仕訳の場合は複数のエントリを配列で返してください。
-勘定科目は必ずマスタデータに存在する名称を使用してください。"""
+【削除の場合】action="delete" を含める：
+```json
+[
+  {{
+    "action": "delete",
+    "target": "deal" または "invoice" または "both",
+    "partner_name": "取引先名（部分一致可）",
+    "start_date": "YYYY-MM-DD" または null,
+    "end_date": "YYYY-MM-DD" または null,
+    "deal_type": "income" または "expense" または null
+  }}
+]
+```
+
+繰り返し登録の場合は複数のエントリを配列で返してください。
+勘定科目は必ずマスタデータに存在する名称を使用してください。
+削除指示の場合、必ず action="delete" を返すこと。日付範囲が不明な場合は「今年度内」で検索する。"""
 
         messages = [{"role": "system", "content": system_prompt}]
         for h in history[-6:]:  # 直近3往復
@@ -759,15 +776,113 @@ def api_assistant_ai():
         else:
             reply_clean = reply_text
 
-        return jsonify({"reply": reply_clean, "entries": entries})
+        # 削除アクションが含まれる場合は delete_actions として別途返す
+        register_entries = [e for e in entries if e.get("action") != "delete"]
+        delete_actions = [e for e in entries if e.get("action") == "delete"]
+
+        return jsonify({
+            "reply": reply_clean,
+            "entries": register_entries,
+            "delete_actions": delete_actions,
+        })
 
     except Exception as e:
         logger.exception("AI仕訳生成エラー")
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/assistant/search_delete", methods=["POST"])
+def api_assistant_search_delete():
+    """削除对象の仕訳・請求書を検索してプレビューを返す"""
+    from freee_client import search_deals, search_invoices
+    data = request.get_json() or {}
+    action = data.get("action", {})
+    partner_name = action.get("partner_name")
+    start_date = action.get("start_date")
+    end_date = action.get("end_date")
+    deal_type = action.get("deal_type")
+    target = action.get("target", "both")
+
+    # 日付範囲のデフォルト（今年度）
+    from datetime import date
+    today = date.today()
+    fiscal_start = f"{today.year}-04-01" if today.month >= 4 else f"{today.year - 1}-04-01"
+    fiscal_end = f"{today.year + 1}-03-31" if today.month >= 4 else f"{today.year}-03-31"
+    if not start_date:
+        start_date = fiscal_start
+    if not end_date:
+        end_date = fiscal_end
+
+    try:
+        result = {"deals": [], "invoices": []}
+        if target in ("deal", "both"):
+            deals = search_deals(
+                partner_name=partner_name,
+                start_issue_date=start_date,
+                end_issue_date=end_date,
+                deal_type=deal_type,
+            )
+            result["deals"] = [
+                {
+                    "id": d["id"],
+                    "issue_date": d.get("issue_date"),
+                    "partner_name": d.get("partner_name"),
+                    "amount": d.get("amount"),
+                    "type": d.get("type"),
+                    "ref_number": d.get("ref_number"),
+                }
+                for d in deals
+            ]
+        if target in ("invoice", "both"):
+            invoices = search_invoices(
+                partner_name=partner_name,
+                start_issue_date=start_date,
+                end_issue_date=end_date,
+            )
+            result["invoices"] = [
+                {
+                    "id": inv["id"],
+                    "issue_date": inv.get("issue_date"),
+                    "partner_name": inv.get("partner_name"),
+                    "total_amount": inv.get("total_amount"),
+                    "invoice_number": inv.get("invoice_number"),
+                    "title": inv.get("title"),
+                }
+                for inv in invoices
+            ]
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("削除対象検索エラー")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/assistant/execute_delete", methods=["POST"])
+def api_assistant_execute_delete():
+    """仕訳・請求書を実際に削除する"""
+    from freee_client import delete_deal, delete_invoice
+    data = request.get_json() or {}
+    deal_ids = data.get("deal_ids", [])
+    invoice_ids = data.get("invoice_ids", [])
+
+    results = {"deleted_deals": [], "failed_deals": [], "deleted_invoices": [], "failed_invoices": []}
+    for did in deal_ids:
+        try:
+            delete_deal(int(did))
+            results["deleted_deals"].append(did)
+        except Exception as e:
+            results["failed_deals"].append({"id": did, "error": str(e)})
+    for iid in invoice_ids:
+        try:
+            delete_invoice(int(iid))
+            results["deleted_invoices"].append(iid)
+        except Exception as e:
+            results["failed_invoices"].append({"id": iid, "error": str(e)})
+
+    return jsonify(results)
+
+
 # ============================================================
-# 証憑アップロード
+# 証桯アップロード
 # ============================================================
 @app.route("/api/assistant/upload_receipt", methods=["POST"])
 def api_upload_receipt():

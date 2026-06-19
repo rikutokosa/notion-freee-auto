@@ -774,6 +774,28 @@ async function sendAiMessage() {
         }
       }
 
+      // 削除アクションがある場合は削除確認フローを表示
+      if (data.delete_actions && data.delete_actions.length > 0) {
+        replyHtml += `<br><br>`;
+        data.delete_actions.forEach((action, idx) => {
+          const actionJson = JSON.stringify(action).replace(/"/g, '&quot;');
+          const targetLabel = action.target === 'deal' ? '仕訳' : action.target === 'invoice' ? '請求書' : '仕訳・請求書';
+          const dateRange = (action.start_date || '') + (action.end_date ? ` 〜 ${action.end_date}` : '');
+          replyHtml += `
+            <div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;margin-top:8px;">
+              <div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">&#128465; 削除対象の検索</div>
+              <div style="font-size:13px;margin-bottom:8px;">
+                対象: <b>${targetLabel}</b> |
+                取引先: <b>${action.partner_name || '指定なし'}</b> |
+                期間: <b>${dateRange || '今年度'}</b>
+              </div>
+              <button class="btn btn-warning" onclick='previewDeleteAction(${actionJson})'>
+                🔍 削除対象を検索する
+              </button>
+            </div>`;
+        });
+      }
+
       addAiMessage('assistant', replyHtml);
     }
     // ファイルをクリア（送信後）
@@ -784,6 +806,109 @@ async function sendAiMessage() {
     addAiMessage('error', `❌ 通信エラー: ${e.message}`);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function previewDeleteAction(action) {
+  const loadingDiv = addAiMessage('assistant', '⏳ 削除対象を検索中...');
+  try {
+    const res = await fetch('/api/assistant/search_delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action })
+    });
+    const data = await res.json();
+    loadingDiv.remove();
+
+    if (data.error) {
+      addAiMessage('error', `❌ 検索エラー: ${data.error}`);
+      return;
+    }
+
+    const deals = data.deals || [];
+    const invoices = data.invoices || [];
+    const total = deals.length + invoices.length;
+
+    if (total === 0) {
+      addAiMessage('assistant', 'ℹ️ 削除対象の仕訳・請求書が見つかりませんでした。');
+      return;
+    }
+
+    let html = `<div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;">`;
+    html += `<div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">⚠️ 削除対象：${total}件</div>`;
+
+    // 削除対象のチェックボックス付きリスト
+    html += `<div style="max-height:300px;overflow-y:auto;">`;
+    if (deals.length > 0) {
+      html += `<div style="font-weight:bold;margin:8px 0 4px;取引（仕訳） ${deals.length}件</div>`;
+      html += `<table style="width:100%;font-size:12px;border-collapse:collapse;">`;
+      html += `<tr style="background:#f8d7da;"><th style="padding:4px;text-align:left;"><input type="checkbox" id="chk_all_deals" onchange="toggleAll('deal')"> 全選</th><th>発生日</th><th>取引先</th><th>金額</th><th>種別</th></tr>`;
+      deals.forEach(d => {
+        const typeLabel = d.type === 'income' ? '収入' : '支出';
+        html += `<tr><td><input type="checkbox" class="chk_deal" value="${d.id}" checked></td><td>${d.issue_date || '-'}</td><td>${d.partner_name || '-'}</td><td>${(d.amount || 0).toLocaleString()}円</td><td>${typeLabel}</td></tr>`;
+      });
+      html += `</table>`;
+    }
+    if (invoices.length > 0) {
+      html += `<div style="font-weight:bold;margin:8px 0 4px;">請求書 ${invoices.length}件</div>`;
+      html += `<table style="width:100%;font-size:12px;border-collapse:collapse;">`;
+      html += `<tr style="background:#f8d7da;"><th style="padding:4px;text-align:left;"><input type="checkbox" id="chk_all_invoices" onchange="toggleAll('invoice')"> 全選</th><th>発生日</th><th>取引先</th><th>金額</th><th>請求書番号</th></tr>`;
+      invoices.forEach(inv => {
+        html += `<tr><td><input type="checkbox" class="chk_invoice" value="${inv.id}" checked></td><td>${inv.issue_date || '-'}</td><td>${inv.partner_name || '-'}</td><td>${(inv.total_amount || 0).toLocaleString()}円</td><td>${inv.invoice_number || '-'}</td></tr>`;
+      });
+      html += `</table>`;
+    }
+    html += `</div>`;
+    html += `<div style="margin-top:12px;">`;
+    html += `<button class="btn btn-danger" onclick="executeDeleteSelected()">🗑️ チェックした項目を削除する</button>`;
+    html += ` <span style="font-size:11px;color:#666;">→ 削除後は元に戻せません。よく確認してから実行してください。</span>`;
+    html += `</div></div>`;
+
+    addAiMessage('assistant', html);
+  } catch(e) {
+    loadingDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
+  }
+}
+
+function toggleAll(type) {
+  const allChk = document.getElementById(`chk_all_${type}s`);
+  const chks = document.querySelectorAll(`.chk_${type}`);
+  chks.forEach(c => c.checked = allChk.checked);
+}
+
+async function executeDeleteSelected() {
+  const dealIds = [...document.querySelectorAll('.chk_deal:checked')].map(c => c.value);
+  const invoiceIds = [...document.querySelectorAll('.chk_invoice:checked')].map(c => c.value);
+
+  if (dealIds.length === 0 && invoiceIds.length === 0) {
+    alert('削除する項目を選択してください。');
+    return;
+  }
+
+  const confirmMsg = `以下を削除します。よろしいですか？\n仕訳: ${dealIds.length}件 / 請求書: ${invoiceIds.length}件`;
+  if (!confirm(confirmMsg)) return;
+
+  const loadingDiv = addAiMessage('assistant', '⏳ 削除中...');
+  try {
+    const res = await fetch('/api/assistant/execute_delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_ids: dealIds, invoice_ids: invoiceIds })
+    });
+    const data = await res.json();
+    loadingDiv.remove();
+
+    let msg = `✅ 削除完了！`;
+    if (data.deleted_deals.length > 0) msg += `<br>仕訳: ${data.deleted_deals.length}件削除`;
+    if (data.deleted_invoices.length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件削除`;
+    if (data.failed_deals.length > 0) msg += `<br>⚠️ 仕訳削除失敗: ${data.failed_deals.map(f => f.id).join(', ')}`;
+    if (data.failed_invoices.length > 0) msg += `<br>⚠️ 請求書削除失敗: ${data.failed_invoices.map(f => f.id).join(', ')}`;
+
+    addAiMessage('assistant', msg);
+  } catch(e) {
+    loadingDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
   }
 }
 

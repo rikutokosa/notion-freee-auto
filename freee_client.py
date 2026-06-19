@@ -402,6 +402,94 @@ def delete_deal(deal_id: int) -> bool:
     raise ValueError(f"freee取引削除失敗: {resp.status_code} {resp.text[:300]}")
 
 
+def search_deals(
+    partner_name: Optional[str] = None,
+    start_issue_date: Optional[str] = None,
+    end_issue_date: Optional[str] = None,
+    deal_type: Optional[str] = None,
+    limit: int = 100,
+) -> list:
+    """
+    freeeの取引一覧を検索する
+    deal_type: 'income' | 'expense' | None(両方)
+    """
+    params = {
+        "company_id": FREEE_COMPANY_ID,
+        "limit": limit,
+    }
+    if start_issue_date:
+        params["start_issue_date"] = start_issue_date
+    if end_issue_date:
+        params["end_issue_date"] = end_issue_date
+    if deal_type:
+        params["type"] = deal_type
+    resp = requests.get(
+        f"{FREEE_API_BASE}/deals",
+        headers=_api_headers(),
+        params=params,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    deals = resp.json().get("deals", [])
+    # 取引先名でフィルタリング（APIに取引先名フィルタがないためローカルでフィルタ）
+    if partner_name:
+        partner_name_lower = partner_name.lower()
+        deals = [
+            d for d in deals
+            if partner_name_lower in (d.get("partner_name") or "").lower()
+        ]
+    return deals
+
+
+def delete_invoice(invoice_id: int) -> bool:
+    """
+    freee請求書を削除する
+    """
+    resp = requests.delete(
+        f"https://api.freee.co.jp/iv/invoices/{invoice_id}",
+        headers=_api_headers(),
+        params={"company_id": FREEE_COMPANY_ID},
+        timeout=30,
+    )
+    if resp.status_code in (200, 204):
+        return True
+    raise ValueError(f"freee請求書削除失敗: {resp.status_code} {resp.text[:300]}")
+
+
+def search_invoices(
+    partner_name: Optional[str] = None,
+    start_issue_date: Optional[str] = None,
+    end_issue_date: Optional[str] = None,
+    limit: int = 100,
+) -> list:
+    """
+    freee請求書一覧を検索する
+    """
+    params = {
+        "company_id": FREEE_COMPANY_ID,
+        "limit": limit,
+    }
+    if start_issue_date:
+        params["start_issue_date"] = start_issue_date
+    if end_issue_date:
+        params["end_issue_date"] = end_issue_date
+    resp = requests.get(
+        f"https://api.freee.co.jp/iv/invoices",
+        headers=_api_headers(),
+        params=params,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    invoices = resp.json().get("invoices", [])
+    if partner_name:
+        partner_name_lower = partner_name.lower()
+        invoices = [
+            inv for inv in invoices
+            if partner_name_lower in (inv.get("partner_name") or "").lower()
+        ]
+    return invoices
+
+
 # ============================================================
 # 請求書登録
 # ============================================================

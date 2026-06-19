@@ -229,6 +229,21 @@ def auth_freee_callback():
         return render_template("error.html", message=f"トークン取得エラー: {str(e)}")
 
 
+@app.route("/api/get_refresh_token")
+def api_get_refresh_token():
+    """現在のリフレッシュトークンを返す（Railway環境変数設定用）"""
+    token_data = load_token()
+    if not token_data:
+        return jsonify({"error": "トークン未認証。/auth/freee から認証してください。"}), 401
+    refresh_token = token_data.get("refresh_token", "")
+    if not refresh_token:
+        return jsonify({"error": "リフレッシュトークンがありません。再認証してください。"}), 401
+    return jsonify({
+        "refresh_token": refresh_token,
+        "instruction": "Railwayダッシュボードの環境変数に FREEE_REFRESH_TOKEN = <上記の値> を設定してください。以後はデプロイ後も自動復元されます。"
+    })
+
+
 # ============================================================
 # 手動実行
 # ============================================================

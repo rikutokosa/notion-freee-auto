@@ -414,10 +414,14 @@ def api_status():
         token_ok = True
     except Exception:
         pass
+    import os
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
     return jsonify({
         "token_ok": token_ok,
         "mode": "manual",
         "log_count": len(processing_log),
+        "openai_key_set": bool(openai_key),
+        "openai_key_prefix": openai_key[:10] + "..." if openai_key else "",
     })
 
 

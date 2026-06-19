@@ -477,15 +477,20 @@ def api_debug_partners():
         partners = get_partners()
         stelify_partners = [p for p in partners if 'stel' in p.get('name','').lower() or 'ステリ' in p.get('name','')]
         all_partner_names = [p.get('name') for p in partners]
-        # deals検索（partner_idなし、2026-07-01以降）
-        params = {"company_id": FREEE_COMPANY_ID, "start_issue_date": "2026-07-01", "limit": 20}
-        resp = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
-        deals_sample = resp.json().get("deals", [])[:5]
+        # deals検索（Stellify partner_id=110745827, 2026-07-01以降）
+        stellify_partner_ids = [p.get('id') for p in stelify_partners]
+        deals_stellify = []
+        for pid in stellify_partner_ids:
+            params = {"company_id": FREEE_COMPANY_ID, "start_issue_date": "2026-07-01", "limit": 100, "partner_id": pid}
+            resp = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
+            deals_stellify.extend(resp.json().get("deals", []))
         return jsonify({
             "total_partners": len(partners),
             "all_partner_names": all_partner_names,
             "stelify_partners": stelify_partners,
-            "deals_sample_fields": list(deals_sample[0].keys()) if deals_sample else []
+            "stellify_deals_count": len(deals_stellify),
+            "stellify_deals": [{"id": d.get("id"), "issue_date": d.get("issue_date"), "amount": d.get("amount"), "partner_id": d.get("partner_id")} for d in deals_stellify[:10]],
+            "deals_sample_fields": list(deals_stellify[0].keys()) if deals_stellify else []
         })
     except Exception as e:
         import traceback
@@ -502,15 +507,19 @@ def api_debug_invoices():
         params_all = {"company_id": FREEE_COMPANY_ID, "limit": 5}
         resp_all = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_all, timeout=30)
         invs_all = resp_all.json().get("invoices", [])
-        # partner_id=110745827（株式会社Stellify）
-        params_s = {"company_id": FREEE_COMPANY_ID, "limit": 5, "partner_id": 110745827}
+        # partner_ids=110745827（株式会社Stellify）※請求書APIはpartner_ids（複数形）
+        partner_id_param = request.args.get("partner_id", "110745827")
+        start_date = request.args.get("start_date", "")
+        params_s = {"company_id": FREEE_COMPANY_ID, "limit": 100, "partner_ids": partner_id_param}
+        if start_date:
+            params_s["start_billing_date"] = start_date
         resp_s = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_s, timeout=30)
         invs_s = resp_s.json().get("invoices", [])
         return jsonify({
             "all_count": len(invs_all),
             "all_sample": [{"id": i.get("id"), "partner": i.get("partner_name"), "date": i.get("issue_date")} for i in invs_all[:3]],
             "stellify_count": len(invs_s),
-            "stellify_sample": [{"id": i.get("id"), "partner": i.get("partner_name"), "date": i.get("issue_date")} for i in invs_s[:3]],
+            "stellify_invoices": [{"id": i.get("id"), "partner": i.get("partner_name"), "billing_date": i.get("billing_date"), "issue_date": i.get("issue_date"), "total_amount": i.get("total_amount")} for i in invs_s],
             "stellify_raw_keys": list(invs_s[0].keys()) if invs_s else [],
             "all_raw_keys": list(invs_all[0].keys()) if invs_all else [],
         })

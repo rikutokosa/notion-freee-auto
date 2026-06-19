@@ -461,14 +461,15 @@ def api_debug_partners():
         # 取引先一覧
         partners = get_partners()
         stelify_partners = [p for p in partners if 'stel' in p.get('name','').lower() or 'ステリ' in p.get('name','')]
+        all_partner_names = [p.get('name') for p in partners]
         # deals検索（partner_idなし、2026-07-01以降）
         params = {"company_id": FREEE_COMPANY_ID, "start_issue_date": "2026-07-01", "limit": 20}
         resp = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
         deals_sample = resp.json().get("deals", [])[:5]
         return jsonify({
             "total_partners": len(partners),
+            "all_partner_names": all_partner_names,
             "stelify_partners": stelify_partners,
-            "deals_sample": deals_sample,
             "deals_sample_fields": list(deals_sample[0].keys()) if deals_sample else []
         })
     except Exception as e:

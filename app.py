@@ -67,6 +67,8 @@ _polling_active = False
 # ファイルはコンテナ再起動で消えるため使わない
 # メモリ内フラグ（プロセス内永続）
 _manually_stopped: bool = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
+# 仕訳アシスタント登録ログ（メモリ内、最新200件）
+assistant_log: list = []
 
 
 def _is_manually_stopped() -> bool:
@@ -156,7 +158,7 @@ def preview():
                 "purchase_entry": journal.get("purchase_entry"),
                 "pca_entry": journal.get("pca_entry"),
             })
-        return render_template("preview.html", previews=previews, db_type=db_type)
+        return render_template("preview.html", previews=previews, db_type=db_type, assistant_log=assistant_log[:50])
     except Exception as e:
         logger.exception("プレビューエラー")
         return render_template("error.html", message=str(e))
@@ -647,6 +649,20 @@ def api_assistant_register():
             deal = create_deal(entry, deal_type, cache)
             registered_ids.append(deal.get("id"))
 
+        # assistant_logに記録
+        from datetime import datetime as _dt
+        for i, rid in enumerate(registered_ids):
+            assistant_log.insert(0, {
+                "source": "assistant",
+                "freee_id": rid,
+                "issue_date": (base_date + __import__('dateutil.relativedelta', fromlist=['relativedelta']).relativedelta(months=i)).isoformat() if repeat else issue_date,
+                "partner_name": partner_name or "",
+                "deal_type": deal_type,
+                "amount": sum(d.get("amount", 0) for d in details),
+                "registered_at": _dt.now().strftime("%Y-%m-%d %H:%M"),
+                "note": "",
+            })
+        del assistant_log[200:]
         return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
     except Exception as e:
         logger.exception("仕訳アシスタント登録エラー")
@@ -665,6 +681,20 @@ def api_assistant_register_bulk():
             deal_type = entry.pop("deal_type", "income")
             deal = create_deal(entry, deal_type, cache)
             registered_ids.append(deal.get("id"))
+        # assistant_logに記録
+        from datetime import datetime as _dt2
+        for entry_orig, rid in zip(entries, registered_ids):
+            assistant_log.insert(0, {
+                "source": "assistant",
+                "freee_id": rid,
+                "issue_date": entry_orig.get("issue_date", ""),
+                "partner_name": entry_orig.get("partner_name", ""),
+                "deal_type": entry_orig.get("deal_type", "income"),
+                "amount": sum(d.get("amount", 0) for d in entry_orig.get("details", [])),
+                "registered_at": _dt2.now().strftime("%Y-%m-%d %H:%M"),
+                "note": "",
+            })
+        del assistant_log[200:]
         return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
     except Exception as e:
         logger.exception("AI仕訳一括登録エラー")
@@ -837,6 +867,19 @@ def api_assistant_ai():
                 cache = get_master_cache()
                 deal_type = args.pop("deal_type")
                 result = create_deal(args, deal_type, cache)
+                # assistant_logに記録
+                from datetime import datetime as _dt3
+                assistant_log.insert(0, {
+                    "source": "assistant",
+                    "freee_id": result.get("id"),
+                    "issue_date": args.get("issue_date", ""),
+                    "partner_name": args.get("partner_name", ""),
+                    "deal_type": deal_type,
+                    "amount": sum(d.get("amount", 0) for d in args.get("details", [])),
+                    "registered_at": _dt3.now().strftime("%Y-%m-%d %H:%M"),
+                    "note": user_message[:80],
+                })
+                del assistant_log[200:]
                 return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
             elif name == "delete_deals":
                 # 削除はユーザー確認が必要なので、削除内容を返すのみ（実行はフロントエンドで行う）
@@ -893,16 +936,17 @@ def api_assistant_ai():
 
                 # 削除待機中の場合はフロントに渡す
                 result_obj = _json.loads(tool_result)
-                if result_obj.get("status") == "pending_confirmation":
-                    if "deal_ids" in result_obj:
-                        pending_deletes["deal_ids"].extend(result_obj["deal_ids"])
-                    if "invoice_ids" in result_obj:
-                        pending_deletes["invoice_ids"].extend(result_obj["invoice_ids"])
-                    pending_deletes["message"] = result_obj.get("message", "")
+                if isinstance(result_obj, dict):
+                    if result_obj.get("status") == "pending_confirmation":
+                        if "deal_ids" in result_obj:
+                            pending_deletes["deal_ids"].extend(result_obj["deal_ids"])
+                        if "invoice_ids" in result_obj:
+                            pending_deletes["invoice_ids"].extend(result_obj["invoice_ids"])
+                        pending_deletes["message"] = result_obj.get("message", "")
 
-                # 登録成功の場合
-                if fn_name == "register_deal" and result_obj.get("status") == "ok":
-                    registered_ids.append(result_obj.get("id"))
+                    # 登録成功の場合
+                    if fn_name == "register_deal" and result_obj.get("status") == "ok":
+                        registered_ids.append(result_obj.get("id"))
 
         return jsonify({
             "reply": final_reply,

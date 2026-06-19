@@ -10,12 +10,15 @@
   <a href="/" class="btn btn-secondary" style="margin-left:auto;">← ダッシュボード</a>
 </div>
 
+<p style="color:#666; font-size:13px; margin-bottom:8px;">
+  <span style="background:#e8f5e9; color:#2e7d32; padding:2px 8px; border-radius:10px; font-size:12px; margin-right:6px;">Notion取込</span>
+  {{ previews|length }}件が経理対応待ちです。
+</p>
 {% if not previews %}
 <div class="card">
   <p style="color:#888;">経理対応待ちのレコードはありません。</p>
 </div>
 {% else %}
-<p style="color:#666; font-size:13px; margin-bottom:16px;">{{ previews|length }}件が経理対応待ちです。</p>
 
 {% for item in previews %}
 {% set j = item.journal if item.journal else item %}
@@ -174,6 +177,54 @@
 <div style="margin-top:24px; padding:16px; background:#f8f9fa; border-radius:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
   <button class="btn btn-success" onclick="runAll()">▶ 全件まとめて登録</button>
   <span id="run-all-result" style="font-size:13px;"></span>
+</div>
+{% endif %}
+
+<!-- 仕訳アシスタント登録履歴 -->
+{% if assistant_log %}
+<div style="margin-top:32px;">
+  <h2 style="font-size:18px; font-weight:bold; margin-bottom:12px;">
+    <span style="background:#e3f2fd; color:#1565c0; padding:2px 10px; border-radius:10px; font-size:13px; margin-right:8px;">アシスタント登録</span>
+    仕訳アシスタント登録履歴（今セッション）
+  </h2>
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <thead>
+        <tr style="background:#e3f2fd; color:#1565c0;">
+          <th style="padding:8px 12px; text-align:left;">登録日時</th>
+          <th style="padding:8px 12px; text-align:left;">発生日</th>
+          <th style="padding:8px 12px; text-align:left;">取引先</th>
+          <th style="padding:8px 12px; text-align:right;">金額</th>
+          <th style="padding:8px 12px; text-align:left;">収支</th>
+          <th style="padding:8px 12px; text-align:left;">freee ID</th>
+          <th style="padding:8px 12px; text-align:left;">指示内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in assistant_log %}
+        <tr style="border-top:1px solid #e0e0e0; {% if loop.index is odd %}background:#fafafa;{% endif %}">
+          <td style="padding:8px 12px; color:#888;">{{ log.registered_at }}</td>
+          <td style="padding:8px 12px;">{{ log.issue_date }}</td>
+          <td style="padding:8px 12px;">{{ log.partner_name or '—' }}</td>
+          <td style="padding:8px 12px; text-align:right;">{{ '{:,}'.format(log.amount) if log.amount else '—' }}</td>
+          <td style="padding:8px 12px;">
+            {% if log.deal_type == 'income' %}
+            <span style="color:#28a745; font-weight:bold;">収入</span>
+            {% else %}
+            <span style="color:#dc3545; font-weight:bold;">支出</span>
+            {% endif %}
+          </td>
+          <td style="padding:8px 12px; color:#888; font-size:12px;">
+            {% if log.freee_id %}
+            <a href="https://secure.freee.co.jp/deals/{{ log.freee_id }}" target="_blank" style="color:#1565c0;">#{{ log.freee_id }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:8px 12px; color:#555; font-size:12px;">{{ log.note or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 

@@ -189,9 +189,8 @@
   <nav class="navbar">
     <a class="brand" href="/">⚡ Notion→freee</a>
     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>ダッシュボード</a>
-    <a href="/preview" {% if request.path == '/preview' %}class="active"{% endif %}>仕訳プレビュー</a>
-    <a href="/chat" {% if request.path == '/chat' %}class="active"{% endif %}>チャット指示</a>
     <a href="/assistant" {% if request.path == '/assistant' %}class="active"{% endif %}>仕訳アシスタント</a>
+    <a href="/preview" {% if request.path == '/preview' %}class="active"{% endif %}>仕訳プレビュー</a>
   </nav>
   <div class="container">
     {% block content %}{% endblock %}

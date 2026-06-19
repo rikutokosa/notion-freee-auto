@@ -926,9 +926,10 @@ async function executeDeleteSelected() {
 
     let msg = `✅ 削除完了！`;
     if (data.deleted_deals.length > 0) msg += `<br>仕訳: ${data.deleted_deals.length}件削除`;
-    if (data.deleted_invoices.length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件削除`;
+    if (data.deleted_invoices.length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件取消`;
+    if ((data.skipped_deals || []).length > 0) msg += `<br>ℹ️ 仕訳${data.skipped_deals.length}件は請求書連携のためスキップ（請求書取消後に自動処理）`;
     if (data.failed_deals.length > 0) msg += `<br>⚠️ 仕訳削除失敗: ${data.failed_deals.map(f => f.id).join(', ')}`;
-    if (data.failed_invoices.length > 0) msg += `<br>⚠️ 請求書削除失敗: ${data.failed_invoices.map(f => f.id).join(', ')}`;
+    if (data.failed_invoices.length > 0) msg += `<br>⚠️ 請求書取消失敗: ${data.failed_invoices.map(f => f.id).join(', ')}`;
 
     addAiMessage('assistant', msg);
   } catch(e) {
@@ -957,9 +958,10 @@ async function executePendingDeletes(pd) {
 
     let msg = `✅ 削除完了！`;
     if ((data.deleted_deals || []).length > 0) msg += `<br>仕訳: ${data.deleted_deals.length}件削除`;
-    if ((data.deleted_invoices || []).length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件削除`;
+    if ((data.deleted_invoices || []).length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件取消`;
+    if ((data.skipped_deals || []).length > 0) msg += `<br>ℹ️ 仕訳${data.skipped_deals.length}件は請求書連携のためスキップ（請求書取消後に自動処理）`;
     if ((data.failed_deals || []).length > 0) msg += `<br>⚠️ 仕訳削除失敗: ${data.failed_deals.map(f => f.id).join(', ')}`;
-    if ((data.failed_invoices || []).length > 0) msg += `<br>⚠️ 請求書削除失敗: ${data.failed_invoices.map(f => f.id).join(', ')}`;
+    if ((data.failed_invoices || []).length > 0) msg += `<br>⚠️ 請求書取消失敗: ${data.failed_invoices.map(f => f.id).join(', ')}`;
     addAiMessage('assistant', msg);
   } catch(e) {
     loadingDiv.remove();

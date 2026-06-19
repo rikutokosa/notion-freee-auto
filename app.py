@@ -1066,11 +1066,23 @@ def api_assistant_ai():
                     if fn_name == "register_deal" and result_obj.get("status") == "ok":
                         registered_ids.append(result_obj.get("id"))
 
+        # 削除確認待ちがある場合はAIの「削除しました」メッセージを上書き
+        has_pending = bool(pending_deletes["deal_ids"] or pending_deletes["invoice_ids"])
+        if has_pending:
+            deal_count = len(pending_deletes["deal_ids"])
+            inv_count = len(pending_deletes["invoice_ids"])
+            parts = []
+            if deal_count:
+                parts.append(f"仕訳 {deal_count}件")
+            if inv_count:
+                parts.append(f"請求書 {inv_count}件")
+            final_reply = f"以下の{' と '.join(parts)}が見つかりました。削除してよろしいですか？"
+
         return jsonify({
             "reply": final_reply,
             "entries": [],
             "delete_actions": [],
-            "pending_deletes": pending_deletes if (pending_deletes["deal_ids"] or pending_deletes["invoice_ids"]) else None,
+            "pending_deletes": pending_deletes if has_pending else None,
             "registered_ids": registered_ids,
         })
 
@@ -1131,11 +1143,12 @@ def api_assistant_search_delete():
             result["invoices"] = [
                 {
                     "id": inv["id"],
-                    "issue_date": inv.get("issue_date"),
+                    # freee請求書APIは billing_date を使用（issue_dateは会計APIのフィールド名）
+                    "issue_date": inv.get("billing_date") or inv.get("issue_date"),
                     "partner_name": inv.get("partner_name"),
                     "total_amount": inv.get("total_amount"),
                     "invoice_number": inv.get("invoice_number"),
-                    "title": inv.get("title"),
+                    "title": inv.get("subject") or inv.get("title"),
                 }
                 for inv in invoices
             ]
@@ -1147,19 +1160,38 @@ def api_assistant_search_delete():
 
 @app.route("/api/assistant/execute_delete", methods=["POST"])
 def api_assistant_execute_delete():
-    """仕訳・請求書を実際に削除する"""
+    """仕訳・請求書を実際に削除する（請求書はcancelを使用）"""
     from freee_client import delete_deal, delete_invoice
     data = request.get_json() or {}
     deal_ids = data.get("deal_ids", [])
     invoice_ids = data.get("invoice_ids", [])
 
-    results = {"deleted_deals": [], "failed_deals": [], "deleted_invoices": [], "failed_invoices": []}
+    # 請求書から作成された仕訳は削除不可のため、そのエラーはskippedとして扱う
+    INVOICE_LINKED_DEAL_ERRORS = [
+        "freee請求書から作成された取引は削除できません",
+        "invoice",
+        "linked",
+    ]
+
+    results = {
+        "deleted_deals": [],
+        "failed_deals": [],
+        "skipped_deals": [],  # 請求書から作成されたため削除不可な仕訳
+        "deleted_invoices": [],
+        "failed_invoices": [],
+    }
     for did in deal_ids:
         try:
             delete_deal(int(did))
             results["deleted_deals"].append(did)
         except Exception as e:
-            results["failed_deals"].append({"id": did, "error": str(e)})
+            err_str = str(e)
+            # 請求書から作成された仕訳は削除不可（freeeの仕様）→ skipped扱い
+            if any(kw in err_str for kw in INVOICE_LINKED_DEAL_ERRORS):
+                logger.info(f"仕訳削除スキップ(請求書連携): deal_id={did}, reason={err_str[:100]}")
+                results["skipped_deals"].append({"id": did, "reason": "請求書から作成された仕訳は請求書取消後に自動処理されます"})
+            else:
+                results["failed_deals"].append({"id": did, "error": err_str})
     for iid in invoice_ids:
         try:
             delete_invoice(int(iid))

@@ -565,17 +565,22 @@ def search_deals(
 
 def delete_invoice(invoice_id: int) -> bool:
     """
-    freee請求書を削除する
+    freee請求書を取消する（DELETEエンドポイントは存在しないため PUT /cancel を使用）
+    freee請求書APIには DELETE /iv/invoices/{id} が存在しない。
+    代わりに PUT /iv/invoices/{id}/cancel で取消を行う。
     """
-    resp = requests.delete(
-        f"https://api.freee.co.jp/iv/invoices/{invoice_id}",
+    import logging
+    logger = logging.getLogger(__name__)
+    resp = requests.put(
+        f"{FREEE_IV_BASE}/invoices/{invoice_id}/cancel",
         headers=_api_headers(),
-        params={"company_id": FREEE_COMPANY_ID},
+        json={"company_id": FREEE_COMPANY_ID},
         timeout=30,
     )
-    if resp.status_code in (200, 204):
+    logger.info(f"請求書cancel: invoice_id={invoice_id}, status={resp.status_code}, body={resp.text[:200]}")
+    if resp.status_code in (200, 201, 204):
         return True
-    raise ValueError(f"freee請求書削除失敗: {resp.status_code} {resp.text[:300]}")
+    raise ValueError(f"freee請求書取消失敗: {resp.status_code} {resp.text[:300]}")
 
 
 def search_invoices(

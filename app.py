@@ -492,6 +492,33 @@ def api_debug_partners():
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
 
+@app.route("/api/debug_invoices")
+def api_debug_invoices():
+    """デバッグ用: freee請求書APIの生レスポンスを返す"""
+    try:
+        import requests as req
+        from freee_client import FREEE_COMPANY_ID, _api_headers
+        # partner_idなしで全件
+        params_all = {"company_id": FREEE_COMPANY_ID, "limit": 5}
+        resp_all = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_all, timeout=30)
+        invs_all = resp_all.json().get("invoices", [])
+        # partner_id=110745827（株式会社Stellify）
+        params_s = {"company_id": FREEE_COMPANY_ID, "limit": 5, "partner_id": 110745827}
+        resp_s = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_s, timeout=30)
+        invs_s = resp_s.json().get("invoices", [])
+        return jsonify({
+            "all_count": len(invs_all),
+            "all_sample": [{"id": i.get("id"), "partner": i.get("partner_name"), "date": i.get("issue_date")} for i in invs_all[:3]],
+            "stellify_count": len(invs_s),
+            "stellify_sample": [{"id": i.get("id"), "partner": i.get("partner_name"), "date": i.get("issue_date")} for i in invs_s[:3]],
+            "stellify_raw_keys": list(invs_s[0].keys()) if invs_s else [],
+            "all_raw_keys": list(invs_all[0].keys()) if invs_all else [],
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
 @app.route("/api/debug_receipts")
 def api_debug_receipts():
     """デバッグ用: freee receipts APIの生レスポンスを返す"""

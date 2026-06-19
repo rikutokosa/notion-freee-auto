@@ -38,7 +38,8 @@ def _resolve_token_file() -> Path:
     except Exception:
         return Path("/tmp/freee_token.json")
 
-TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", "")) or _resolve_token_file()
+_token_file_env = os.environ.get("TOKEN_FILE", "").strip()
+TOKEN_FILE = Path(_token_file_env) if _token_file_env else _resolve_token_file()
 
 
 # ============================================================

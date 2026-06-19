@@ -452,6 +452,30 @@ def api_match_receipts():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/debug_partners")
+def api_debug_partners():
+    """デバッグ用: freee取引先一覧とdeals検索結果を返す"""
+    try:
+        import requests as req
+        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers, get_partners
+        # 取引先一覧
+        partners = get_partners()
+        stelify_partners = [p for p in partners if 'stel' in p.get('name','').lower() or 'ステリ' in p.get('name','')]
+        # deals検索（partner_idなし、2026-07-01以降）
+        params = {"company_id": FREEE_COMPANY_ID, "start_issue_date": "2026-07-01", "limit": 20}
+        resp = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
+        deals_sample = resp.json().get("deals", [])[:5]
+        return jsonify({
+            "total_partners": len(partners),
+            "stelify_partners": stelify_partners,
+            "deals_sample": deals_sample,
+            "deals_sample_fields": list(deals_sample[0].keys()) if deals_sample else []
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
 @app.route("/api/debug_receipts")
 def api_debug_receipts():
     """デバッグ用: freee receipts APIの生レスポンスを返す"""

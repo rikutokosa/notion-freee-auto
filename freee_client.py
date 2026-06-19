@@ -456,6 +456,37 @@ def resolve_partner_id(partner_name: str, partners: list) -> Optional[int]:
     return None
 
 
+def create_partner(name: str, shortcut1: str = "") -> dict:
+    """
+    freeeに新規取引先を作成する
+    name: 取引先名（必須）
+    shortcut1: ショートカット（省略可）
+    戻り値: 作成された取引先情報（id, nameを含む）
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    payload = {
+        "company_id": FREEE_COMPANY_ID,
+        "name": name,
+    }
+    if shortcut1:
+        payload["shortcut1"] = shortcut1
+    resp = requests.post(
+        f"{FREEE_API_BASE}/partners",
+        headers=_api_headers(),
+        json=payload,
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        logger.error(f"取引先作成失敗: {resp.status_code} {resp.text[:500]}")
+        raise ValueError(f"freee取引先作成失敗: {resp.status_code} {resp.text[:300]}")
+    partner = resp.json().get("partner", {})
+    logger.info(f"取引先作成成功: {name} (ID={partner.get('id')})")
+    # マスタキャッシュをクリアして次回から新しい取引先を反映させる
+    clear_master_cache()
+    return partner
+
+
 def search_deals(
     partner_name: Optional[str] = None,
     start_issue_date: Optional[str] = None,

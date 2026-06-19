@@ -32,7 +32,7 @@ from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
     load_token, is_token_expired, clear_master_cache, get_master_cache,
     get_sections, get_tags, get_account_items, get_partners,
-    create_deal, upload_receipt,
+    create_deal, upload_receipt, create_partner,
     search_deals, search_invoices, delete_deal, delete_invoice,
 )
 from matcher import run_matching
@@ -797,7 +797,8 @@ def api_assistant_ai():
 - 削除指示の場合はまずsearch_deals/search_invoicesで対象を検索し、ユーザーに削除内容を伝えてからdelete_deals/delete_invoicesを呼び出す
 - 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
 - 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）
-- search_dealsに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）"""
+- search_dealsに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
+- 登録指示時に取引先マスタに該当する取引先がない場合は、create_partnerで新規作成してからregister_dealを呼び出すこと（ユーザーに確認する必要なし）"""
 
         # Function Callingのツール定義
         tools = [
@@ -894,6 +895,21 @@ def api_assistant_ai():
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_partner",
+                    "description": "freeeに新規取引先を作成する。取引先マスタに存在しない取引先への仕訳登録時に使用する。register_dealの前に呼び出すこと。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["name"],
+                        "properties": {
+                            "name": {"type": "string", "description": "取引先名（正式名で登録する）"},
+                            "shortcut1": {"type": "string", "description": "ショートカット（省略可）"},
+                        },
+                    },
+                },
+            },
         ]
 
         # ツール実行関数
@@ -942,6 +958,17 @@ def api_assistant_ai():
                     "status": "pending_confirmation",
                     "invoice_ids": args["invoice_ids"],
                     "message": args["confirmation_message"]
+                }, ensure_ascii=False)
+            elif name == "create_partner":
+                partner = create_partner(
+                    name=args["name"],
+                    shortcut1=args.get("shortcut1", ""),
+                )
+                return _json.dumps({
+                    "status": "ok",
+                    "id": partner.get("id"),
+                    "name": partner.get("name"),
+                    "message": f"取引先「{partner.get('name')}」を新規登録しました（ID: {partner.get('id')}）"
                 }, ensure_ascii=False)
             return "{}"
 

@@ -750,11 +750,17 @@ def api_assistant_ai():
         fiscal_start = f"{fiscal_year}-04-01"
         fiscal_end = f"{fiscal_year + 1}-03-31"
 
-        # マスタデータ
-        sections_list = ", ".join([s["name"] for s in master.get("sections", [])])
-        tags_list = ", ".join([t["name"] for t in master.get("tags", [])])
-        account_items_list = ", ".join([a["name"] for a in master.get("account_items", [])])
-        partners_list = ", ".join([p["name"] for p in master.get("partners", [])])
+        # マスタデータ：サーバー側で最新を取得（フロントエンドからの master は補助として使用）
+        try:
+            server_master = get_master_cache()
+        except Exception:
+            server_master = master  # freeeトークンなければフロントエンドのマスタを使用
+
+        def _names(lst): return ", ".join([x["name"] for x in lst if x.get("name")])
+        sections_list = _names(server_master.get("sections", []))
+        tags_list = _names(server_master.get("tags", []))
+        account_items_list = _names(server_master.get("account_items", []))
+        partners_list = _names(server_master.get("partners", []))
 
         system_prompt = f"""あなたはfreee会計のエキスパートアシスタントです。
 ユーザーの自然言語の指示を正確に解釈し、提供されたツールを使って実行してください。
@@ -762,18 +768,21 @@ def api_assistant_ai():
 【現在の日付】{today_str}
 【今年度】{fiscal_year}年4月〜{fiscal_year+1}年3月（{fiscal_start} 〜 {fiscal_end}）
 
-【freeeマスタデータ】
+【freeeマスタデータ（完全一覧）】
 取引先: {partners_list}
 部門: {sections_list}
 メモタグ: {tags_list}
 勘定科目: {account_items_list}
 
 【重要なルール】
-- 取引先名はマスタの一覧から最も近い名前を推測して使用する（カタカナ・英語・表記ゆれも正しく対応）
-- 日付は必ず現在の年度を基準に解釈する（「7月以降」→{fiscal_year}年7月以降）
+- ユーザーが入力した名前がマスタと完全一致しなくても、上記マスタ一覧から最も近いものを推測して使用する
+  例: 「ステリファイ」→「stellify」、「マイナビ」→「株式会社マイナビ」、「サーカス」→「circus株式会社」
+  例: 「売上」→「売上高」、「広告費」→「広告宣伝費」など勘定科目も同様に推測する
+- 日付は必ず現在の年度を基準に解釈する（「7月以降」→{fiscal_year}年7月以降、「先月」→{fiscal_year}年{today.month - 1 if today.month > 1 else 12}月）
 - 削除指示の場合はまずsearch_deals/search_invoicesで対象を検索し、ユーザーに削除内容を伝えてからdelete_deals/delete_invoicesを呼び出す
 - 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
-- 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）"""
+- 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）
+- search_dealsに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）"""
 
         # Function Callingのツール定義
         tools = [

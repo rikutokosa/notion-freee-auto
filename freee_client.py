@@ -24,27 +24,59 @@ FREEE_TOKEN_URL = "https://accounts.secure.freee.co.jp/public_api/token"
 FREEE_API_BASE = "https://api.freee.co.jp/api/1"
 FREEE_IV_BASE = "https://api.freee.co.jp/iv"  # 請求書API
 
-# トークン保存ファイル（本番はDBに保存）
+# トークン保存ファイル（フォールバック用）
 TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", "/tmp/freee_token.json"))
 
 
 # ============================================================
-# トークン管理
+# トークン管理（環境変数ベース + ファイルフォールバック）
 # ============================================================
 def save_token(token_data: dict):
-    """トークンをファイルに保存する"""
+    """トークンをファイルと環境変数（プロセス内）に保存する"""
     token_data["saved_at"] = time.time()
-    TOKEN_FILE.write_text(json.dumps(token_data, ensure_ascii=False, indent=2))
+    token_json = json.dumps(token_data, ensure_ascii=False)
+    # ファイルに保存（/tmp、コンテナ再起動で消える）
+    TOKEN_FILE.write_text(token_json)
+    # プロセス内環境変数にも保存（同一プロセス内で有効）
+    os.environ["FREEE_TOKEN_JSON"] = token_json
+    # リフレッシュトークンを個別環境変数にも保存（起動時の復元用）
+    if token_data.get("refresh_token"):
+        os.environ["FREEE_REFRESH_TOKEN"] = token_data["refresh_token"]
 
 
 def load_token() -> Optional[dict]:
-    """保存済みトークンを読み込む"""
-    if not TOKEN_FILE.exists():
-        return None
-    try:
-        return json.loads(TOKEN_FILE.read_text())
-    except Exception:
-        return None
+    """保存済みトークンを読み込む（環境変数 → ファイル → リフレッシュトークンの順で試みる）"""
+    # 1. プロセス内環境変数から読み込む（最優先）
+    token_json = os.environ.get("FREEE_TOKEN_JSON", "")
+    if token_json:
+        try:
+            return json.loads(token_json)
+        except Exception:
+            pass
+
+    # 2. ファイルから読み込む
+    if TOKEN_FILE.exists():
+        try:
+            data = json.loads(TOKEN_FILE.read_text())
+            # ファイルから読み込んだ場合は環境変数にも同期
+            os.environ["FREEE_TOKEN_JSON"] = json.dumps(data, ensure_ascii=False)
+            return data
+        except Exception:
+            pass
+
+    # 3. FREEE_REFRESH_TOKEN 環境変数からトークンを復元する
+    refresh_token = os.environ.get("FREEE_REFRESH_TOKEN", "")
+    if refresh_token:
+        # リフレッシュトークンだけで最低限のtokenデータを作成
+        # saved_at=0にすることで期限切れ扱いにし、自動更新を促す
+        return {
+            "refresh_token": refresh_token,
+            "access_token": "",
+            "expires_in": 86400,
+            "saved_at": 0,
+        }
+
+    return None
 
 
 def is_token_expired(token_data: dict) -> bool:
@@ -143,15 +175,26 @@ def get_account_items() -> list:
 
 
 def get_partners() -> list:
-    """取引先一覧を取得する"""
-    resp = requests.get(
-        f"{FREEE_API_BASE}/partners",
-        headers=_api_headers(),
-        params={"company_id": FREEE_COMPANY_ID},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json().get("partners", [])
+    """取引先一覧を全件取得する（最大1000件）"""
+    all_partners = []
+    offset = 0
+    limit = 100
+    while True:
+        resp = requests.get(
+            f"{FREEE_API_BASE}/partners",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID, "limit": limit, "offset": offset},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        batch = resp.json().get("partners", [])
+        all_partners.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += limit
+        if offset >= 1000:
+            break
+    return all_partners
 
 
 def get_sections() -> list:
@@ -402,6 +445,17 @@ def delete_deal(deal_id: int) -> bool:
     raise ValueError(f"freee取引削除失敗: {resp.status_code} {resp.text[:300]}")
 
 
+def resolve_partner_id(partner_name: str, partners: list) -> Optional[int]:
+    """
+    取引先名からpartner_idを解決する（完全一致）
+    AIが既にマスタ名に正規化した名前を渡す前提
+    """
+    for p in partners:
+        if p.get("name") == partner_name:
+            return p.get("id")
+    return None
+
+
 def search_deals(
     partner_name: Optional[str] = None,
     start_issue_date: Optional[str] = None,
@@ -411,6 +465,7 @@ def search_deals(
 ) -> list:
     """
     freeeの取引一覧を検索する
+    partner_nameが指定された場合、取引先マスタからpartner_idに変換してAPIに渡す
     deal_type: 'income' | 'expense' | None(両方)
     """
     params = {
@@ -423,6 +478,18 @@ def search_deals(
         params["end_issue_date"] = end_issue_date
     if deal_type:
         params["type"] = deal_type
+
+    # partner_nameをpartner_idに変換してAPIに渡す
+    # freee APIはpartner_idフィルタに対応しているが、partner_nameフィルタは非対応
+    if partner_name:
+        try:
+            partners = get_partners()
+            partner_id = resolve_partner_id(partner_name, partners)
+            if partner_id:
+                params["partner_id"] = partner_id
+        except Exception:
+            pass  # 取引先マスタ取得失敗時はフィルタなしで全件取得
+
     resp = requests.get(
         f"{FREEE_API_BASE}/deals",
         headers=_api_headers(),
@@ -431,13 +498,15 @@ def search_deals(
     )
     resp.raise_for_status()
     deals = resp.json().get("deals", [])
-    # 取引先名でフィルタリング（APIに取引先名フィルタがないためローカルでフィルタ）
-    if partner_name:
+
+    # partner_idが解決できなかった場合のフォールバック：partner_nameでローカルフィルタ
+    if partner_name and "partner_id" not in params:
         partner_name_lower = partner_name.lower()
         deals = [
             d for d in deals
             if partner_name_lower in (d.get("partner_name") or "").lower()
         ]
+
     return deals
 
 
@@ -464,6 +533,7 @@ def search_invoices(
 ) -> list:
     """
     freee請求書一覧を検索する
+    partner_nameが指定された場合、取引先マスタからpartner_idに変換してAPIに渡す
     """
     params = {
         "company_id": FREEE_COMPANY_ID,
@@ -473,6 +543,17 @@ def search_invoices(
         params["start_issue_date"] = start_issue_date
     if end_issue_date:
         params["end_issue_date"] = end_issue_date
+
+    # partner_nameをpartner_idに変換してAPIに渡す
+    if partner_name:
+        try:
+            partners = get_partners()
+            partner_id = resolve_partner_id(partner_name, partners)
+            if partner_id:
+                params["partner_id"] = partner_id
+        except Exception:
+            pass
+
     resp = requests.get(
         f"https://api.freee.co.jp/iv/invoices",
         headers=_api_headers(),
@@ -481,12 +562,15 @@ def search_invoices(
     )
     resp.raise_for_status()
     invoices = resp.json().get("invoices", [])
-    if partner_name:
+
+    # partner_idが解決できなかった場合のフォールバック
+    if partner_name and "partner_id" not in params:
         partner_name_lower = partner_name.lower()
         invoices = [
             inv for inv in invoices
             if partner_name_lower in (inv.get("partner_name") or "").lower()
         ]
+
     return invoices
 
 
@@ -573,39 +657,35 @@ def create_invoice(entry: dict, cache: dict) -> dict:
                     tag_ids.append(tid)
             if tag_ids:
                 line["tag_ids"] = tag_ids
+
         lines.append(line)
 
     # freee請求書APIの必須フィールドを含むペイロード
     payload = {
         "company_id": FREEE_COMPANY_ID,
-        "billing_date": entry["issue_date"],   # 請求日
-        "tax_entry_method": "out",              # 外税表示
-        "tax_fraction": "round",               # 端数四捨五入
-        "withholding_tax_entry_method": "out", # 源泉征収外税計算
-        "partner_title": "御中",               # 必須項目
+        "billing_date": entry.get("issue_date", ""),
+        "tax_entry_method": "out",
+        "tax_fraction": "round",
+        "withholding_tax_entry_method": "out",
+        "partner_title": "御中",
         "lines": lines,
     }
     if entry.get("due_date"):
         payload["payment_date"] = entry["due_date"]
     if entry.get("title"):
         payload["subject"] = entry["title"]
-    if entry.get("invoice_note"):
-        payload["invoice_note"] = entry["invoice_note"]
-    if entry.get("memo"):
-        payload["memo"] = entry["memo"]
+    if entry.get("invoice_number"):
+        payload["invoice_number"] = entry["invoice_number"]
     if partner_id:
         payload["partner_id"] = int(partner_id)
     elif partner_name:
         logger.warning(f"請求書登録: 取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
         raise ValueError(f"取引先「{partner_name}」が見つかりません。freeeに取引先を登録してください。")
-    if entry.get("invoice_number"):
-        payload["invoice_number"] = entry["invoice_number"]
 
     logger.info(
         f"請求書登録リクエスト: partner={partner_name}(id={partner_id}), "
-        f"billing_date={entry['issue_date']}, lines={len(lines)}件"
+        f"billing_date={entry.get('issue_date')}, lines={len(lines)}件"
     )
-    logger.info(f"請求書ペイロード: {payload}")
 
     resp = requests.post(
         f"{FREEE_IV_BASE}/invoices",
@@ -619,74 +699,52 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         raise ValueError(f"freee請求書登録失敗: {resp.status_code} {resp.text[:500]}")
 
     resp_data = resp.json()
-    # レスポンスは {"invoice": {"id": ..., ...}} 形式
     invoice_data = resp_data.get("invoice", resp_data)
     logger.info(f"請求書登録成功: ID={invoice_data.get('id')}")
     return invoice_data
 
 
-def send_invoice(invoice_id: int, contact_email: Optional[str] = None) -> dict:
+def register_invoice_and_deal(invoice_entry: dict, sales_entry: dict) -> dict:
     """
-    freee請求書を送付する（PUT /iv/invoices/{id}）
-    sending_status を "sent" に変更することでメール送付が実行される
-
-    invoice_id: freee請求書ID
-    contact_email: 送付先メールアドレス（省略時はfreeeに登録済みの取引先メールを使用）
+    請求書を登録する（請求書登録タイプの場合に使用）
+    請求書の明細行に会計情報を含めることで、freeeが自動的に取引（仕訳）を連携する。
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
-    payload = {
-        "company_id": FREEE_COMPANY_ID,
-        "sending_status": "sent",
-    }
-    if contact_email:
-        payload["partner_contact_email_to"] = contact_email
-
-    logger.info(f"請求書送付リクエスト: invoice_id={invoice_id}, payload={payload}")
-
-    resp = requests.put(
-        f"{FREEE_IV_BASE}/invoices/{invoice_id}",
-        headers=_api_headers(),
-        json=payload,
-        timeout=30,
-    )
-
-    if resp.status_code not in (200, 201):
-        error_msg = f"freee請求書送付失敗: {resp.status_code} {resp.text[:500]}"
-        logger.error(error_msg)
-        return {"error": error_msg}
-
-    logger.info(f"請求書送付成功: ID={invoice_id}")
-    return {"invoice_id": invoice_id, "status": "sent"}
+    cache = get_master_cache()
+    result = {"invoice_id": None, "sales_id": None, "errors": []}
+    try:
+        invoice = create_invoice(invoice_entry, cache)
+        result["invoice_id"] = invoice.get("id")
+        deal_id = invoice.get("deal_id")
+        if deal_id:
+            result["sales_id"] = deal_id
+    except Exception as e:
+        result["errors"].append(f"請求書登録エラー: {str(e)}")
+    return result
 
 
 # ============================================================
-# 証憑アップロード
+# 証憷アップロード
 # ============================================================
-def upload_receipt(file_path: str, deal_id: Optional[int] = None,
-                   description: str = "") -> dict:
+def upload_receipt(
+    file_path: str,
+    deal_id: Optional[int] = None,
+    description: str = "",
+) -> dict:
     """
-    freeeに証憑ファイルをアップロードする
-
-    file_path: アップロードするファイルのパス
-    deal_id: 紐付ける取引ID（省略可）
-    description: 証憑の説明（省略可）
+    freeeファイルボックスに証憷をアップロードする
+    deal_id が指定された場合は取引に紐付ける
     """
     import logging
     logger = logging.getLogger(__name__)
 
     token = get_valid_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-    }
+    headers = {"Authorization": f"Bearer {token}"}
 
     with open(file_path, "rb") as f:
         files = {"receipt": (Path(file_path).name, f)}
         data = {"company_id": str(FREEE_COMPANY_ID)}
         if description:
             data["description"] = description
-
         resp = requests.post(
             f"{FREEE_API_BASE}/receipts",
             headers=headers,
@@ -696,15 +754,15 @@ def upload_receipt(file_path: str, deal_id: Optional[int] = None,
         )
 
     if resp.status_code not in (200, 201):
-        error_msg = f"証憑アップロード失敗: {resp.status_code} {resp.text[:500]}"
+        error_msg = f"証憷アップロード失敗: {resp.status_code} {resp.text[:500]}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
     receipt_data = resp.json().get("receipt", {})
     receipt_id = receipt_data.get("id")
-    logger.info(f"証憑アップロード成功: ID={receipt_id}")
+    logger.info(f"証憷アップロード成功: ID={receipt_id}")
 
-    # 取引IDが指定されている場合は紐付ける
+    # 取引に紐付ける
     if deal_id and receipt_id:
         try:
             link_resp = requests.post(
@@ -715,12 +773,40 @@ def upload_receipt(file_path: str, deal_id: Optional[int] = None,
             )
             if link_resp.status_code not in (200, 201):
                 logger.warning(
-                    f"証憑と取引の紐付け失敗: {link_resp.status_code} {link_resp.text[:300]}"
+                    f"証憷と取引の紐付け失敗: {link_resp.status_code} {link_resp.text[:300]}"
                 )
         except Exception as e:
-            logger.warning(f"証憑と取引の紐付けエラー: {e}")
+            logger.warning(f"証憷と取引の紐付けエラー: {e}")
 
     return receipt_data
+
+
+def send_invoice(invoice_id: int, contact_email: Optional[str] = None) -> dict:
+    """
+    freee請求書を送付する（PUT /iv/invoices/{id}）
+    sending_status を "sent" に変更することでメール送付が実行される
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    payload = {
+        "company_id": FREEE_COMPANY_ID,
+        "sending_status": "sent",
+    }
+    if contact_email:
+        payload["partner_contact_email_to"] = contact_email
+    logger.info(f"請求書送付リクエスト: invoice_id={invoice_id}, payload={payload}")
+    resp = requests.put(
+        f"{FREEE_IV_BASE}/invoices/{invoice_id}",
+        headers=_api_headers(),
+        json=payload,
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        error_msg = f"freee請求書送付失敗: {resp.status_code} {resp.text[:500]}"
+        logger.error(error_msg)
+        return {"error": error_msg}
+    logger.info(f"請求書送付成功: ID={invoice_id}")
+    return {"invoice_id": invoice_id, "status": "sent"}
 
 
 # ============================================================
@@ -735,50 +821,24 @@ def register_journal(sales_entry: Optional[dict],
     """
     cache = get_master_cache()
     result = {"sales_id": None, "purchase_id": None, "pca_id": None, "errors": []}
-
     if sales_entry:
         try:
             deal = create_deal(sales_entry, "income", cache)
             result["sales_id"] = deal.get("id")
         except Exception as e:
             result["errors"].append(f"売上仕訳エラー: {str(e)}")
-
     if purchase_entry:
         try:
             deal = create_deal(purchase_entry, "expense", cache)
             result["purchase_id"] = deal.get("id")
         except Exception as e:
             result["errors"].append(f"仕入仕訳エラー: {str(e)}")
-
     if pca_entry:
         try:
             deal = create_deal(pca_entry, "expense", cache)
             result["pca_id"] = deal.get("id")
         except Exception as e:
             result["errors"].append(f"PCA仕訳エラー: {str(e)}")
-
-    return result
-
-
-def register_invoice_and_deal(invoice_entry: dict, sales_entry: dict) -> dict:
-    """
-    請求書を登録する（請求書登録タイプの場合に使用）
-    請求書の明細行に会計情報（account_item_id・section_id・tag_ids・tax_code）を
-    含めることで、freeeが自動的に取引（仕訳）を連携する。
-    """
-    cache = get_master_cache()
-    result = {"invoice_id": None, "sales_id": None, "errors": []}
-
-    try:
-        invoice = create_invoice(invoice_entry, cache)
-        result["invoice_id"] = invoice.get("id")
-        # 請求書から取引が自動連携されるため、deal_idは請求書のレスポンスから取得
-        deal_id = invoice.get("deal_id")
-        if deal_id:
-            result["sales_id"] = deal_id
-    except Exception as e:
-        result["errors"].append(f"請求書登録エラー: {str(e)}")
-
     return result
 
 
@@ -787,19 +847,16 @@ def delete_deals(sales_id: Optional[int], purchase_id: Optional[int]) -> dict:
     取引を削除する（入社前辞退時に使用）
     """
     result = {"deleted_sales": False, "deleted_purchase": False, "errors": []}
-
     if sales_id:
         try:
             delete_deal(sales_id)
             result["deleted_sales"] = True
         except Exception as e:
             result["errors"].append(f"売上取引削除エラー: {str(e)}")
-
     if purchase_id:
         try:
             delete_deal(purchase_id)
             result["deleted_purchase"] = True
         except Exception as e:
             result["errors"].append(f"仕入取引削除エラー: {str(e)}")
-
     return result

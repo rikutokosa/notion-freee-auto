@@ -24,8 +24,21 @@ FREEE_TOKEN_URL = "https://accounts.secure.freee.co.jp/public_api/token"
 FREEE_API_BASE = "https://api.freee.co.jp/api/1"
 FREEE_IV_BASE = "https://api.freee.co.jp/iv"  # 請求書API
 
-# トークン保存ファイル（フォールバック用）
-TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", "/tmp/freee_token.json"))
+# トークン保存ファイル
+# Railwayボリュームが /data にマウントされていればそこに保存（デプロイ後も永続）
+# なければ /tmp にフォールバック（コンテナ再起動で消える）
+def _resolve_token_file() -> Path:
+    data_dir = Path("/data")
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        test_file = data_dir / ".write_test"
+        test_file.write_text("ok")
+        test_file.unlink()
+        return data_dir / "freee_token.json"
+    except Exception:
+        return Path("/tmp/freee_token.json")
+
+TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", "")) or _resolve_token_file()
 
 
 # ============================================================
@@ -565,23 +578,28 @@ def search_invoices(
     """
     freee請求書一覧を検索する
     partner_nameが指定された場合、取引先マスタからpartner_idに変換してAPIに渡す
+    注意: freee請求書APIのパラメータ名は会計APIと異なる
+      - partner_ids (複数形、カンマ区切り)
+      - start_billing_date / end_billing_date
     """
     params = {
         "company_id": FREEE_COMPANY_ID,
-        "limit": limit,
+        "limit": min(limit, 100),  # 請求書APIの最大は100
     }
+    # 請求書APIは start_billing_date / end_billing_date を使用
     if start_issue_date:
-        params["start_issue_date"] = start_issue_date
+        params["start_billing_date"] = start_issue_date
     if end_issue_date:
-        params["end_issue_date"] = end_issue_date
+        params["end_billing_date"] = end_issue_date
 
     # partner_nameをpartner_idに変換してAPIに渡す
+    # 請求書APIは partner_ids (複数形、カンマ区切り)
     if partner_name:
         try:
             partners = get_partners()
             partner_id = resolve_partner_id(partner_name, partners)
             if partner_id:
-                params["partner_id"] = partner_id
+                params["partner_ids"] = str(partner_id)  # 請求書APIは文字列で渡す
         except Exception:
             pass
 
@@ -595,7 +613,7 @@ def search_invoices(
     invoices = resp.json().get("invoices", [])
 
     # partner_idが解決できなかった場合のフォールバック
-    if partner_name and "partner_id" not in params:
+    if partner_name and "partner_ids" not in params:
         partner_name_lower = partner_name.lower()
         invoices = [
             inv for inv in invoices

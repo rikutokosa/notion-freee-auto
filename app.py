@@ -821,7 +821,7 @@ def api_assistant_ai():
   例: 「ステリファイ」→「stellify」、「マイナビ」→「株式会社マイナビ」、「サーカス」→「circus株式会社」
   例: 「売上」→「売上高」、「広告費」→「広告宣伝費」など勘定科目も同様に推測する
 - 日付は必ず現在の年度を基準に解釈する（「7月以降」→{fiscal_year}年7月以降、「先月」→{fiscal_year}年{today.month - 1 if today.month > 1 else 12}月）
-- 削除指示の場合はまずsearch_deals/search_invoicesで対象を検索し、ユーザーに削除内容を伝えてからdelete_deals/delete_invoicesを呼び出す
+- 削除指示の場合は必ずsearch_deals/search_invoicesで対象を検索し、その検索結果に含まれる実際のid値のみをdelete_deals/delete_invoicesに渡すこと。絶対に自分でIDを数値で指定してはいけない（必ず検索結果から取得すること）
 - 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
 - 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）
 - search_dealsに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
@@ -896,12 +896,12 @@ def api_assistant_ai():
                 "type": "function",
                 "function": {
                     "name": "delete_deals",
-                    "description": "指定したIDの仕訳を削除する。必ず事前にsearch_dealsで対象を確認し、ユーザーに削除内容を伝えてから呼び出すこと。",
+                    "description": "指定したIDの仕訳を削除する。必ず事前にsearch_dealsで対象を検索し、その検索結果に含まれる実際のid値のみを使用すること。実在しないダミーID（1,2,3など）を渡してはいけない。",
                     "parameters": {
                         "type": "object",
                         "required": ["deal_ids", "confirmation_message"],
                         "properties": {
-                            "deal_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する仕訳IDのリスト"},
+                            "deal_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する仕訳IDのリスト。search_dealsの結果から取得した実際のid値のみ使用すること。"},
                             "confirmation_message": {"type": "string", "description": "ユーザーに表示する削除内容の説明"},
                         },
                     },
@@ -911,12 +911,12 @@ def api_assistant_ai():
                 "type": "function",
                 "function": {
                     "name": "delete_invoices",
-                    "description": "指定したIDの請求書を削除する。必ず事前にsearch_invoicesで対象を確認し、ユーザーに削除内容を伝えてから呼び出すこと。",
+                    "description": "指定したIDの請求書を削除する。必ず事前にsearch_invoicesで対象を検索し、その検索結果に含まれる実際のid値のみを使用すること。実在しないダミーID（1,2,3など）を渡してはいけない。",
                     "parameters": {
                         "type": "object",
                         "required": ["invoice_ids", "confirmation_message"],
                         "properties": {
-                            "invoice_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する請求書IDのリスト"},
+                            "invoice_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する請求書IDのリスト。search_invoicesの結果から取得した実際のid値のみ使用すること。"},
                             "confirmation_message": {"type": "string", "description": "ユーザーに表示する削除内容の説明"},
                         },
                     },

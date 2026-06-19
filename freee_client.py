@@ -461,11 +461,19 @@ def delete_deal(deal_id: int) -> bool:
 
 def resolve_partner_id(partner_name: str, partners: list) -> Optional[int]:
     """
-    取引先名からpartner_idを解決する（完全一致）
-    AIが既にマスタ名に正規化した名前を渡す前提
+    取引先名からpartner_idを解決する
+    1. 完全一致（大文字小文字無視）
+    2. 部分一致（大文字小文字無視）
     """
+    name_lower = partner_name.lower()
+    # 1. 完全一致
     for p in partners:
-        if p.get("name") == partner_name:
+        if p.get("name", "").lower() == name_lower:
+            return p.get("id")
+    # 2. 部分一致（マスタ名に検索名が含まれる、または逆）
+    for p in partners:
+        pname_lower = p.get("name", "").lower()
+        if name_lower in pname_lower or pname_lower in name_lower:
             return p.get("id")
     return None
 

@@ -831,9 +831,11 @@ def api_assistant_ai():
   例: 「売上」→「売上高」、「広告費」→「広告宣伝費」など勘定科目も同様に推測する
 - 日付は必ず現在の年度を基準に解釈する（「7月以降」→{fiscal_year}年7月以降、「先月」→{fiscal_year}年{today.month - 1 if today.month > 1 else 12}月）
 - 削除指示の場合は必ずsearch_deals/search_invoicesで対象を検索し、その検索結果に含まれる実際のid値のみをdelete_deals/delete_invoicesに渡すこと。絶対に自分でIDを数値で指定してはいけない（必ず検索結果から取得すること）
+- 削除指示時は必ず「仕訳と請求書の両方」を検索・削除すること（片方だけを忽れない）
+- 請求書の日付はbilling_date（請求日）で管理されている。issue_dateはnullの場合が多いのでbilling_dateを使用すること
 - 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
 - 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）
-- search_dealsに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
+- search_deals/search_invoicesに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
 - 登録指示時に取引先マスタに該当する取引先がない場合は、create_partnerで新規作成してからregister_dealを呼び出すこと（ユーザーに確認する必要なし）"""
 
         # Function Callingのツール定義
@@ -858,13 +860,13 @@ def api_assistant_ai():
                 "type": "function",
                 "function": {
                     "name": "search_invoices",
-                    "description": "freeeの請求書を検索する。削除対象の確認や存在確認に使用する。",
+                    "description": "freeeの請求書を検索する。削除対象の確認や存在確認に使用する。請求書の日付はbilling_date（請求日）で管理されている。",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "partner_name": {"type": "string", "description": "取引先名（部分一致）"},
-                            "start_issue_date": {"type": "string", "description": "発生日開始（YYYY-MM-DD）"},
-                            "end_issue_date": {"type": "string", "description": "発生日終了（YYYY-MM-DD）"},
+                            "partner_name": {"type": "string", "description": "取引先名（マスタの正式名を使用すること）"},
+                            "start_issue_date": {"type": "string", "description": "請求日（billing_date）の開始日（YYYY-MM-DD）"},
+                            "end_issue_date": {"type": "string", "description": "請求日（billing_date）の終了日（YYYY-MM-DD）"},
                         },
                     },
                 },
@@ -960,8 +962,12 @@ def api_assistant_ai():
             elif name == "search_invoices":
                 invoices = search_invoices(**args)
                 return _json.dumps([
-                    {"id": inv["id"], "issue_date": inv.get("issue_date"), "partner_name": inv.get("partner_name"),
-                     "total_amount": inv.get("total_amount"), "invoice_number": inv.get("invoice_number")}
+                    {"id": inv["id"],
+                     "billing_date": inv.get("billing_date"),
+                     "issue_date": inv.get("issue_date"),
+                     "partner_name": inv.get("partner_name"),
+                     "total_amount": inv.get("total_amount"),
+                     "invoice_number": inv.get("invoice_number")}
                     for inv in invoices
                 ], ensure_ascii=False)
             elif name == "register_deal":

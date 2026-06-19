@@ -803,11 +803,29 @@ async function sendAiMessage() {
         replyHtml += `<div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;margin-top:8px;">`;
         replyHtml += `<div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">⚠️ 削除確認</div>`;
         replyHtml += `<div style="font-size:13px;margin-bottom:8px;">${pd.message}</div>`;
-        if (pd.deal_ids.length > 0) {
-          replyHtml += `<div style="font-size:12px;color:#555;">仕訳: ${pd.deal_ids.length}件 (ID: ${pd.deal_ids.join(', ')})</div>`;
+        if ((pd.deals_detail || []).length > 0) {
+          replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">仕訳 ${pd.deals_detail.length}件:</div>`;
+          replyHtml += `<table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">`;
+          replyHtml += `<tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">日付</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">取引先</th></tr>`;
+          pd.deals_detail.forEach(d => {
+            const amt = d.amount ? d.amount.toLocaleString() + '円' : '-';
+            replyHtml += `<tr><td style="padding:3px 8px;">${d.issue_date || '-'}</td><td style="padding:3px 8px;text-align:right;">${amt}</td><td style="padding:3px 8px;">${d.partner_name || '-'}</td></tr>`;
+          });
+          replyHtml += `</table>`;
+        } else if (pd.deal_ids.length > 0) {
+          replyHtml += `<div style="font-size:12px;color:#555;">仕訳: ${pd.deal_ids.length}件</div>`;
         }
-        if (pd.invoice_ids.length > 0) {
-          replyHtml += `<div style="font-size:12px;color:#555;">請求書: ${pd.invoice_ids.length}件 (ID: ${pd.invoice_ids.join(', ')})</div>`;
+        if ((pd.invoices_detail || []).length > 0) {
+          replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">請求書 ${pd.invoices_detail.length}件:</div>`;
+          replyHtml += `<table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">`;
+          replyHtml += `<tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">請求日</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">請求書番号</th></tr>`;
+          pd.invoices_detail.forEach(inv => {
+            const amt = inv.total_amount ? inv.total_amount.toLocaleString() + '円' : '-';
+            replyHtml += `<tr><td style="padding:3px 8px;">${inv.billing_date || '-'}</td><td style="padding:3px 8px;text-align:right;">${amt}</td><td style="padding:3px 8px;">${inv.invoice_number || '-'}</td></tr>`;
+          });
+          replyHtml += `</table>`;
+        } else if (pd.invoice_ids.length > 0) {
+          replyHtml += `<div style="font-size:12px;color:#555;">請求書: ${pd.invoice_ids.length}件</div>`;
         }
         const pdJson = JSON.stringify(pd).replace(/"/g, '&quot;');
         replyHtml += `<div style="margin-top:10px;">`;

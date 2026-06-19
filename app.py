@@ -952,8 +952,10 @@ def api_assistant_ai():
 
         # ツール実行関数
         def execute_tool(name, args):
+            nonlocal _last_search_deals, _last_search_invoices
             if name == "search_deals":
                 deals = search_deals(**args)
+                _last_search_deals = deals  # delete_deals時に詳細情報として使用
                 return _json.dumps([
                     {"id": d["id"], "issue_date": d.get("issue_date"), "partner_name": d.get("partner_name"),
                      "amount": d.get("amount"), "type": d.get("type")}
@@ -961,6 +963,7 @@ def api_assistant_ai():
                 ], ensure_ascii=False)
             elif name == "search_invoices":
                 invoices = search_invoices(**args)
+                _last_search_invoices = invoices  # delete_invoices時に詳細情報として使用
                 return _json.dumps([
                     {"id": inv["id"],
                      "billing_date": inv.get("billing_date"),
@@ -990,15 +993,29 @@ def api_assistant_ai():
                 return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
             elif name == "delete_deals":
                 # 削除はユーザー確認が必要なので、削除内容を返すのみ（実行はフロントエンドで行う）
+                # 直前のsearch_deals結果から詳細情報を引き引き渡す
+                deal_detail_map = {d["id"]: d for d in _last_search_deals}
+                deals_detail = [
+                    {"id": did, "issue_date": deal_detail_map.get(did, {}).get("issue_date"), "amount": deal_detail_map.get(did, {}).get("amount"), "partner_name": deal_detail_map.get(did, {}).get("partner_name")}
+                    for did in args["deal_ids"]
+                ]
                 return _json.dumps({
                     "status": "pending_confirmation",
                     "deal_ids": args["deal_ids"],
+                    "deals_detail": deals_detail,
                     "message": args["confirmation_message"]
                 }, ensure_ascii=False)
             elif name == "delete_invoices":
+                # 直前のsearch_invoices結果から詳細情報を引き引き渡す
+                inv_detail_map = {inv["id"]: inv for inv in _last_search_invoices}
+                invoices_detail = [
+                    {"id": iid, "billing_date": inv_detail_map.get(iid, {}).get("billing_date"), "total_amount": inv_detail_map.get(iid, {}).get("total_amount"), "invoice_number": inv_detail_map.get(iid, {}).get("invoice_number"), "partner_name": inv_detail_map.get(iid, {}).get("partner_name")}
+                    for iid in args["invoice_ids"]
+                ]
                 return _json.dumps({
                     "status": "pending_confirmation",
                     "invoice_ids": args["invoice_ids"],
+                    "invoices_detail": invoices_detail,
                     "message": args["confirmation_message"]
                 }, ensure_ascii=False)
             elif name == "create_partner":
@@ -1020,9 +1037,11 @@ def api_assistant_ai():
             messages.append(h)
         messages.append({"role": "user", "content": user_message})
 
-        pending_deletes = {"deal_ids": [], "invoice_ids": [], "message": ""}
+        pending_deletes = {"deal_ids": [], "invoice_ids": [], "message": "", "deals_detail": [], "invoices_detail": []}
         registered_ids = []
         final_reply = ""
+        _last_search_deals = []      # search_dealsの最新結果を保持（delete_deals時に詳細情報として使用）
+        _last_search_invoices = []   # search_invoicesの最新結果を保持（delete_invoices時に詳細情報として使用）
 
         for _ in range(6):
             resp = req.post(
@@ -1060,11 +1079,20 @@ def api_assistant_ai():
                             pending_deletes["deal_ids"].extend(result_obj["deal_ids"])
                         if "invoice_ids" in result_obj:
                             pending_deletes["invoice_ids"].extend(result_obj["invoice_ids"])
+                        if "deals_detail" in result_obj:
+                            pending_deletes["deals_detail"].extend(result_obj["deals_detail"])
+                        if "invoices_detail" in result_obj:
+                            pending_deletes["invoices_detail"].extend(result_obj["invoices_detail"])
                         pending_deletes["message"] = result_obj.get("message", "")
 
                     # 登録成功の場合
                     if fn_name == "register_deal" and result_obj.get("status") == "ok":
                         registered_ids.append(result_obj.get("id"))
+
+            # 削除ツールが呼ばれた場合はここでループを打ち切る
+            # （AIがツール結果を受け取って「削除しました」と言わないようにするため）
+            if pending_deletes["deal_ids"] or pending_deletes["invoice_ids"]:
+                break
 
         # 削除確認待ちがある場合はAIの「削除しました」メッセージを上書き
         has_pending = bool(pending_deletes["deal_ids"] or pending_deletes["invoice_ids"])

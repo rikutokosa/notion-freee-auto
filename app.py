@@ -1385,7 +1385,7 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
 
     # 画像（PNG/JPG/WEBP/GIF/BMP）
     if suffix in ('.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.tif'):
-        # webp/gif/bmpはJPEGに変換してからOCR
+        # webp/gif/bmpはJPEGに変換してからOCR（変換失敗時はそのままOCRを試みる）
         if suffix not in ('.png', '.jpg', '.jpeg'):
             try:
                 from PIL import Image as PILImage
@@ -1400,17 +1400,19 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
                     pass
                 return result
             except Exception as e:
-                logger.warning(f"画像変換失敗({suffix}): {e}")
-                return ''
+                logger.warning(f"画像変換失敗({suffix}): {e} - webpのままOCRを試みます")
+                # Pillowがなくてもwebpをそのまま送信（OpenAI Vision APIはwebpをサポート）
+                return _ocr_image_with_openai(path, mime_override='image/webp')
         return _ocr_image_with_openai(path)
 
     return ''
 
 
-def _ocr_image_with_openai(image_path: str) -> str:
+def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
     """OpenAI Vision APIで画像からテキストを抽出する
     注意: OCRは必ず公式OpenAI APIを直接使用する。
     OPENAI_API_BASEはサンドボックス専用プロキシの場合があり、Vision機能をサポートしない可能性があるため。
+    mime_override: 指定した場合はそのmimeタイプを使用（webp等のフォールバック用）
     """
     import base64
     import requests as req
@@ -1423,7 +1425,14 @@ def _ocr_image_with_openai(image_path: str) -> str:
         with open(image_path, 'rb') as f:
             b64 = base64.b64encode(f.read()).decode()
         suffix = Path(image_path).suffix.lower().lstrip('.')
-        mime = 'image/png' if suffix == 'png' else 'image/jpeg'
+        if mime_override:
+            mime = mime_override
+        elif suffix == 'png':
+            mime = 'image/png'
+        elif suffix == 'webp':
+            mime = 'image/webp'
+        else:
+            mime = 'image/jpeg'
         resp = req.post(
             f"{ocr_api_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},

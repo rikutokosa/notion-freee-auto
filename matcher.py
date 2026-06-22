@@ -5,15 +5,21 @@ freeeのファイルボックス（証憑ファイル）に登録された未照
 既存の取引（仕訳）と自動照合・紐づけする。
 
 照合ロジック:
-1. GET /api/1/receipts?category=without_deal で未登録書類一覧を取得
-2. 各書類のOCR解析結果（金額・発行日・発行元）を取得
-3. GET /api/1/deals で金額・日付範囲で仕訳を検索
-4. 金額完全一致 → 候補として記録
-5. 候補が1件 → 自動紐づけ
-6. 候補が複数 → 取引先名で絞り込み → それでも複数なら日付が最も近いものを選択
-7. POST /api/1/deals/{id}/receipts で紐づけ実行
+1. GET /api/1/receipts?start_date=...&end_date=... で書類一覧を取得
+2. 各書類のfreee OCR解析結果（金額・発行日・発行元）を確認
+3. freee OCRが不十分な場合（金額または発行日がnull）は
+   GET /api/1/receipts/{id}/download でPDFをダウンロードし
+   OpenAI Vision API で AI-OCR を実行して補完する
+4. GET /api/1/deals で金額・日付範囲で仕訳を検索
+5. 金額完全一致 → 候補として記録
+6. 候補が1件 → 自動紐づけ
+7. 候補が複数 → 取引先名で絞り込み → それでも複数なら日付が最も近いものを選択
+8. POST /api/1/deals/{id}/receipts で紐づけ実行
 """
 import logging
+import os
+import re
+import tempfile
 import requests
 from datetime import datetime, timedelta
 from typing import Optional
@@ -34,6 +40,10 @@ DATE_RANGE_DAYS = 60
 # 0: 完全一致のみ
 AMOUNT_TOLERANCE = 0
 
+
+# ============================================================
+# 書類一覧取得
+# ============================================================
 
 def get_unmatched_receipts(limit: int = 100, months_back: int = 6) -> list:
     """
@@ -70,6 +80,160 @@ def get_unmatched_receipts(limit: int = 100, months_back: int = 6) -> list:
     logger.info(f"未登録書類: {len(receipts)}件取得")
     return receipts
 
+
+# ============================================================
+# AI-OCR（freee OCR が不十分な場合のフォールバック）
+# ============================================================
+
+def _download_receipt_pdf(receipt_id: int) -> Optional[bytes]:
+    """freeeからPDFをダウンロードして bytes を返す"""
+    resp = requests.get(
+        f"{FREEE_API_BASE}/receipts/{receipt_id}/download",
+        headers=_api_headers(),
+        params={"company_id": FREEE_COMPANY_ID},
+        timeout=30,
+    )
+    if resp.status_code == 200 and len(resp.content) > 100:
+        return resp.content
+    logger.warning(f"PDFダウンロード失敗: ID={receipt_id}, status={resp.status_code}")
+    return None
+
+
+def _pdf_to_images(pdf_bytes: bytes) -> list:
+    """PDF bytes を PIL Image のリストに変換する（最大3ページ）"""
+    try:
+        from pdf2image import convert_from_bytes
+        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=3, dpi=150)
+        return images
+    except Exception as e:
+        logger.warning(f"PDF→画像変換失敗: {e}")
+        return []
+
+
+def _ocr_image_with_ai(image) -> str:
+    """PIL Image を OpenAI Vision API に送ってテキストを抽出する"""
+    import base64
+    import io
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_key:
+        return ""
+
+    # PIL Image → JPEG bytes → base64
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=90)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"},
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "これは日本語の請求書PDFです。以下の情報を抽出してください。\n"
+                                "1. 請求金額（合計金額・税込金額）: 数字のみ\n"
+                                "2. 請求日または発行日: YYYY-MM-DD形式\n"
+                                "3. 請求元会社名（発行者・請求元）\n\n"
+                                "回答は必ず以下のJSON形式で返してください:\n"
+                                '{"amount": 数値または null, "issue_date": "YYYY-MM-DD"または null, "partner_name": "会社名"または null}\n'
+                                "金額はカンマや円記号を除いた整数で返してください。"
+                            ),
+                        },
+                    ],
+                }],
+                "max_tokens": 500,
+            },
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            content = resp.json()["choices"][0]["message"]["content"]
+            return content
+        else:
+            logger.warning(f"AI-OCR APIエラー: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"AI-OCRエラー: {e}")
+    return ""
+
+
+def _parse_ai_ocr_result(text: str) -> dict:
+    """AI-OCRの結果テキストからJSONを抽出してパースする"""
+    if not text:
+        return {}
+    # JSONブロックを抽出
+    json_match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+    if not json_match:
+        return {}
+    try:
+        import json
+        data = json.loads(json_match.group())
+        result = {}
+        # amount
+        if data.get("amount") is not None:
+            try:
+                result["amount"] = int(str(data["amount"]).replace(",", "").replace("円", "").strip())
+            except (ValueError, TypeError):
+                pass
+        # issue_date
+        if data.get("issue_date"):
+            date_str = str(data["issue_date"]).strip()
+            # YYYY-MM-DD形式に正規化
+            date_match = re.search(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', date_str)
+            if date_match:
+                y, m, d = date_match.groups()
+                result["issue_date"] = f"{y}-{int(m):02d}-{int(d):02d}"
+        # partner_name
+        if data.get("partner_name"):
+            result["partner_name"] = str(data["partner_name"]).strip()
+        return result
+    except Exception as e:
+        logger.warning(f"AI-OCR結果パース失敗: {e}, text={text[:200]}")
+        return {}
+
+
+def ai_ocr_receipt(receipt_id: int) -> dict:
+    """
+    freeeのPDFをダウンロードしてAI-OCRで金額・日付・取引先を抽出する
+
+    Returns:
+        {"amount": int|None, "issue_date": str|None, "partner_name": str|None, "ai_ocr": True}
+    """
+    logger.info(f"AI-OCR開始: receipt_id={receipt_id}")
+
+    pdf_bytes = _download_receipt_pdf(receipt_id)
+    if not pdf_bytes:
+        return {"amount": None, "issue_date": None, "partner_name": None, "ai_ocr": True, "ai_ocr_error": "PDFダウンロード失敗"}
+
+    images = _pdf_to_images(pdf_bytes)
+    if not images:
+        return {"amount": None, "issue_date": None, "partner_name": None, "ai_ocr": True, "ai_ocr_error": "PDF→画像変換失敗"}
+
+    # 最初のページ（表紙・請求書ページ）を解析
+    ocr_text = _ocr_image_with_ai(images[0])
+    parsed = _parse_ai_ocr_result(ocr_text)
+
+    logger.info(f"AI-OCR結果: receipt_id={receipt_id}, parsed={parsed}")
+    return {
+        "amount": parsed.get("amount"),
+        "issue_date": parsed.get("issue_date"),
+        "partner_name": parsed.get("partner_name"),
+        "ai_ocr": True,
+        "ai_ocr_raw": ocr_text[:500],
+    }
+
+
+# ============================================================
+# 仕訳検索・スコアリング
+# ============================================================
 
 def get_deals_by_amount_and_date(amount: int, issue_date: str,
                                   date_range_days: int = DATE_RANGE_DAYS) -> list:
@@ -134,7 +298,7 @@ def _calc_deal_amount(deal: dict) -> int:
     return total
 
 
-def _score_deal(deal: dict, receipt: dict) -> float:
+def _score_deal(deal: dict, receipt_meta: dict) -> float:
     """
     取引と書類のマッチングスコアを計算する（高いほど一致度が高い）
 
@@ -145,7 +309,6 @@ def _score_deal(deal: dict, receipt: dict) -> float:
     score = 0.0
 
     # 日付スコア
-    receipt_meta = receipt.get("receipt_metadatum") or {}
     receipt_date_str = receipt_meta.get("issue_date")
     deal_date_str = deal.get("issue_date")
 
@@ -161,7 +324,7 @@ def _score_deal(deal: dict, receipt: dict) -> float:
 
     # 取引先名スコア
     receipt_partner = (receipt_meta.get("partner_name") or "").strip()
-    deal_partner = (deal.get("partner", {}) or {}).get("name", "").strip()
+    deal_partner = ((deal.get("partner") or {}).get("name") or "").strip()
 
     if receipt_partner and deal_partner:
         # 部分一致でもスコアを付与
@@ -172,6 +335,10 @@ def _score_deal(deal: dict, receipt: dict) -> float:
 
     return score
 
+
+# ============================================================
+# 紐づけ実行
+# ============================================================
 
 def attach_receipt_to_deal(deal_id: int, receipt_id: int) -> bool:
     """
@@ -202,21 +369,32 @@ def attach_receipt_to_deal(deal_id: int, receipt_id: int) -> bool:
         return False
 
 
+# ============================================================
+# メイン処理
+# ============================================================
+
 def run_matching(dry_run: bool = False) -> dict:
     """
     書類照合のメイン処理
+
+    フロー:
+    1. freeeから未紐づけ書類一覧を取得
+    2. freee OCR結果（receipt_metadatum）を確認
+    3. OCR結果が不十分（金額または発行日がnull）な場合はAI-OCRでPDFを直接解析
+    4. 金額・日付で仕訳を検索して最良候補に紐づけ
 
     Args:
         dry_run: Trueの場合は照合結果を返すだけで実際の紐づけは行わない
 
     Returns:
         {
-            "matched": [{"receipt_id": ..., "deal_id": ..., "score": ..., "auto": True/False}],
-            "unmatched": [{"receipt_id": ..., "reason": ...}],
+            "matched": [...],
+            "unmatched": [...],
             "errors": [...],
-            "total_receipts": ...,
-            "matched_count": ...,
-            "unmatched_count": ...,
+            "total_receipts": int,
+            "matched_count": int,
+            "unmatched_count": int,
+            "ai_ocr_count": int,  # AI-OCRを使用した件数
         }
     """
     result = {
@@ -226,6 +404,7 @@ def run_matching(dry_run: bool = False) -> dict:
         "total_receipts": 0,
         "matched_count": 0,
         "unmatched_count": 0,
+        "ai_ocr_count": 0,
         "dry_run": dry_run,
     }
 
@@ -244,16 +423,45 @@ def run_matching(dry_run: bool = False) -> dict:
         issue_date = receipt_meta.get("issue_date")
         partner_name = receipt_meta.get("partner_name") or ""
         description = receipt.get("description") or ""
+        mime_type = receipt.get("mime_type", "")
+        used_ai_ocr = False
 
-        # OCR解析結果がない場合はスキップ
+        # freee OCRが不十分な場合はAI-OCRでフォールバック
+        if (not amount or not issue_date) and mime_type in ("application/pdf", "image/jpeg", "image/png", "image/gif"):
+            logger.info(f"freee OCR不十分 → AI-OCR実行: receipt_id={receipt_id} (amount={amount}, date={issue_date})")
+            try:
+                ai_result = ai_ocr_receipt(receipt_id)
+                used_ai_ocr = True
+                result["ai_ocr_count"] += 1
+
+                # AI-OCR結果で補完（freee OCRの値を優先）
+                if not amount and ai_result.get("amount"):
+                    amount = ai_result["amount"]
+                if not issue_date and ai_result.get("issue_date"):
+                    issue_date = ai_result["issue_date"]
+                if not partner_name and ai_result.get("partner_name"):
+                    partner_name = ai_result["partner_name"]
+
+                # receipt_metaを更新（スコアリングで使用するため）
+                receipt_meta = {
+                    "amount": amount,
+                    "issue_date": issue_date,
+                    "partner_name": partner_name,
+                }
+                logger.info(f"AI-OCR補完後: amount={amount}, date={issue_date}, partner={partner_name}")
+            except Exception as e:
+                logger.warning(f"AI-OCRエラー (receipt_id={receipt_id}): {e}")
+
+        # それでも金額・日付が取れない場合はスキップ
         if not amount or not issue_date:
-            reason = "OCR解析結果なし（金額または発行日が不明）"
+            reason = "OCR解析結果なし（AI-OCRでも取得不可）" if used_ai_ocr else "OCR解析結果なし（金額または発行日が不明）"
             if not amount and not issue_date:
-                reason = "OCR解析結果なし（金額・発行日ともに不明）"
+                reason = ("AI-OCRでも金額・発行日を取得できませんでした" if used_ai_ocr
+                          else "OCR解析結果なし（金額・発行日ともに不明）")
             elif not amount:
-                reason = "OCR解析結果なし（金額が不明）"
+                reason = "AI-OCRでも金額を取得できませんでした" if used_ai_ocr else "OCR解析結果なし（金額が不明）"
             elif not issue_date:
-                reason = "OCR解析結果なし（発行日が不明）"
+                reason = "AI-OCRでも発行日を取得できませんでした" if used_ai_ocr else "OCR解析結果なし（発行日が不明）"
 
             result["unmatched"].append({
                 "receipt_id": receipt_id,
@@ -262,6 +470,7 @@ def run_matching(dry_run: bool = False) -> dict:
                 "amount": amount,
                 "issue_date": issue_date,
                 "partner_name": partner_name,
+                "used_ai_ocr": used_ai_ocr,
             })
             result["unmatched_count"] += 1
             continue
@@ -281,13 +490,14 @@ def run_matching(dry_run: bool = False) -> dict:
                 "amount": amount,
                 "issue_date": issue_date,
                 "partner_name": partner_name,
+                "used_ai_ocr": used_ai_ocr,
             })
             result["unmatched_count"] += 1
             continue
 
         # スコアリングして最良候補を選択
         scored = sorted(
-            [(deal, _score_deal(deal, receipt)) for deal in candidates],
+            [(deal, _score_deal(deal, receipt_meta)) for deal in candidates],
             key=lambda x: x[1],
             reverse=True,
         )
@@ -304,11 +514,12 @@ def run_matching(dry_run: bool = False) -> dict:
             "receipt_partner": partner_name,
             "receipt_description": description,
             "deal_date": best_deal.get("issue_date"),
-            "deal_partner": (best_deal.get("partner") or {}).get("name", ""),
+            "deal_partner": ((best_deal.get("partner") or {}).get("name") or ""),
             "deal_amount": _calc_deal_amount(best_deal),
             "candidates_count": len(candidates),
             "auto": True,
             "attached": False,
+            "used_ai_ocr": used_ai_ocr,
         }
 
         if not dry_run:
@@ -324,6 +535,7 @@ def run_matching(dry_run: bool = False) -> dict:
                         "amount": amount,
                         "issue_date": issue_date,
                         "partner_name": partner_name,
+                        "used_ai_ocr": used_ai_ocr,
                     })
                     result["unmatched_count"] += 1
                     continue

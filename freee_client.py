@@ -727,7 +727,7 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     payload = {
         "company_id": FREEE_COMPANY_ID,
         "billing_date": entry.get("issue_date", ""),
-        "tax_entry_method": "out",
+        "tax_entry_method": "in",   # 税込入力（Notionの金額は税込のため）
         "tax_fraction": "round",
         "withholding_tax_entry_method": "out",
         "partner_title": "御中",

@@ -1492,7 +1492,7 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
                     "role": "user",
                     "content": [
                         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"}},
-                        {"type": "text", "text": "Extract all text from this image exactly as it appears. If it contains a table, preserve the table structure."}
+                        {"type": "text", "text": "This is a Japanese financial document. Extract ALL text exactly as it appears. For tables (such as repayment schedules, invoices, receipts), extract every row and column preserving the structure. Use tab or pipe characters to separate columns. Do not skip any rows. Output in Japanese where Japanese text appears."}
                     ]
                 }],
                 "max_tokens": 2000,

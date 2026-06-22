@@ -34,9 +34,9 @@ from freee_client import (
 logger = logging.getLogger(__name__)
 
 # 照合時の日付範囲（書類の発行日 ± DATE_RANGE_DAYS 日以内の仕訳を検索）
-DATE_RANGE_DAYS = 60
+DATE_RANGE_DAYS = 90
 
-# 金額の許容誤差（税抜・税込の差異を吸収するため）
+# 金額の許容誤差（円）
 # 0: 完全一致のみ
 AMOUNT_TOLERANCE = 0
 
@@ -281,7 +281,7 @@ def get_deals_by_amount_and_date(amount: int, issue_date: str,
         # 金額でフィルタリング（明細行の合計金額と照合）
         for deal in deals:
             deal_amount = _calc_deal_amount(deal)
-            if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:
+            if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:  # 完全一致
                 all_deals.append(deal)
 
     logger.info(f"金額{amount}円・日付{issue_date}±{date_range_days}日で{len(all_deals)}件の取引が候補")

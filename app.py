@@ -1509,21 +1509,6 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
 
 
 # ============================================================
-# 一時デバッグ: freeeアクセストークン取得
-# ============================================================
-@app.route("/api/freee_token_debug")
-def freee_token_debug():
-    """一時デバッグ用: freeeアクセストークンを返す（仕訳一括登録後に削除）"""
-    try:
-        token = get_valid_token()
-        if token:
-            return jsonify({"access_token": token, "company_id": int(os.environ.get("FREEE_COMPANY_ID", "1856949"))})
-        return jsonify({"error": "no token"}), 401
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

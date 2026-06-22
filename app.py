@@ -1385,11 +1385,15 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
 
 
 def _ocr_image_with_openai(image_path: str) -> str:
-    """OpenAI Vision APIで画像からテキストを抽出する"""
+    """OpenAI Vision APIで画像からテキストを抽出する
+    注意: OCRは必ず公式OpenAI APIを直接使用する。
+    OPENAI_API_BASEはサンドボックス専用プロキシの場合があり、Vision機能をサポートしない可能性があるため。
+    """
     import base64
     import requests as req
     openai_key = os.environ.get("OPENAI_API_KEY", "")
-    openai_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    # Vision用は常に公式OpenAI APIを使用（プロキシは使わない）
+    ocr_api_base = "https://api.openai.com/v1"
     if not openai_key:
         return ''
     try:
@@ -1398,7 +1402,7 @@ def _ocr_image_with_openai(image_path: str) -> str:
         suffix = Path(image_path).suffix.lower().lstrip('.')
         mime = 'image/png' if suffix == 'png' else 'image/jpeg'
         resp = req.post(
-            f"{openai_base}/chat/completions",
+            f"{ocr_api_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
                 "model": "gpt-4o-mini",
@@ -1415,6 +1419,8 @@ def _ocr_image_with_openai(image_path: str) -> str:
         )
         if resp.status_code == 200:
             return resp.json()["choices"][0]["message"]["content"]
+        else:
+            logger.warning(f"OCR APIエラー: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         logger.warning(f"OCRエラー: {e}")
     return ''

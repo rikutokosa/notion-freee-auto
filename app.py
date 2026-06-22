@@ -1460,12 +1460,12 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
             f"{ocr_api_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
-                "model": "gpt-4o-mini",
+                "model": "gpt-4o",
                 "messages": [{
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "この画像（請求書・領収書・返済スケジュール表など）のテキスト内容をすべて抽出してください。表形式の場合は表のまま出力してください。"},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"}},
+                        {"type": "text", "text": "Extract all text from this image exactly as it appears. If it contains a table, preserve the table structure."}
                     ]
                 }],
                 "max_tokens": 2000,

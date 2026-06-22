@@ -38,6 +38,7 @@ from freee_client import (
     get_deal, update_deal, list_deals, get_account_item_balance,
     list_invoices, register_invoice_agent,
     execute_delete_deal, execute_delete_invoice,
+    resolve_partner_id,
 )
 from matcher import run_matching
 from notion_client import fetch_pending_records, get_record
@@ -1087,6 +1088,38 @@ def api_assistant_ai():
             {
                 "type": "function",
                 "function": {
+                    "name": "update_deal",
+                    "description": "freeeの既存仕訳（取引）を更新する。金額・日付・取引先・摘要・部門などを変更する際に使用する。必ず事前にsearch_dealsまたはget_dealで対象仕訳のIDを取得してから呼び出すこと。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["deal_id"],
+                        "properties": {
+                            "deal_id": {"type": "integer", "description": "更新する仕訳のID"},
+                            "issue_date": {"type": "string", "description": "発生日（YYYY-MM-DD）"},
+                            "due_date": {"type": "string", "description": "決済期日（YYYY-MM-DD）"},
+                            "partner_name": {"type": "string", "description": "取引先名"},
+                            "details": {
+                                "type": "array",
+                                "description": "明細行を変更する場合に指定する。指定した場合は全明細を上書きする。",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["account_item_name", "amount", "tax_code"],
+                                    "properties": {
+                                        "account_item_name": {"type": "string", "description": "勘定科目名"},
+                                        "amount": {"type": "integer", "description": "税抜金額"},
+                                        "tax_code": {"type": "integer", "description": "1=課税売上10%, 7=課税仕入10%, 0=不課税"},
+                                        "section_name": {"type": "string", "description": "部門名"},
+                                        "description": {"type": "string", "description": "摘要"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "register_invoice",
                     "description": "freeeに請求書を登録する。請求書登録が必要な取引先への登録に使用する。",
                     "parameters": {
@@ -1188,6 +1221,66 @@ def api_assistant_ai():
                     memo=args.get("memo", ""),
                 )
                 return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
+
+            elif name == "update_deal":
+                deal_id = args.pop("deal_id")
+                # 現在の仕訳情報を取得してベースにする
+                current = get_deal(deal_id)
+                update_fields = {
+                    "issue_date": current.get("issue_date"),
+                    "due_date": current.get("due_date"),
+                    "type": current.get("type"),
+                    "partner_id": current.get("partner_id"),
+                }
+                # 日付・決済期日の更新
+                if "issue_date" in args:
+                    update_fields["issue_date"] = args["issue_date"]
+                if "due_date" in args:
+                    update_fields["due_date"] = args["due_date"]
+                # 取引先の更新
+                if "partner_name" in args:
+                    cache = get_master_cache()
+                    partners = cache.get("partners", [])
+                    pid = resolve_partner_id(args["partner_name"], partners)
+                    if pid:
+                        update_fields["partner_id"] = pid
+                # 明細の更新
+                if "details" in args:
+                    cache = get_master_cache()
+                    account_items = cache.get("account_items", [])
+                    sections = cache.get("sections", [])
+                    new_details = []
+                    for d in args["details"]:
+                        ai_name = d.get("account_item_name", "")
+                        ai_id = next((a["id"] for a in account_items if a["name"] == ai_name), None)
+                        if not ai_id:
+                            ai_id = next((a["id"] for a in account_items if ai_name in a["name"]), None)
+                        detail = {
+                            "account_item_id": ai_id,
+                            "tax_code": d.get("tax_code", 0),
+                            "amount": d.get("amount", 0),
+                            "description": d.get("description", ""),
+                        }
+                        if d.get("section_name"):
+                            sec_id = next((s["id"] for s in sections if s["name"] == d["section_name"]), None)
+                            if sec_id:
+                                detail["section_id"] = sec_id
+                        new_details.append(detail)
+                    update_fields["details"] = new_details
+                else:
+                    # 明細を指定しない場合は現在の明細をそのまま保持
+                    update_fields["details"] = [
+                        {
+                            "account_item_id": d["account_item_id"],
+                            "tax_code": d.get("tax_code", 0),
+                            "amount": d.get("amount", 0),
+                            "description": d.get("description", ""),
+                            **({"section_id": d["section_id"]} if d.get("section_id") else {}),
+                        }
+                        for d in current.get("details", [])
+                    ]
+                result = update_deal(deal_id, update_fields)
+                return _json.dumps({"status": "ok", "id": deal_id, "message": f"仕訳ID {deal_id} を更新しました"}, ensure_ascii=False)
 
             elif name == "execute_delete_deal":
                 result = execute_delete_deal(args["deal_id"])

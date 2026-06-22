@@ -34,6 +34,10 @@ from freee_client import (
     get_sections, get_tags, get_account_items, get_partners,
     create_deal, upload_receipt, create_partner,
     search_deals, search_invoices, delete_deal, delete_invoice,
+    # エージェント拡張ツール
+    get_deal, update_deal, list_deals, get_account_item_balance,
+    list_invoices, register_invoice_agent,
+    execute_delete_deal, execute_delete_invoice,
 )
 from matcher import run_matching
 from notion_client import fetch_pending_records, get_record
@@ -824,12 +828,14 @@ def api_assistant_ai():
         fiscal_year = today.year if today.month >= 4 else today.year - 1
         fiscal_start = f"{fiscal_year}-04-01"
         fiscal_end = f"{fiscal_year + 1}-03-31"
+        last_month = today.month - 1 if today.month > 1 else 12
+        last_month_year = today.year if today.month > 1 else today.year - 1
 
-        # マスタデータ：サーバー側で最新を取得（フロントエンドからの master は補助として使用）
+        # マスタデータ：サーバー側で最新を取得
         try:
             server_master = get_master_cache()
         except Exception:
-            server_master = master  # freeeトークンなければフロントエンドのマスタを使用
+            server_master = master
 
         def _names(lst): return ", ".join([x["name"] for x in lst if x.get("name")])
         sections_list = _names(server_master.get("sections", []))
@@ -837,70 +843,61 @@ def api_assistant_ai():
         account_items_list = _names(server_master.get("account_items", []))
         partners_list = _names(server_master.get("partners", []))
 
-        system_prompt = f"""あなたはfreee会計のエキスパートアシスタントです。
-ユーザーの指示を読み取り、添付ファイルの内容を理解した上で、適切な処理を実行してください。
+        system_prompt = f"""あなたはfreee会計を自律的に操作できるAIエージェントです。
+ユーザーの自然言語による指示を理解し、必要なツールを組み合わせて目的を達成してください。
 
-【現在の日付】{today_str}
-【今年度】{fiscal_year}年4月〜{fiscal_year+1}年3月（{fiscal_start} 〜 {fiscal_end}）
+# 基本情報
+- 今日の日付: {today_str}
+- 今年度: {fiscal_year}年4月〜{fiscal_year+1}年3月
+- 先月: {last_month_year}年{last_month}月
 
-【freeeマスタデータ（完全一覧）】
+# freeeマスタデータ
 取引先: {partners_list}
 部門: {sections_list}
 メモタグ: {tags_list}
 勘定科目: {account_items_list}
 
-【最重要：処理前に必ず提案すること】
-登録・削除・更新など何らかの処理を行う前に、必ず以下の形式で処理内容を提案し、ユーザーの確認を得てから実行すること。
+# エージェントとしての行動原則
 
-提案フォーマット（登録の場合）:
-「以下の内容で登録します。よろしいですか？
-- 日付: ○○
-- 取引先: ○○
-- 勘定科目: ○○ / 金額: ○○円
-- 部門: ○○
-（複数件ある場合は全件列挙）
-」
+## 1. 自律的な判断と実行
+- ユーザーの意図を汲み取り、必要なツールを自分で選択して実行する
+- 不明な点は推測して進める（ユーザーへの質問より行動を優先）
+- 複数ステップが必要な場合は、ツールを連続して呼び出して完結させる
+- 「検索→確認→登録」「検索→集計→報告」など複合的な処理も自律的にこなす
 
-提案フォーマット（削除の場合）:
-「以下の仕訳を削除します。よろしいですか？
-- 日付: ○○ / 取引先: ○○ / 金額: ○○円
-（複数件ある場合は全件列挙）
-」
+## 2. 登録・更新処理
+- 取引先名・勘定科目名はマスタ一覧から最も近いものを推測して使用する
+  例: 「ステリファイ」→「stellify」、「売上」→「売上高」、「広告費」→「広告宣伝費」
+- 取引先がマスタに存在しない場合はcreate_partnerで自動作成してから登録する
+- 日付の解釈: 「先月」→{last_month_year}-{last_month:02d}、「今月」→{today.year}-{today.month:02d}、「7月」→{fiscal_year}-07
+- 複数件の登録指示（スケジュール表・明細表など）は全件を処理する
 
-ユーザーが「はい」「OK」「実行」「お願い」「やって」などの承認をした場合のみ実際の処理を実行すること。
+## 3. 削除処理
+- 必ずsearch_deals/search_invoicesで対象を検索してからIDを取得する（IDを自分で作らない）
+- 削除前にユーザーへ確認を求める（対象件数・日付・金額を提示する）
+- ユーザーが承認したらexecute_delete_deal/execute_delete_invoiceを呼び出して実際に削除する
+- 削除はAIエージェント自身が会話の中で完結させる（フロントエンドのボタン操作に依存しない）
 
-【添付ファイルの読み取りと処理】
-- ユーザーがファイル（PDF・画像・スクリーンショット等）を添付した場合、そのテキスト内容が【添付ファイルの内容】としてメッセージに含まれる
-- 添付ファイルの内容は必ず参照・活用すること。「画像は読めない」「テキストを教えてほしい」などと言ってはいけない
-- 複数ファイルが添付された場合、それぞれの役割を文脈から判断すること
-  例: 画像（スクリーンショット）＋PDF → 画像は「登録形式のサンプル」、PDFは「処理対象のデータ」と判断する
-- 返済スケジュール表・明細表など複数行のデータが含まれる場合は、全行を処理対象として扱う
-- ファイル内容が不完全・不明瞭な場合でも、読み取れた情報を最大限活用して処理を進めること
+## 4. 照会・集計・分析
+- list_dealsで仕訳一覧を取得し、集計・分析・報告ができる
+- list_invoicesで請求書一覧を取得できる
+- get_dealで特定の仕訳の詳細を確認できる
+- 「〇〇の売上合計を教えて」「今月の支出一覧を見せて」などの照会指示に対応する
 
-【マスタの推測と照合】
-- ユーザーが入力した名前がマスタと完全一致しなくても、上記マスタ一覧から最も近いものを推測して使用する
-  例: 「ステリファイ」→「stellify」、「マイナビ」→「株式会社マイナビ」、「サーカス」→「circus株式会社」
-  例: 「売上」→「売上高」、「広告費」→「広告宣伝費」など勘定科目も同様に推測する
-- 日付は必ず現在の年度を基準に解釈する（「7月以降」→{fiscal_year}年7月以降、「先月」→{fiscal_year}年{today.month - 1 if today.month > 1 else 12}月）
+## 5. 添付ファイルの活用
+- ファイル内容が【添付ファイルの内容】として含まれる場合は必ず参照・活用する
+- 「画像は読めない」「テキストを教えてほしい」とは言わない
+- 複数ファイルの場合は文脈から各ファイルの役割を判断する
+  例: スクリーンショット＋PDF → スクリーンショットは「登録形式サンプル」、PDFは「処理対象データ」
 
-【削除処理のルール】
-- 削除指示の場合は必ずsearch_deals/search_invoicesで対象を検索し、その検索結果に含まれる実際のid値のみをdelete_deals/delete_invoicesに渡すこと
-- 絶対に自分でIDを数値で指定してはいけない（必ず検索結果から取得すること）
-- 削除指示時は必ず「仕訳と請求書の両方」を検索・削除すること（片方だけを忘れない）
-- 請求書の日付はbilling_date（請求日）で管理されている。issue_dateはnullの場合が多いのでbilling_dateを使用すること
+## 6. 請求書の扱い
+- 請求書の日付はbilling_date（請求日）で管理される（issue_dateはnullが多い）
+- 請求書登録はregister_invoiceツールを使用する
 
-【登録処理のルール】
-- 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
-- 不明な点があれば自分で推測して実行する（ユーザーに質問するより推測を優先する）
-- search_deals/search_invoicesに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
-- 登録指示時に取引先マスタに該当する取引先がない場合は、create_partnerで新規作成してからregister_dealを呼び出すこと（ユーザーに確認する必要なし）
-
-【請求書登録のみの取引先】
-以下の取引先は仕訳登録ではなく請求書登録のみを行う:
-- マイナビJOBシェアリング（株式会社マイナビ）: 支払期日=入社翌月末
-- Bee（株式会社ネオキャリア）: 支払期日=入社翌月末
-- Hitolink（株式会社Hitolink、freee取引先ID: 105296246）: 支払期日=入社翌月末
-  → 「Hitolink」「ヒトリンク」「hitolink」などの表記ゆれはすべて株式会社Hitolinkとして扱う"""
+# 重要な制約
+- 削除・更新などの破壊的操作は必ずユーザー確認を得てから実行する
+- 登録は確認なしで実行してよい（ユーザーが「登録して」と言った時点で実行）
+- 確認を求める際は対象の詳細（日付・取引先・金額・件数）を明示する"""
 
         # Function Callingのツール定義
         tools = [
@@ -1012,22 +1009,130 @@ def api_assistant_ai():
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_deals",
+                    "description": "freeeの仕訳一覧を取得する。照会・集計・分析に使用する。合計金額や件数の確認にも使える。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "partner_name": {"type": "string", "description": "取引先名（部分一致）"},
+                            "start_issue_date": {"type": "string", "description": "発生日開始（YYYY-MM-DD）"},
+                            "end_issue_date": {"type": "string", "description": "発生日終了（YYYY-MM-DD）"},
+                            "deal_type": {"type": "string", "enum": ["income", "expense"], "description": "取引種別（income=収入, expense=支出）"},
+                            "limit": {"type": "integer", "description": "取得件数（最大10、デフォルト100）"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_deal",
+                    "description": "freeeの仕訳1件の詳細を取得する。特定の仕訳の内容を確認する際に使用する。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["deal_id"],
+                        "properties": {
+                            "deal_id": {"type": "integer", "description": "仕訳ID"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_delete_deal",
+                    "description": "仕訳1件を実際に削除する。必ず事前にユーザーの承認を得てから呼び出すこと。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["deal_id"],
+                        "properties": {
+                            "deal_id": {"type": "integer", "description": "削除する仕訳ID"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_delete_invoice",
+                    "description": "請求書1件を実際に取消する。必ず事前にユーザーの承認を得てから呼び出すこと。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["invoice_id"],
+                        "properties": {
+                            "invoice_id": {"type": "integer", "description": "取消する請求書ID"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_invoices",
+                    "description": "freeeの請求書一覧を取得する。請求書の照会・集計に使用する。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "partner_name": {"type": "string", "description": "取引先名（部分一致）"},
+                            "start_billing_date": {"type": "string", "description": "請求日開始（YYYY-MM-DD）"},
+                            "end_billing_date": {"type": "string", "description": "請求日終了（YYYY-MM-DD）"},
+                            "invoice_status": {"type": "string", "description": "ステータス（draft/issue/sent/unsubmitted/submitted）"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "register_invoice",
+                    "description": "freeeに請求書を登録する。請求書登録が必要な取引先への登録に使用する。",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["issue_date", "due_date", "partner_name", "items"],
+                        "properties": {
+                            "issue_date": {"type": "string", "description": "請求日（YYYY-MM-DD）"},
+                            "due_date": {"type": "string", "description": "入金期日（YYYY-MM-DD）"},
+                            "partner_name": {"type": "string", "description": "取引先名"},
+                            "title": {"type": "string", "description": "請求書タイトル（省略可）"},
+                            "memo": {"type": "string", "description": "備考（省略可）"},
+                            "items": {
+                                "type": "array",
+                                "description": "請求明細行",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["name", "unit_price"],
+                                    "properties": {
+                                        "name": {"type": "string", "description": "品目名"},
+                                        "quantity": {"type": "integer", "description": "数量（デフォルト1）"},
+                                        "unit_price": {"type": "integer", "description": "単価（税込）"},
+                                        "tax_code": {"type": "integer", "description": "税区分（1=課税10%, 0=不課税）"},
+                                        "description": {"type": "string", "description": "備考"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         ]
 
         # ツール実行関数
         def execute_tool(name, args):
-            nonlocal _last_search_deals, _last_search_invoices
+            from datetime import datetime as _dt3
+
             if name == "search_deals":
                 deals = search_deals(**args)
-                _last_search_deals = deals  # delete_deals時に詳細情報として使用
                 return _json.dumps([
                     {"id": d["id"], "issue_date": d.get("issue_date"), "partner_name": d.get("partner_name"),
                      "amount": d.get("amount"), "type": d.get("type")}
                     for d in deals
                 ], ensure_ascii=False)
+
             elif name == "search_invoices":
                 invoices = search_invoices(**args)
-                _last_search_invoices = invoices  # delete_invoices時に詳細情報として使用
                 return _json.dumps([
                     {"id": inv["id"],
                      "billing_date": inv.get("billing_date"),
@@ -1037,12 +1142,28 @@ def api_assistant_ai():
                      "invoice_number": inv.get("invoice_number")}
                     for inv in invoices
                 ], ensure_ascii=False)
+
+            elif name == "list_deals":
+                result = list_deals(**args)
+                return _json.dumps(result, ensure_ascii=False)
+
+            elif name == "list_invoices":
+                result = list_invoices(
+                    partner_name=args.get("partner_name"),
+                    start_billing_date=args.get("start_billing_date"),
+                    end_billing_date=args.get("end_billing_date"),
+                    invoice_status=args.get("invoice_status"),
+                )
+                return _json.dumps(result, ensure_ascii=False)
+
+            elif name == "get_deal":
+                deal = get_deal(args["deal_id"])
+                return _json.dumps(deal, ensure_ascii=False)
+
             elif name == "register_deal":
                 cache = get_master_cache()
                 deal_type = args.pop("deal_type")
                 result = create_deal(args, deal_type, cache)
-                # assistant_logに記録
-                from datetime import datetime as _dt3
                 assistant_log.insert(0, {
                     "source": "assistant",
                     "freee_id": result.get("id"),
@@ -1054,34 +1175,60 @@ def api_assistant_ai():
                     "note": user_message[:80],
                 })
                 del assistant_log[200:]
+                registered_ids.append(result.get("id"))
                 return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
+
+            elif name == "register_invoice":
+                result = register_invoice_agent(
+                    issue_date=args["issue_date"],
+                    due_date=args["due_date"],
+                    partner_name=args["partner_name"],
+                    items=args["items"],
+                    title=args.get("title", "請求書"),
+                    memo=args.get("memo", ""),
+                )
+                return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
+
+            elif name == "execute_delete_deal":
+                result = execute_delete_deal(args["deal_id"])
+                return _json.dumps(result, ensure_ascii=False)
+
+            elif name == "execute_delete_invoice":
+                result = execute_delete_invoice(args["invoice_id"])
+                return _json.dumps(result, ensure_ascii=False)
+
             elif name == "delete_deals":
-                # 削除はユーザー確認が必要なので、削除内容を返すのみ（実行はフロントエンドで行う）
-                # 直前のsearch_deals結果から詳細情報を引き引き渡す
-                deal_detail_map = {d["id"]: d for d in _last_search_deals}
-                deals_detail = [
-                    {"id": did, "issue_date": deal_detail_map.get(did, {}).get("issue_date"), "amount": deal_detail_map.get(did, {}).get("amount"), "partner_name": deal_detail_map.get(did, {}).get("partner_name")}
-                    for did in args["deal_ids"]
-                ]
+                # 後方互換性のため残存（フロントエンドのボタン経由の削除確認フロー用）
+                deal_ids = args["deal_ids"]
+                deals_detail = []
+                try:
+                    deals_search = search_deals()
+                    deal_map = {d["id"]: d for d in deals_search}
+                    deals_detail = [
+                        {"id": did, "issue_date": deal_map.get(did, {}).get("issue_date"),
+                         "amount": deal_map.get(did, {}).get("amount"),
+                         "partner_name": deal_map.get(did, {}).get("partner_name")}
+                        for did in deal_ids
+                    ]
+                except Exception:
+                    deals_detail = [{"id": did} for did in deal_ids]
                 return _json.dumps({
                     "status": "pending_confirmation",
-                    "deal_ids": args["deal_ids"],
+                    "deal_ids": deal_ids,
                     "deals_detail": deals_detail,
-                    "message": args["confirmation_message"]
+                    "message": args.get("confirmation_message", "")
                 }, ensure_ascii=False)
+
             elif name == "delete_invoices":
-                # 直前のsearch_invoices結果から詳細情報を引き引き渡す
-                inv_detail_map = {inv["id"]: inv for inv in _last_search_invoices}
-                invoices_detail = [
-                    {"id": iid, "billing_date": inv_detail_map.get(iid, {}).get("billing_date"), "total_amount": inv_detail_map.get(iid, {}).get("total_amount"), "invoice_number": inv_detail_map.get(iid, {}).get("invoice_number"), "partner_name": inv_detail_map.get(iid, {}).get("partner_name")}
-                    for iid in args["invoice_ids"]
-                ]
+                # 後方互換性のため残存
+                invoice_ids = args["invoice_ids"]
                 return _json.dumps({
                     "status": "pending_confirmation",
-                    "invoice_ids": args["invoice_ids"],
-                    "invoices_detail": invoices_detail,
-                    "message": args["confirmation_message"]
+                    "invoice_ids": invoice_ids,
+                    "invoices_detail": [{"id": iid} for iid in invoice_ids],
+                    "message": args.get("confirmation_message", "")
                 }, ensure_ascii=False)
+
             elif name == "create_partner":
                 partner = create_partner(
                     name=args["name"],
@@ -1093,21 +1240,20 @@ def api_assistant_ai():
                     "name": partner.get("name"),
                     "message": f"取引先「{partner.get('name')}」を新規登録しました（ID: {partner.get('id')}）"
                 }, ensure_ascii=False)
+
             return "{}"
 
-        # エージェントループ（最大6回までツール呼び出しを繰り返す）
+        # エージェントループ（最大15回までツール呼び出しを繰り返す）
         messages = [{"role": "system", "content": system_prompt}]
-        for h in history[-6:]:
+        for h in history[-10:]:  # 会話履歴を最大10ターン分保持
             messages.append(h)
         messages.append({"role": "user", "content": user_message})
 
         pending_deletes = {"deal_ids": [], "invoice_ids": [], "message": "", "deals_detail": [], "invoices_detail": []}
         registered_ids = []
         final_reply = ""
-        _last_search_deals = []      # search_dealsの最新結果を保持（delete_deals時に詳細情報として使用）
-        _last_search_invoices = []   # search_invoicesの最新結果を保持（delete_invoices時に詳細情報として使用）
 
-        for _ in range(6):
+        for loop_count in range(15):  # 最大15回ループ
             resp = req.post(
                 f"{openai_base}/chat/completions",
                 headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
@@ -1506,6 +1652,19 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
     except Exception as e:
         logger.warning(f"OCRエラー: {e}")
     return ''
+
+
+# ============================================================
+# 一時デバッグ（使用後は必ず削除）
+# ============================================================
+@app.route("/api/freee_token_debug", methods=["GET"])
+def api_freee_token_debug():
+    """freeeアクセストークンを返す一時エンドポイント"""
+    try:
+        token = get_valid_token()
+        return jsonify({"access_token": token, "company_id": FREEE_COMPANY_ID})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ============================================================

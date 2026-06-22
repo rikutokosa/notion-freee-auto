@@ -927,3 +927,278 @@ def delete_deals(sales_id: Optional[int], purchase_id: Optional[int]) -> dict:
         except Exception as e:
             result["errors"].append(f"仕入取引削除エラー: {str(e)}")
     return result
+
+
+# ============================================================
+# エージェント拡張ツール（自然言語AIエージェント用）
+# ============================================================
+
+def get_deal(deal_id: int) -> dict:
+    """
+    freeeの仕訳（取引）を1件取得する
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    resp = requests.get(
+        f"{FREEE_API_BASE}/deals/{deal_id}",
+        headers=_api_headers(),
+        params={"company_id": FREEE_COMPANY_ID},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("deal", {})
+
+
+def update_deal(deal_id: int, update_fields: dict) -> dict:
+    """
+    freeeの仕訳（取引）を更新する
+    update_fields: issue_date, due_date, partner_name, details 等
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    payload = {"company_id": FREEE_COMPANY_ID}
+    payload.update(update_fields)
+    resp = requests.put(
+        f"{FREEE_API_BASE}/deals/{deal_id}",
+        headers=_api_headers(),
+        json=payload,
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        logger.error(f"仕訳更新失敗: {resp.status_code} {resp.text[:500]}")
+        raise ValueError(f"freee仕訳更新失敗: {resp.status_code} {resp.text[:300]}")
+    logger.info(f"仕訳更新成功: ID={deal_id}")
+    return resp.json().get("deal", {})
+
+
+def list_deals(
+    partner_name: Optional[str] = None,
+    start_issue_date: Optional[str] = None,
+    end_issue_date: Optional[str] = None,
+    deal_type: Optional[str] = None,
+    account_item_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """
+    freeeの仕訳一覧を取得する（ページネーション対応・集計情報付き）
+    戻り値: {"deals": [...], "total_count": N, "summary": {...}}
+    """
+    params = {
+        "company_id": FREEE_COMPANY_ID,
+        "limit": min(limit, 100),
+        "offset": offset,
+    }
+    if start_issue_date:
+        params["start_issue_date"] = start_issue_date
+    if end_issue_date:
+        params["end_issue_date"] = end_issue_date
+    if deal_type:
+        params["type"] = deal_type
+    if account_item_id:
+        params["account_item_id"] = account_item_id
+
+    if partner_name:
+        try:
+            partners = get_partners()
+            partner_id = resolve_partner_id(partner_name, partners)
+            if partner_id:
+                params["partner_id"] = partner_id
+        except Exception:
+            pass
+
+    resp = requests.get(
+        f"{FREEE_API_BASE}/deals",
+        headers=_api_headers(),
+        params=params,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    deals = data.get("deals", [])
+
+    # partner_idが解決できなかった場合のフォールバック
+    if partner_name and "partner_id" not in params:
+        partner_name_lower = partner_name.lower()
+        deals = [d for d in deals if partner_name_lower in (d.get("partner_name") or "").lower()]
+
+    # 集計
+    total_income = sum(d.get("amount", 0) for d in deals if d.get("type") == "income")
+    total_expense = sum(d.get("amount", 0) for d in deals if d.get("type") == "expense")
+
+    return {
+        "deals": deals,
+        "total_count": len(deals),
+        "summary": {
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "net": total_income - total_expense,
+        }
+    }
+
+
+def get_account_item_balance(
+    account_item_id: Optional[int] = None,
+    account_item_name: Optional[str] = None,
+    fiscal_year: Optional[int] = None,
+) -> dict:
+    """
+    freeeの勘定科目残高・推移を取得する（試算表API）
+    account_item_id または account_item_name を指定する
+    """
+    import logging
+    from datetime import date as _date
+    logger = logging.getLogger(__name__)
+
+    if not fiscal_year:
+        today = _date.today()
+        fiscal_year = today.year if today.month >= 4 else today.year - 1
+
+    # 勘定科目IDを名前から解決
+    if not account_item_id and account_item_name:
+        try:
+            items = get_account_items()
+            for item in items:
+                if account_item_name in item.get("name", ""):
+                    account_item_id = item.get("id")
+                    break
+        except Exception:
+            pass
+
+    params = {
+        "company_id": FREEE_COMPANY_ID,
+        "fiscal_year": fiscal_year,
+    }
+    if account_item_id:
+        params["account_item_id"] = account_item_id
+
+    resp = requests.get(
+        f"{FREEE_API_BASE}/reports/trial_bs",
+        headers=_api_headers(),
+        params=params,
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        # 損益計算書も試みる
+        resp2 = requests.get(
+            f"{FREEE_API_BASE}/reports/trial_pl",
+            headers=_api_headers(),
+            params=params,
+            timeout=30,
+        )
+        if resp2.status_code == 200:
+            return resp2.json()
+        logger.warning(f"試算表取得失敗: {resp.status_code}")
+        return {"error": f"試算表取得失敗: {resp.status_code}"}
+    return resp.json()
+
+
+def get_invoice(invoice_id: int) -> dict:
+    """
+    freeeの請求書を1件取得する
+    """
+    resp = requests.get(
+        f"{FREEE_IV_BASE}/invoices/{invoice_id}",
+        headers=_api_headers(),
+        params={"company_id": FREEE_COMPANY_ID},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("invoice", {})
+
+
+def list_invoices(
+    partner_name: Optional[str] = None,
+    start_billing_date: Optional[str] = None,
+    end_billing_date: Optional[str] = None,
+    invoice_status: Optional[str] = None,
+    limit: int = 100,
+) -> dict:
+    """
+    freeeの請求書一覧を取得する
+    invoice_status: draft / issue / sent / unsubmitted / submitted
+    戻り値: {"invoices": [...], "total_count": N}
+    """
+    params = {
+        "company_id": FREEE_COMPANY_ID,
+        "limit": min(limit, 100),
+    }
+    if start_billing_date:
+        params["start_billing_date"] = start_billing_date
+    if end_billing_date:
+        params["end_billing_date"] = end_billing_date
+    if invoice_status:
+        params["invoice_status"] = invoice_status
+
+    if partner_name:
+        try:
+            partners = get_partners()
+            partner_id = resolve_partner_id(partner_name, partners)
+            if partner_id:
+                params["partner_ids"] = str(partner_id)
+        except Exception:
+            pass
+
+    resp = requests.get(
+        f"https://api.freee.co.jp/iv/invoices",
+        headers=_api_headers(),
+        params=params,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    invoices = resp.json().get("invoices", [])
+
+    if partner_name and "partner_ids" not in params:
+        partner_name_lower = partner_name.lower()
+        invoices = [inv for inv in invoices if partner_name_lower in (inv.get("partner_name") or "").lower()]
+
+    return {"invoices": invoices, "total_count": len(invoices)}
+
+
+def register_invoice_agent(
+    issue_date: str,
+    due_date: str,
+    partner_name: str,
+    items: list,
+    title: str = "請求書",
+    memo: str = "",
+) -> dict:
+    """
+    freeeに請求書を登録する（エージェント用シンプルインターフェース）
+    items: [{"name": str, "quantity": int, "unit_price": int, "tax_code": int, "description": str}]
+    """
+    cache = get_master_cache()
+    entry = {
+        "issue_date": issue_date,
+        "due_date": due_date,
+        "partner_name": partner_name,
+        "title": title,
+        "memo": memo,
+        "details": [
+            {
+                "name": item.get("name", ""),
+                "quantity": item.get("quantity", 1),
+                "unit_price": item.get("unit_price", 0),
+                "tax_code": item.get("tax_code", 1),
+                "description": item.get("description", ""),
+            }
+            for item in items
+        ],
+    }
+    return create_invoice(entry, cache)
+
+
+def execute_delete_deal(deal_id: int) -> dict:
+    """
+    仕訳を1件削除する（エージェントが確認後に呼び出す）
+    """
+    delete_deal(deal_id)
+    return {"status": "deleted", "deal_id": deal_id}
+
+
+def execute_delete_invoice(invoice_id: int) -> dict:
+    """
+    請求書を1件取消する（エージェントが確認後に呼び出す）
+    """
+    delete_invoice(invoice_id)
+    return {"status": "cancelled", "invoice_id": invoice_id}

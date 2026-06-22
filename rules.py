@@ -538,7 +538,8 @@ def build_journal_entries(record: dict) -> dict:
             purchase_due_date = None
 
         # 備考: 求職者名 + 企業名（元の登録と同じルール）
-        jobseeker_name = p.get("jobseeker_name") or ""
+        jobseeker_name_raw = p.get("jobseeker_name") or ""
+        jobseeker_name = f"{jobseeker_name_raw}様" if jobseeker_name_raw else ""
         company_name = p.get("company_name") or ""
         biko_parts = [x for x in [jobseeker_name, company_name] if x]
         biko = "返金 " + " ".join(biko_parts) if biko_parts else f"返金 {phase}"
@@ -674,7 +675,8 @@ def build_journal_entries(record: dict) -> dict:
     issue_date = nyusha_date_str
 
     # 備考: 求職者名 + 入社企業名
-    jobseeker_name = p.get("jobseeker_name") or ""
+    jobseeker_name_raw = p.get("jobseeker_name") or ""
+    jobseeker_name = f"{jobseeker_name_raw}様" if jobseeker_name_raw else ""
     company_name = p.get("company_name") or ""
     biko_parts = [x for x in [jobseeker_name, company_name] if x]
     biko = " ".join(biko_parts)

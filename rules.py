@@ -77,8 +77,8 @@ RULES = {
     },
     "Hitolink": {
         "type": "求人DB",
-        "supplier": "株式会社Hitolink",
-        "supplier_id": 105296246,  # freee取引先ID
+        "supplier": None,
+        "supplier_id": 105296246,  # freee取引先ID（パーソルイノベーション）
         "payment_rule": "入社翌月末",
         "billing_type": "請求書登録",
         "needs_invoice": True,
@@ -689,14 +689,19 @@ def build_journal_entries(record: dict) -> dict:
         else:
             sales_partner = None
 
+        # 取引先ID: supplier_idがルールに直接指定されている場合はそれを優先使用（Notionのfreee売上取引IDより優先）
+        # 例: Hitolink -> supplier_id=105296246（パーソルイノベーション）
+        rule_partner_id = rule.get("supplier_id")
+        sales_partner_id = rule_partner_id if rule_partner_id else p["freee_sales_id"]
+
         # 部門設定: PCAは「本店：PCA」、本店CAは「本店：CA」（freeeの正式部門名）
         section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
 
         base["sales_entry"] = {
             "issue_date": issue_date,
             "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
-            "partner_name": sales_partner,
-            "partner_id": p["freee_sales_id"],  # Notionの「freee売上取引ID」= 売上側取引先ID
+            "partner_name": sales_partner if not rule_partner_id else None,  # supplier_idがあれば名前は不要
+            "partner_id": sales_partner_id,  # supplier_id優先、なければNotionのfreee売上取引ID
             "section_name": section_name,
             "details": [{
                 "account_item_name": account_item,

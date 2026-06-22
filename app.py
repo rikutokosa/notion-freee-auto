@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "notion-freee-secret-2026")
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
 
@@ -1276,7 +1277,8 @@ def api_extract_file():
     """
     files = request.files.getlist('files')
     user_message = request.form.get('message', '')
-    if not files:
+    logger.info(f"extract_file: {len(files)}件のファイルを受信")
+    if not files or all(f.filename == '' for f in files):
         return jsonify({"contents": []})
 
     contents = []

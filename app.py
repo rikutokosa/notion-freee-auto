@@ -1660,9 +1660,10 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
 @app.route("/api/freee_token_debug", methods=["GET"])
 def api_freee_token_debug():
     """freeeアクセストークンを返す一時エンドポイント"""
+    from freee_client import FREEE_COMPANY_ID as _COMPANY_ID
     try:
         token = get_valid_token()
-        return jsonify({"access_token": token, "company_id": FREEE_COMPANY_ID})
+        return jsonify({"access_token": token, "company_id": _COMPANY_ID})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

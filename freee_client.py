@@ -727,7 +727,10 @@ def create_invoice(entry: dict, cache: dict) -> dict:
     payload = {
         "company_id": FREEE_COMPANY_ID,
         "billing_date": entry.get("issue_date", ""),
-        "tax_entry_method": "in",   # 税込入力（Notionの金額は税込のため）
+        # ⚠️ 重要: tax_entry_method は必ず "in"（税込入力）のこと。
+        # Notionの「税込売上」「税込集客手数料」はすでに消費税込みの金額。
+        # "out"（税抜入力）にすると freee が自動で10%加算し二重課税になる。絶対に変更しないこと。
+        "tax_entry_method": "in",
         "tax_fraction": "round",
         "withholding_tax_entry_method": "out",
         "partner_title": "御中",

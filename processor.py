@@ -59,7 +59,8 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
     details = sales_entry.get("details", [])
 
     # 求職者名・入社企業名を取得
-    jobseeker_name = props.get("jobseeker_name") or ""
+    jobseeker_name_raw = props.get("jobseeker_name") or ""
+    jobseeker_name = f"{jobseeker_name_raw}様" if jobseeker_name_raw else ""
     company_name = props.get("company_name") or ""
     db_type = props.get("db_type", "honten")
 

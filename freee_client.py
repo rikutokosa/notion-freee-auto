@@ -730,9 +730,10 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         # ⚠️ 重要: tax_entry_method は必ず "in"（税込入力）のこと。
         # Notionの「税込売上」「税込集客手数料」はすでに消費税込みの金額。
         # "out"（税抜入力）にすると freee が自動で10%加算し二重課税になる。絶対に変更しないこと。
+        # withholding_tax_entry_methodは tax_entry_methodと履歴方式を合わせる必要があるため "in" 固定。
         "tax_entry_method": "in",
         "tax_fraction": "round",
-        "withholding_tax_entry_method": "out",
+        "withholding_tax_entry_method": "in",
         "partner_title": "御中",
         "lines": lines,
     }

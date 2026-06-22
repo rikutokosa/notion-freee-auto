@@ -557,6 +557,29 @@ def api_debug_receipts():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/debug_ocr")
+def api_debug_ocr():
+    """デバッグ用: OCRの動作確認"""
+    import base64
+    import requests as req
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_base = os.environ.get("OPENAI_API_BASE", "")
+    key_preview = openai_key[:20] + "..." if openai_key else "(not set)"
+    # 1x1 PNGでOCRテスト
+    test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    try:
+        resp = req.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": [{"type": "text", "text": "test"}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{test_b64}"}}]}], "max_tokens": 10},
+            timeout=15,
+        )
+        api_result = {"status": resp.status_code, "body": resp.json()}
+    except Exception as e:
+        api_result = {"error": str(e)}
+    return jsonify({"openai_key_preview": key_preview, "openai_base_env": openai_base or "(not set)", "api_test": api_result})
+
+
 @app.route("/api/iv_companies")
 def api_iv_companies():
     """デバッグ用: freee請求書APIのcompany_id一覧を返す"""

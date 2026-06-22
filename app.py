@@ -1377,8 +1377,25 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
             pass
         return ''
 
-    # 画像（PNG/JPG）
-    if suffix in ('.png', '.jpg', '.jpeg'):
+    # 画像（PNG/JPG/WEBP/GIF/BMP）
+    if suffix in ('.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.tif'):
+        # webp/gif/bmpはJPEGに変換してからOCR
+        if suffix not in ('.png', '.jpg', '.jpeg'):
+            try:
+                from PIL import Image as PILImage
+                img = PILImage.open(path).convert('RGB')
+                converted_path = path + '_converted.jpg'
+                img.save(converted_path, 'JPEG', quality=95)
+                result = _ocr_image_with_openai(converted_path)
+                try:
+                    import os as _os
+                    _os.remove(converted_path)
+                except Exception:
+                    pass
+                return result
+            except Exception as e:
+                logger.warning(f"画像変換失敗({suffix}): {e}")
+                return ''
         return _ocr_image_with_openai(path)
 
     return ''

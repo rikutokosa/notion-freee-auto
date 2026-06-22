@@ -1748,6 +1748,19 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
 
 
 # ============================================================
+# 一時デバッグ（使用後は必ず削除）
+# ============================================================
+@app.route("/api/freee_token_debug", methods=["GET"])
+def api_freee_token_debug():
+    from freee_client import FREEE_COMPANY_ID as _CID
+    try:
+        token = get_valid_token()
+        return jsonify({"access_token": token, "company_id": _CID})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

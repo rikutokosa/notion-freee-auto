@@ -836,7 +836,14 @@ def api_assistant_ai():
 - 登録指示の場合はマスタの勘定科目・取引先を正確に選んでregister_dealを呼び出す
 - 不明な点があれば自分で推測して実行する（ユーザーに質問する前に試みる）
 - search_deals/search_invoicesに渡すpartner_nameは必ずマスタの正確な名前を使用すること（推測後の正式名）
-- 登録指示時に取引先マスタに該当する取引先がない場合は、create_partnerで新規作成してからregister_dealを呼び出すこと（ユーザーに確認する必要なし）"""
+- 登録指示時に取引先マスタに該当する取引先がない場合は、create_partnerで新規作成してからregister_dealを呼び出すこと（ユーザーに確認する必要なし）
+
+【請求書登録のみの取引先】
+以下の取引先は仕訳登録ではなく請求書登録のみを行う（マイナビJOBシェアリング・Bee・Hitolinkと同様）:
+- マイナビJOBシェアリング（株式会社マイナビ）: 支払期日=入社翌月末
+- Bee（株式会社ネオキャリア）: 支払期日=入社翌月末
+- Hitolink（株式会社Hitolink、freee取引先ID: 105296246）: 支払期日=入社翌月末
+  → 「Hitolink」「ヒトリンク」「hitolink」などの表記ゆれはすべて株式会社Hitolinkとして扱う"""
 
         # Function Callingのツール定義
         tools = [

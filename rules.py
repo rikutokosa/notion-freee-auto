@@ -77,10 +77,11 @@ RULES = {
     },
     "Hitolink": {
         "type": "求人DB",
-        "supplier": None,
+        "supplier": "株式会社Hitolink",
+        "supplier_id": 105296246,  # freee取引先ID
         "payment_rule": "入社翌月末",
-        "billing_type": "申請フォーム",
-        "needs_invoice": False,
+        "billing_type": "請求書登録",
+        "needs_invoice": True,
     },
     # --- 旧キー名（後方互換のため残す） ---
     "Circus | 請求不要": {

@@ -71,12 +71,11 @@ AMOUNT_TOLERANCE = 0
 # 書類一覧取得
 # ============================================================
 
-def get_unmatched_receipts(limit: int = 100, months_back: int = 6) -> list:
+def get_unmatched_receipts(months_back: int = 6) -> list:
     """
-    未登録（取引未紐づけ）の書類一覧を取得する
+    未登録（取引未紐づけ）の書類一覧を全件取得する（ページング対応）
 
     Args:
-        limit: 取得件数（最大3000）
         months_back: 何ヶ月前までのアップロード日を対象にするか
 
     Returns:
@@ -85,26 +84,34 @@ def get_unmatched_receipts(limit: int = 100, months_back: int = 6) -> list:
     end_date = datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.now() - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
 
-    params = {
-        "company_id": FREEE_COMPANY_ID,
-        "category": "without_deal",
-        "start_date": start_date,
-        "end_date": end_date,
-        "limit": limit,
-        "offset": 0,
-    }
-    resp = requests.get(
-        f"{FREEE_API_BASE}/receipts",
-        headers=_api_headers(),
-        params=params,
-        timeout=30,
-    )
-    if resp.status_code != 200:
-        raise ValueError(f"書類一覧取得失敗: {resp.status_code} {resp.text[:300]}")
+    all_receipts = []
+    offset = 0
+    while True:
+        params = {
+            "company_id": FREEE_COMPANY_ID,
+            "category": "without_deal",
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": 100,
+            "offset": offset,
+        }
+        resp = requests.get(
+            f"{FREEE_API_BASE}/receipts",
+            headers=_api_headers(),
+            params=params,
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"書類一覧取得失敗: {resp.status_code} {resp.text[:300]}")
 
-    receipts = resp.json().get("receipts", [])
-    logger.info(f"未登録書類: {len(receipts)}件取得")
-    return receipts
+        page = resp.json().get("receipts", [])
+        all_receipts.extend(page)
+        if len(page) < 100:
+            break  # 最後のページ
+        offset += 100
+
+    logger.info(f"未登録書類: {len(all_receipts)}件取得（アップロード日: {start_date}〜{end_date}）")
+    return all_receipts
 
 
 # ============================================================

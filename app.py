@@ -1901,6 +1901,37 @@ def api_debug_match():
 
 
 # ============================================================
+# 紐づけデバッグ
+# ============================================================
+@app.route("/api/debug_attach")
+def api_debug_attach():
+    """デバッグ用: 書類ID=472895840 を 仕訳ID=3563137775 に紐づけるAPIを直接テスト"""
+    import requests as req
+    try:
+        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
+        deal_id = int(request.args.get("deal_id", 3563137775))
+        receipt_id = int(request.args.get("receipt_id", 472895840))
+        payload = {"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id}
+        resp = req.post(
+            f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+            headers=_api_headers(),
+            json=payload,
+            timeout=30,
+        )
+        return jsonify({
+            "deal_id": deal_id,
+            "receipt_id": receipt_id,
+            "status_code": resp.status_code,
+            "response_body": resp.text[:1000],
+            "request_payload": payload,
+            "request_url": f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ============================================================
 # 証憑プレビュー・ダウンロードプロキシ
 # ============================================================
 @app.route("/api/receipt/<int:receipt_id>/download", methods=["GET"])

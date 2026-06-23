@@ -1889,7 +1889,10 @@ def api_debug_match():
                                      "details_total": details_total, "issue_date": d.get("issue_date"),
                                      "due_date": d.get("due_date"), "benesse": is_benesse, "amount_match": is_match,
                                      "raw_partner": d.get("partner"),
-                                     "raw_keys": [k for k in d.keys() if "partner" in k.lower() or "name" in k.lower()]})
+                                     "deal_origin_name": d.get("deal_origin_name"),
+                                     "partner_id": d.get("partner_id"),
+                                     "partner_code": d.get("partner_code"),
+                                     "raw_keys": list(d.keys())})
                 results["searches"].append({"type": deal_type, "filter": label, "total": len(all_deals_debug), "hits": hits})
         return jsonify(results)
     except Exception as e:

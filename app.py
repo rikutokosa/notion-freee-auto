@@ -1838,6 +1838,61 @@ def api_payment_generate_fb():
 
 
 # ============================================================
+# 証憑プレビュー・ダウンロードプロキシ
+# ============================================================
+@app.route("/api/receipt/<int:receipt_id>/download", methods=["GET"])
+def api_receipt_download(receipt_id: int):
+    """
+    freeeの証憑ファイルをプロキシしてブラウザに返す。
+    ?inline=1 の場合はContent-Disposition: inline（プレビュー用）
+    デフォルトはattachment（ダウンロード）
+    """
+    import requests as req
+    inline = request.args.get("inline", "0") == "1"
+    try:
+        from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID
+        token = get_valid_token()
+        # まず証憑メタ情報を取得してファイル名を得る
+        meta_resp = req.get(
+            f"{FREEE_API_BASE}/receipts/{receipt_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=15,
+        )
+        if meta_resp.status_code != 200:
+            return jsonify({"error": f"証憑メタ取得失敗: {meta_resp.status_code}"}), 404
+        receipt_meta = meta_resp.json().get("receipt", {})
+        filename = receipt_meta.get("file_name") or receipt_meta.get("description") or f"receipt_{receipt_id}"
+        mime_type = receipt_meta.get("mime_type") or "application/octet-stream"
+
+        # ファイル本体をダウンロード
+        dl_resp = req.get(
+            f"{FREEE_API_BASE}/receipts/{receipt_id}/download",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=30,
+            stream=True,
+        )
+        if dl_resp.status_code != 200:
+            return jsonify({"error": f"証憑ダウンロード失敗: {dl_resp.status_code}"}), 502
+
+        # Content-Typeをfreeeのレスポンスから取得（より正確）
+        ct = dl_resp.headers.get("Content-Type", mime_type)
+        disposition = "inline" if inline else f'attachment; filename="{filename}"'
+        return Response(
+            dl_resp.content,
+            status=200,
+            headers={
+                "Content-Type": ct,
+                "Content-Disposition": disposition,
+            },
+        )
+    except Exception as e:
+        logger.exception("証憑ダウンロードエラー")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

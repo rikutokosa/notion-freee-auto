@@ -489,12 +489,16 @@ function _buildPaymentHTML(data) {
             due_date: t.due_date,
             days_until_due: t.days_until_due,
             receipts_count: 0,
+            receipt_ids: [],
             section_names: new Set(),
             deal_ids: [],
           };
         }
         merged[pKey].amount += (t.amount || 0);
-        merged[pKey].receipts_count += (t.receipts || []).length;
+        (t.receipts || []).forEach(r => {
+          if (r.id) merged[pKey].receipt_ids.push(r.id);
+          merged[pKey].receipts_count++;
+        });
         (t.section_names || []).forEach(s => merged[pKey].section_names.add(s));
         merged[pKey].deal_ids.push(t.deal_id);
       });
@@ -521,7 +525,11 @@ function _buildPaymentHTML(data) {
         html += `<td style="padding:6px 10px; font-weight:600;">${m.partner_name}</td>`;
         html += `<td style="padding:6px 10px; text-align:right;">¥${m.amount.toLocaleString()}</td>`;
         html += `<td style="padding:6px 10px; font-size:11px; color:#555;">${[...m.section_names].join(', ') || '-'}</td>`;
-        html += `<td style="padding:6px 10px; text-align:center;"><span style="color:#28a745;">📎 ${m.receipts_count}件</span></td>`;
+        const rIds = JSON.stringify(m.receipt_ids);
+        const rLabel = m.receipts_count > 0
+          ? `<a href="#" onclick="openReceiptModal(${rIds}, '${m.partner_name.replace(/'/g, "\\'")}'  ); return false;" style="color:#28a745; text-decoration:none; font-weight:600;">📎 ${m.receipts_count}件</a>`
+          : `<span style="color:#aaa;">📎 0件</span>`;
+        html += `<td style="padding:6px 10px; text-align:center;">${rLabel}</td>`;
         html += `</tr>`;
       });
       html += `</tbody></table></div>`;
@@ -610,5 +618,74 @@ async function downloadFBForDate(dueDate, dealIds) {
     btns.forEach(b => b.disabled = false);
   }
 }
+
+// ============================================================
+// 証憑プレビューモーダル
+// ============================================================
+function openReceiptModal(receiptIds, partnerName) {
+  const modal = document.getElementById('receipt-modal');
+  const title = document.getElementById('receipt-modal-title');
+  const body = document.getElementById('receipt-modal-body');
+
+  title.textContent = `証憑確認 — ${partnerName}（${receiptIds.length}件）`;
+  body.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">読み込み中...</div>';
+  modal.style.display = 'flex';
+
+  // 各証憑をタブ形式で表示
+  let html = '';
+  if (receiptIds.length > 1) {
+    // 複数の場合はタブボタンを表示
+    html += '<div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">';
+    receiptIds.forEach((id, i) => {
+      html += `<button onclick="switchReceiptTab(${i})" id="rtab-${i}" style="padding:4px 12px; font-size:12px; border:1px solid #28a745; border-radius:4px; background:${i===0?'#28a745':'#fff'}; color:${i===0?'#fff':'#28a745'}; cursor:pointer;">証憑 ${i+1}</button>`;
+    });
+    html += '</div>';
+  }
+  receiptIds.forEach((id, i) => {
+    const display = i === 0 ? 'block' : 'none';
+    html += `<div id="rpanel-${i}" style="display:${display};">`;
+    html += `<div style="display:flex; gap:8px; margin-bottom:8px; justify-content:flex-end;">`;
+    html += `<a href="/api/receipt/${id}/download?inline=1" target="_blank" style="font-size:12px; padding:4px 10px; background:#17a2b8; color:#fff; border-radius:4px; text-decoration:none;">🔍 別タブで開く</a>`;
+    html += `<a href="/api/receipt/${id}/download" download style="font-size:12px; padding:4px 10px; background:#6c757d; color:#fff; border-radius:4px; text-decoration:none;">⬇ ダウンロード</a>`;
+    html += `</div>`;
+    // PDFは<iframe>、画像は<img>でインラインプレビュー
+    html += `<iframe src="/api/receipt/${id}/download?inline=1" style="width:100%; height:520px; border:1px solid #dee2e6; border-radius:4px;" id="rframe-${i}"></iframe>`;
+    html += `</div>`;
+  });
+  body.innerHTML = html;
+}
+
+function switchReceiptTab(idx) {
+  const panels = document.querySelectorAll('[id^="rpanel-"]');
+  const tabs = document.querySelectorAll('[id^="rtab-"]');
+  panels.forEach((p, i) => p.style.display = i === idx ? 'block' : 'none');
+  tabs.forEach((t, i) => {
+    t.style.background = i === idx ? '#28a745' : '#fff';
+    t.style.color = i === idx ? '#fff' : '#28a745';
+  });
+}
+
+function closeReceiptModal() {
+  document.getElementById('receipt-modal').style.display = 'none';
+  document.getElementById('receipt-modal-body').innerHTML = '';
+}
+
+// モーダル外クリックで閉じる
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('receipt-modal');
+  if (e.target === modal) closeReceiptModal();
+});
 </script>
+
+<!-- 証憑プレビューモーダル -->
+<div id="receipt-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:10px; width:min(800px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #dee2e6;">
+      <div id="receipt-modal-title" style="font-weight:700; font-size:14px;"></div>
+      <button onclick="closeReceiptModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#666; line-height:1;">&times;</button>
+    </div>
+    <div id="receipt-modal-body" style="padding:16px; overflow-y:auto; flex:1;"></div>
+  </div>
+</div>
+
 {% endblock %}

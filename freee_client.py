@@ -1235,7 +1235,6 @@ EXCLUDE_PARTNER_KEYWORDS = [
     "フォンデスク",
     "MJE",
     "年金事務所", "労働局", "税務署", "都税", "市税", "区役所",
-    "PUROTAN", "purotan", "プロタン",
 ]
 
 # 振込除外対象の勘定科目名（部分一致）
@@ -1302,6 +1301,18 @@ def get_payment_deals(
     excluded = []
 
     for d in honten_deals:
+        # freee APIの payment_status フィルターが機能しない場合に備え、アプリ側でも決済済みを除外
+        # payment_status: "settled" または payments 配列に決済済みのレコードがある場合はスキップ
+        if d.get("payment_status") == "settled":
+            continue
+        # payments配列に決済済みレコードがある場合も除外
+        payments = d.get("payments", [])
+        if payments and all(p.get("amount", 0) > 0 for p in payments):
+            # 合計決済額と仕訳金額を比較して完全決済済みを除外
+            total_paid = sum(p.get("amount", 0) for p in payments)
+            if total_paid >= abs(d.get("amount", 0)):
+                continue
+
         partner_id = d.get("partner_id")
         partner_name = _get_partner_name_cached(partner_id) if partner_id else ""
         due_date_str = d.get("due_date") or d.get("issue_date", "")

@@ -1252,7 +1252,7 @@ def get_payment_deals(
     """
     from datetime import timedelta
     today = datetime.now()
-    start = (today - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
+    start = today.strftime("%Y-%m-%d")  # 今日以降の支払期日のみ対象
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 
     # 未決済の支出仕訳を全件取得（ページング対応）
@@ -1400,15 +1400,37 @@ def get_partner_bank(partner_id: int) -> dict:
     }
 
 
+# 勘定科目IDから名称へのキャッシュ（起動時に1回ロード）
+_account_id_to_name: dict = {}
+
+
+def _get_account_id_to_name() -> dict:
+    """勘定科目ID→名称のマップを返す（キャッシュ付き）"""
+    global _account_id_to_name
+    if not _account_id_to_name:
+        items = get_account_items()
+        _account_id_to_name = {item["id"]: item["name"] for item in items if "id" in item and "name" in item}
+    return _account_id_to_name
+
+
 def _is_excluded(deal: dict, partner_name: str) -> bool:
-    """振込除外対象かどうか判定する"""
+    """振込除外対象かどうか判定する（取引先名 + 勘定科目名の両方で判定）"""
     # 取引先名で除外
     for kw in EXCLUDE_PARTNER_KEYWORDS:
         if kw in partner_name:
             return True
-    # 勘定科目名で除外（account_item_idから名称を引くのはコストが高いため、
-    # descriptionやpartner_nameで判断する簡易版）
-    # TODO: 必要に応じてaccount_item_idからマスタ参照する処理を追加
+
+    # 勘定科目名で除外（明細の全科目を確認）
+    account_map = _get_account_id_to_name()
+    for det in deal.get("details", []):
+        acct_id = det.get("account_item_id")
+        if not acct_id:
+            continue
+        acct_name = account_map.get(acct_id, "")
+        for kw in EXCLUDE_ACCOUNT_KEYWORDS:
+            if kw in acct_name:
+                return True
+
     return False
 
 

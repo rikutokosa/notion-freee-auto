@@ -1808,6 +1808,19 @@ def api_payment_generate_fb():
         fb_bytes = fb_text.encode("shift_jis", errors="replace")
         filename = f"sogohurikomi_{transfer_date}.txt"
 
+        # FBファイル生成確定 → 対象仕訳に「振込依頼済」タグを付与
+        from freee_client import add_furikomi_tag
+        tag_results = {}
+        for t in targets:
+            did = t["deal_id"]
+            ok = add_furikomi_tag(did)
+            tag_results[did] = ok
+            if not ok:
+                logger.warning(f"振込依頼済タグ付与失敗: deal_id={did}")
+
+        tagged_count = sum(1 for v in tag_results.values() if v)
+        logger.info(f"振込依頼済タグ付与: {tagged_count}/{len(targets)}件")
+
         return send_file(
             io.BytesIO(fb_bytes),
             mimetype="text/plain; charset=shift_jis",
@@ -1817,6 +1830,7 @@ def api_payment_generate_fb():
             "X-Transfer-Count": str(summary["valid_count"]),
             "X-Transfer-Amount": str(summary["total_amount"]),
             "X-Skipped-Count": str(len(summary["skipped"])),
+            "X-Tagged-Count": str(tagged_count),
         }
     except Exception as e:
         logger.exception("FBファイル生成エラー")

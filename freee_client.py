@@ -1211,6 +1211,9 @@ def execute_delete_invoice(invoice_id: int) -> dict:
 # 本店部門IDセット
 HONTEN_SECTION_IDS = {2925134, 3423934, 3423935, 3423936, 3428069}
 
+# 「振込依頼済」メモタグID
+FURIKOMI_TAG_ID = 35285961
+
 # CSS部門IDセット（1つでも含まれていたら除外）
 CSS_SECTION_IDS = {3423929, 3423932, 3425277, 3423930, 3403442, 3428068}
 
@@ -1253,6 +1256,7 @@ def get_payment_deals(
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 
     # 未決済の支出仕訳を全件取得（ページング対応）
+    # ※「振込依頼済」タグ(ID=35285961)が付いている仕訳はスキップする
     all_deals = []
     offset = 0
     while True:
@@ -1307,6 +1311,11 @@ def get_payment_deals(
                 days_until_due = (due_dt - today).days
             except ValueError:
                 pass
+
+        # 「振込依頼済」タグが付いている仕訳はスキップ
+        tag_ids = {t.get("id") for t in d.get("tags", [])}
+        if FURIKOMI_TAG_ID in tag_ids:
+            continue
 
         if has_receipt:
             # 添付あり → 振込対象。口座情報も事前に確認してアラートに振り分ける
@@ -1401,3 +1410,52 @@ def _is_excluded(deal: dict, partner_name: str) -> bool:
     # descriptionやpartner_nameで判断する簡易版）
     # TODO: 必要に応じてaccount_item_idからマスタ参照する処理を追加
     return False
+
+
+def add_furikomi_tag(deal_id: int) -> bool:
+    """
+    仕訳に「振込依頼済」メモタグ(ID=35285961)を付与する。
+    既存のタグを保持したまま追加する。
+    Returns: True=成功, False=失敗
+    """
+    # 現在の仕訳詳細を取得してタグ一覧を確認
+    r = requests.get(f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
+                     params={"company_id": FREEE_COMPANY_ID}, timeout=15)
+    if r.status_code != 200:
+        return False
+    deal = r.json().get("deal", {})
+    existing_tag_ids = [t.get("id") for t in deal.get("tags", [])]
+
+    # 既にタグが付いている場合はスキップ
+    if FURIKOMI_TAG_ID in existing_tag_ids:
+        return True
+
+    # タグを追加してPUT
+    new_tag_ids = existing_tag_ids + [FURIKOMI_TAG_ID]
+    details = deal.get("details", [])
+    # PUT用にdetailsを整形
+    put_details = []
+    for det in details:
+        put_details.append({
+            "id": det.get("id"),
+            "account_item_id": det.get("account_item_id"),
+            "tax_code": det.get("tax_code"),
+            "amount": det.get("amount"),
+            "description": det.get("description", ""),
+            "section_id": det.get("section_id"),
+            "tag_ids": [t.get("id") for t in det.get("tags", [])],
+        })
+
+    payload = {
+        "company_id": FREEE_COMPANY_ID,
+        "issue_date": deal.get("issue_date"),
+        "due_date": deal.get("due_date"),
+        "type": deal.get("type"),
+        "partner_id": deal.get("partner_id"),
+        "ref_number": deal.get("ref_number"),
+        "details": put_details,
+        "tag_ids": new_tag_ids,
+    }
+    put_r = requests.put(f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
+                         json={"deal": payload}, timeout=15)
+    return put_r.status_code == 200

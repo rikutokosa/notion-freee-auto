@@ -81,7 +81,7 @@
   </p>
   <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
     <button class="btn btn-secondary" onclick="runPaymentPreview()" id="btn-payment-preview">🔍 支払プレビュー</button>
-    <button class="btn btn-success" onclick="downloadFB()" id="btn-payment-fb" style="display:none;">⬇ 振込FBファイルをダウンロード</button>
+    <button class="btn btn-success" onclick="downloadFB()" id="btn-payment-fb" style="display:none;">✅ 内容を確認した。振込データをダウンロードする</button>
     <button class="btn" onclick="resetPaymentUI()" id="btn-payment-reset" style="display:none; background:#f8f9fa; color:#666; border:1px solid #dee2e6;">✕ 閉じる</button>
   </div>
   <div id="payment-result" style="margin-top:14px;"></div>
@@ -541,13 +541,14 @@ async function downloadFB() {
       const err = await r.json();
       alert('エラー: ' + (err.error || r.statusText));
       btnFB.disabled = false;
-      btnFB.textContent = '⬇ 振込FBファイルをダウンロード';
+      btnFB.textContent = '✅ 内容を確認した。振込データをダウンロードする';
       return;
     }
 
     const count = r.headers.get('X-Transfer-Count') || '?';
     const amount = r.headers.get('X-Transfer-Amount') || '?';
     const skipped = r.headers.get('X-Skipped-Count') || '0';
+    const tagged = r.headers.get('X-Tagged-Count') || '?';
 
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
@@ -559,14 +560,19 @@ async function downloadFB() {
 
     btnFB.textContent = `✅ ダウンロード完了（${count}件 / ¥${Number(amount).toLocaleString()}）`;
     btnFB.style.background = '#28a745';
+    btnFB.disabled = true;
+
+    // 振込依頼済タグ付与完了メッセージ
+    const resultDiv = document.getElementById('payment-result');
+    resultDiv.innerHTML += `<div style="margin-top:10px; background:#d4edda; border:1px solid #c3e6cb; border-radius:6px; padding:10px 14px; font-size:12px; color:#155724;">✅ freeeの対象仕訳に「振込依頼済」タグを付与しました（${tagged}件）。次回のプレビューでは除外されます。</div>`;
     if (parseInt(skipped) > 0) {
-      document.getElementById('payment-result').innerHTML +=
+      resultDiv.innerHTML +=
         `<div style="margin-top:8px; color:#856404; font-size:12px;">⚠️ 銀行口座未登録のためスキップ: ${skipped}件</div>`;
     }
   } catch(e) {
     alert('エラー: ' + e.message);
     btnFB.disabled = false;
-    btnFB.textContent = '⬇ 振込FBファイルをダウンロード';
+    btnFB.textContent = '✅ 内容を確認した。振込データをダウンロードする';
   }
 }
 </script>

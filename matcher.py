@@ -33,6 +33,32 @@ from freee_client import (
 
 logger = logging.getLogger(__name__)
 
+# 取引先名キャッシュ（partner_id -> name）
+_partner_name_cache: dict = {}
+
+
+def get_partner_name(partner_id: int) -> str:
+    """partner_id から取引先名を取得する（キャッシュ付き）"""
+    if not partner_id:
+        return ""
+    if partner_id in _partner_name_cache:
+        return _partner_name_cache[partner_id]
+    try:
+        resp = requests.get(
+            f"{FREEE_API_BASE}/partners/{partner_id}",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            name = resp.json().get("partner", {}).get("name", "")
+            _partner_name_cache[partner_id] = name
+            return name
+    except Exception as e:
+        logger.warning(f"取引先名取得失敗: partner_id={partner_id}, {e}")
+    return ""
+
+
 # 照合時の日付範囲（書類の発行日 ± DATE_RANGE_DAYS 日以内の仕訳を検索）
 DATE_RANGE_DAYS = 90
 
@@ -347,7 +373,11 @@ def _score_deal(deal: dict, receipt_meta: dict) -> float:
 
     # 取引先名スコア
     receipt_partner = (receipt_meta.get("partner_name") or "").strip()
-    deal_partner = ((deal.get("partner") or {}).get("name") or "").strip()
+    # partnerオブジェクトがない場合はpartner_idから取引先名を取得
+    deal_partner_obj = deal.get("partner") or {}
+    deal_partner = (deal_partner_obj.get("name") or "").strip()
+    if not deal_partner and deal.get("partner_id"):
+        deal_partner = get_partner_name(deal["partner_id"]).strip()
 
     if receipt_partner and deal_partner:
         # 部分一致でもスコアを付与
@@ -537,7 +567,7 @@ def run_matching(dry_run: bool = False) -> dict:
             "receipt_partner": partner_name,
             "receipt_description": description,
             "deal_date": best_deal.get("issue_date"),
-            "deal_partner": ((best_deal.get("partner") or {}).get("name") or ""),
+            "deal_partner": ((best_deal.get("partner") or {}).get("name") or get_partner_name(best_deal.get("partner_id") or 0)),
             "deal_amount": _calc_deal_amount(best_deal),
             "candidates_count": len(candidates),
             "auto": True,

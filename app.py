@@ -977,6 +977,7 @@ def api_assistant_ai():
                         "properties": {
                             "deal_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する仕訳IDのリスト。search_dealsの結果から取得した実際のid値のみ使用すること。"},
                             "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会社Stellifyの2026年9月以降の仕訳を削除します。」"},
+                            "deals_detail": {"type": "array", "description": "search_dealsで取得した仕訳の詳細情報。各要素はid/issue_date/amount/partner_nameを含む。", "items": {"type": "object"}},
                         },
                     },
                 },
@@ -1292,20 +1293,10 @@ def api_assistant_ai():
                 return _json.dumps(result, ensure_ascii=False)
 
             elif name == "delete_deals":
-                # 後方互換性のため残存（フロントエンドのボタン経由の削除確認フロー用）
+                # AIがsearch_dealsで取得した詳細情報を直接使う
                 deal_ids = args["deal_ids"]
-                deals_detail = []
-                try:
-                    deals_search = search_deals()
-                    deal_map = {d["id"]: d for d in deals_search}
-                    deals_detail = [
-                        {"id": did, "issue_date": deal_map.get(did, {}).get("issue_date"),
-                         "amount": deal_map.get(did, {}).get("amount"),
-                         "partner_name": deal_map.get(did, {}).get("partner_name")}
-                        for did in deal_ids
-                    ]
-                except Exception:
-                    deals_detail = [{"id": did} for did in deal_ids]
+                # AIがdeals_detailを渡してきた場合はそれを使用、なければIDのみ
+                deals_detail = args.get("deals_detail") or [{"id": did} for did in deal_ids]
                 return _json.dumps({
                     "status": "pending_confirmation",
                     "deal_ids": deal_ids,

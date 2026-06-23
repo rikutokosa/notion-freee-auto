@@ -88,20 +88,27 @@ def _account_type_code(account_type: str) -> str:
     return mapping.get(account_type, "1")
 
 
-def build_fb_file(transfer_targets: list, transfer_date: str) -> str:
+def build_fb_file(transfer_targets: list, transfer_date: str) -> tuple:
     """
     全銀フォーマット（FB形式）のテキストを生成する。
 
     Args:
         transfer_targets: get_payment_deals()の transfer_targets リスト
-        transfer_date: 振込指定日（YYYYMMDD形式）
+        transfer_date: ヘッダー用の振込日（YYYYMMDD形式）。各明細は due_date を使用。
 
     Returns:
-        全銀フォーマットのテキスト（改行区切り）
+        (fb_text, summary) のタプル
     """
     lines = []
     today = datetime.now()
-    create_date = today.strftime("%m%d")  # 作成日（MMDD）
+
+    # ヘッダーの振込指定日：対象仕訳の最も早いdue_dateを使用（なければtransfer_dateを使用）
+    due_dates = [t.get("due_date", "") for t in transfer_targets if t.get("due_date")]
+    if due_dates:
+        earliest = min(due_dates)
+        header_transfer_mmdd = earliest[5:7] + earliest[8:10]
+    else:
+        header_transfer_mmdd = transfer_date[4:8]
 
     # ヘッダーレコード（1レコード目）
     # 種別コード(1) + データ区分(2) + 種別コード(1) + 依頼人コード(10) + 依頼人名(40) +
@@ -113,9 +120,9 @@ def build_fb_file(transfer_targets: list, transfer_date: str) -> str:
         + "0"                                            # 種別コード
         + _pad_left(REQUESTER_CODE, 10)                  # 依頼人コード
         + _pad_right(_to_halfkana(REQUESTER_NAME_KANA), 40)  # 依頼人名
-        + transfer_date[4:8]                             # 振込指定日（MMDD）
+        + header_transfer_mmdd                           # 振込指定日（MMDD）
         + _pad_left(REQUESTER_BANK_CODE, 4)              # 仕向銀行番号
-        + _pad_right("ｽﾐｼﾝｼﾞｴｽﾋﾞｱｲ", 15)               # 仕向銀行名
+        + _pad_right("スミシンジエスビアイ", 15)               # 仕向銀行名
         + _pad_left(REQUESTER_BRANCH_CODE, 3)            # 仕向支店番号
         + _pad_right("", 15)                             # 仕向支店名
         + _account_type_code(REQUESTER_ACCOUNT_TYPE)    # 預金種目
@@ -149,6 +156,14 @@ def build_fb_file(transfer_targets: list, transfer_date: str) -> str:
         if amount <= 0:
             skipped.append({"deal_id": t.get("deal_id"), "reason": "金額0以下"})
             continue
+
+        # 振込指定日は各仕訳の決済期日（due_date）を使用。未設定の場合はヘッダーの日付で代用
+        due_date_raw = t.get("due_date", "") or ""
+        if due_date_raw and len(due_date_raw) == 10:
+            # YYYY-MM-DD → MMDD
+            record_transfer_date = due_date_raw[5:7] + due_date_raw[8:10]
+        else:
+            record_transfer_date = transfer_date[4:8]  # ヘッダーの日付で代用
 
         account_name = _to_halfkana(bank.get("account_name", ""))
 

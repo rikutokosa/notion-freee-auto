@@ -1211,6 +1211,9 @@ def execute_delete_invoice(invoice_id: int) -> dict:
 # 本店部門IDセット
 HONTEN_SECTION_IDS = {2925134, 3423934, 3423935, 3423936, 3428069}
 
+# CSS部門IDセット（1つでも含まれていたら除外）
+CSS_SECTION_IDS = {3423929, 3423932, 3425277, 3423930, 3403442, 3428068}
+
 # 振込除外対象の取引先名（部分一致）
 EXCLUDE_PARTNER_KEYWORDS = [
     "給与", "シンクバンク", "日本政策金融公庫", "横浜銀行", "さわやか信用金庫", "西武信用金庫",
@@ -1270,12 +1273,15 @@ def get_payment_deals(
             break
         offset += 100
 
-    # 本店部門に属する仕訳のみ絞り込み
+    # 本店部門に属する仕訳のみ絞り込み（CSS部門が1つでも含まれていたら除外）
     honten_deals = []
     for d in all_deals:
         section_ids = {det.get("section_id") for det in d.get("details", [])}
-        if section_ids & HONTEN_SECTION_IDS:
-            honten_deals.append(d)
+        if not (section_ids & HONTEN_SECTION_IDS):
+            continue  # 本店部門が含まれていない
+        if section_ids & CSS_SECTION_IDS:
+            continue  # CSS部門が1つでも含まれていたら除外
+        honten_deals.append(d)
 
     transfer_targets = []
     alert_targets = []
@@ -1303,8 +1309,10 @@ def get_payment_deals(
                 pass
 
         if has_receipt:
-            # 添付あり → 振込対象
-            transfer_targets.append({
+            # 添付あり → 振込対象。口座情報も事前に確認してアラートに振り分ける
+            bank = get_partner_bank(partner_id) if partner_id else {}
+            has_bank = bool(bank.get("bank_code") and bank.get("account_number"))
+            entry = {
                 "deal_id": d.get("id"),
                 "partner_id": partner_id,
                 "partner_name": partner_name,
@@ -1313,7 +1321,14 @@ def get_payment_deals(
                 "amount": amount,
                 "days_until_due": days_until_due,
                 "receipts": d.get("receipts", []),
-            })
+                "bank_registered": has_bank,
+            }
+            if has_bank:
+                transfer_targets.append(entry)
+            else:
+                # 口座未登録 → アラート対象（振込できない）
+                entry["alert_reason"] = "bank_missing"
+                alert_targets.append(entry)
         else:
             # 添付なし・期日10日以内 → アラート対象
             if days_until_due is not None and days_until_due <= alert_days:
@@ -1325,6 +1340,8 @@ def get_payment_deals(
                     "due_date": due_date_str,
                     "amount": amount,
                     "days_until_due": days_until_due,
+                    "alert_reason": "no_receipt",
+                    "bank_registered": False,
                 })
 
     return {

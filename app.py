@@ -1911,9 +1911,35 @@ def api_debug_attach():
         from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
         deal_id = int(request.args.get("deal_id", 3563137775))
         receipt_id = int(request.args.get("receipt_id", 472895840))
-        payload = {"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id}
-        resp = req.post(
-            f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+        # まず仕訳を取得
+        get_resp = req.get(
+            f"{FREEE_API_BASE}/deals/{deal_id}",
+            headers=_api_headers(),
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=30,
+        )
+        if get_resp.status_code != 200:
+            return jsonify({"error": f"仕訳取得失敗: {get_resp.status_code}", "body": get_resp.text[:500]}), 400
+        deal = get_resp.json().get("deal", {})
+        existing_ids = [r.get("id") for r in deal.get("receipts", []) if r.get("id")]
+        new_receipt_ids = list(set(existing_ids + [receipt_id]))
+        details = []
+        for d in deal.get("details", []):
+            detail = {"account_item_id": d.get("account_item_id"), "tax_code": d.get("tax_code"), "amount": d.get("amount")}
+            if d.get("section_id"): detail["section_id"] = d["section_id"]
+            if d.get("description"): detail["description"] = d["description"]
+            details.append(detail)
+        payload = {
+            "company_id": FREEE_COMPANY_ID,
+            "issue_date": deal.get("issue_date"),
+            "type": deal.get("type"),
+            "receipt_ids": new_receipt_ids,
+            "details": details,
+        }
+        if deal.get("due_date"): payload["due_date"] = deal["due_date"]
+        if deal.get("partner_id"): payload["partner_id"] = deal["partner_id"]
+        resp = req.put(
+            f"{FREEE_API_BASE}/deals/{deal_id}",
             headers=_api_headers(),
             json=payload,
             timeout=30,
@@ -1924,7 +1950,9 @@ def api_debug_attach():
             "status_code": resp.status_code,
             "response_body": resp.text[:1000],
             "request_payload": payload,
-            "request_url": f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+            "request_url": f"{FREEE_API_BASE}/deals/{deal_id}",
+            "existing_receipt_ids": existing_ids,
+            "new_receipt_ids": new_receipt_ids,
         })
     except Exception as e:
         import traceback

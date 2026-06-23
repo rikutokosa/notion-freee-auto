@@ -403,13 +403,57 @@ def attach_receipt_to_deal(deal_id: int, receipt_id: int) -> bool:
     Returns:
         True if successful
     """
-    resp = requests.post(
-        f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+    # まず仕訳の現在の内容を取得
+    get_resp = requests.get(
+        f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
-        json={
-            "company_id": FREEE_COMPANY_ID,
-            "receipt_id": receipt_id,
-        },
+        params={"company_id": FREEE_COMPANY_ID},
+        timeout=30,
+    )
+    if get_resp.status_code != 200:
+        logger.warning(f"紐づけ失敗(取引取得エラー): 取引ID={deal_id}, status={get_resp.status_code}, body={get_resp.text[:200]}")
+        return False
+
+    deal = get_resp.json().get("deal", {})
+
+    # 既存のreceipt_idsに追加（重複除去）
+    existing_ids = [r.get("id") for r in deal.get("receipts", []) if r.get("id")]
+    new_receipt_ids = list(set(existing_ids + [receipt_id]))
+
+    # 明細行の必須フィールドを整備
+    details = []
+    for d in deal.get("details", []):
+        detail = {
+            "account_item_id": d.get("account_item_id"),
+            "tax_code": d.get("tax_code"),
+            "amount": d.get("amount"),
+        }
+        if d.get("section_id"):
+            detail["section_id"] = d["section_id"]
+        if d.get("item_id"):
+            detail["item_id"] = d["item_id"]
+        if d.get("segment_1_tag_id"):
+            detail["segment_1_tag_id"] = d["segment_1_tag_id"]
+        if d.get("description"):
+            detail["description"] = d["description"]
+        details.append(detail)
+
+    put_payload = {
+        "company_id": FREEE_COMPANY_ID,
+        "issue_date": deal.get("issue_date"),
+        "type": deal.get("type"),
+        "receipt_ids": new_receipt_ids,
+        "details": details,
+    }
+    if deal.get("due_date"):
+        put_payload["due_date"] = deal["due_date"]
+    if deal.get("partner_id"):
+        put_payload["partner_id"] = deal["partner_id"]
+
+    resp = requests.put(
+        f"{FREEE_API_BASE}/deals/{deal_id}",
+        headers=_api_headers(),
+        json=put_payload,
         timeout=30,
     )
     if resp.status_code in (200, 201):
@@ -417,7 +461,7 @@ def attach_receipt_to_deal(deal_id: int, receipt_id: int) -> bool:
         return True
     else:
         logger.warning(f"紐づけ失敗: 取引ID={deal_id}, 書類ID={receipt_id}, "
-                       f"status={resp.status_code}, body={resp.text[:200]}")
+                       f"status={resp.status_code}, body={resp.text[:500]}")
         return False
 
 

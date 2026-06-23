@@ -1864,14 +1864,21 @@ def api_debug_match():
         ]
         for deal_type in ("income", "expense"):
             for label, date_filters in date_filter_sets:
-                params = {"company_id": FREEE_COMPANY_ID, "type": deal_type, "limit": 100, "offset": 0, **date_filters}
-                r = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
-                if r.status_code != 200:
-                    results["searches"].append({"type": deal_type, "filter": label, "error": r.status_code})
-                    continue
-                deals = r.json().get("deals", [])
+                all_deals_debug = []
+                offset = 0
+                while True:
+                    params = {"company_id": FREEE_COMPANY_ID, "type": deal_type, "limit": 100, "offset": offset, **date_filters}
+                    r = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
+                    if r.status_code != 200:
+                        results["searches"].append({"type": deal_type, "filter": label, "error": r.status_code})
+                        break
+                    page_deals = r.json().get("deals", [])
+                    all_deals_debug.extend(page_deals)
+                    if len(page_deals) < 100:
+                        break
+                    offset += 100
                 hits = []
-                for d in deals:
+                for d in all_deals_debug:
                     partner = (d.get("partner") or {}).get("name", "")
                     da = abs(int(d.get("amount", 0))) if d.get("amount") is not None else 0
                     details_total = sum(abs(x.get("amount", 0)) for x in d.get("details", []))
@@ -1881,7 +1888,7 @@ def api_debug_match():
                         hits.append({"id": d.get("id"), "partner": partner, "deal_amount": da,
                                      "details_total": details_total, "issue_date": d.get("issue_date"),
                                      "due_date": d.get("due_date"), "benesse": is_benesse, "amount_match": is_match})
-                results["searches"].append({"type": deal_type, "filter": label, "total": len(deals), "hits": hits})
+                results["searches"].append({"type": deal_type, "filter": label, "total": len(all_deals_debug), "hits": hits})
         return jsonify(results)
     except Exception as e:
         logger.exception("照合デバッグエラー")

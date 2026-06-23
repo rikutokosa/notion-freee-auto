@@ -268,33 +268,39 @@ def get_deals_by_amount_and_date(amount: int, issue_date: str,
 
     for deal_type in ("income", "expense"):
         for date_filters in date_filter_sets:
-            params = {
-                "company_id": FREEE_COMPANY_ID,
-                "type": deal_type,
-                "limit": 100,
-                "offset": 0,
-                **date_filters,
-            }
-            resp = requests.get(
-                f"{FREEE_API_BASE}/deals",
-                headers=_api_headers(),
-                params=params,
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                logger.warning(f"取引検索失敗 ({deal_type}, {list(date_filters.keys())[0]}): {resp.status_code}")
-                continue
+            offset = 0
+            while True:
+                params = {
+                    "company_id": FREEE_COMPANY_ID,
+                    "type": deal_type,
+                    "limit": 100,
+                    "offset": offset,
+                    **date_filters,
+                }
+                resp = requests.get(
+                    f"{FREEE_API_BASE}/deals",
+                    headers=_api_headers(),
+                    params=params,
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    logger.warning(f"取引検索失敗 ({deal_type}, {list(date_filters.keys())[0]}): {resp.status_code}")
+                    break
 
-            deals = resp.json().get("deals", [])
-            # 金額でフィルタリング（重複除去）
-            for deal in deals:
-                did = deal.get("id")
-                if did in seen_ids:
-                    continue
-                deal_amount = _calc_deal_amount(deal)
-                if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:  # 完全一致
-                    all_deals.append(deal)
-                    seen_ids.add(did)
+                deals = resp.json().get("deals", [])
+                # 金額でフィルタリング（重複除去）
+                for deal in deals:
+                    did = deal.get("id")
+                    if did in seen_ids:
+                        continue
+                    deal_amount = _calc_deal_amount(deal)
+                    if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:  # 完全一致
+                        all_deals.append(deal)
+                        seen_ids.add(did)
+
+                if len(deals) < 100:
+                    break  # 最後のページ
+                offset += 100
 
     logger.info(f"金額{amount}円・日付{issue_date}±{date_range_days}日で{len(all_deals)}件の取引が候補")
     return all_deals

@@ -1838,6 +1838,57 @@ def api_payment_generate_fb():
 
 
 # ============================================================
+# 照合デバッグ用エンドポイント（一時）
+# ============================================================
+@app.route("/api/debug_match")
+def api_debug_match():
+    """照合デバッグ: 指定金額・日付で仕訳を検索し結果を返す"""
+    import requests as req
+    from datetime import timedelta
+    amount = int(request.args.get("amount", 34650))
+    issue_date = request.args.get("date", "2026-06-02")
+    date_range = int(request.args.get("range", 90))
+
+    try:
+        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
+        base_date = datetime.strptime(issue_date, "%Y-%m-%d")
+        start_date = (base_date - timedelta(days=date_range)).strftime("%Y-%m-%d")
+        end_date = (base_date + timedelta(days=date_range)).strftime("%Y-%m-%d")
+
+        results = {"amount": amount, "issue_date": issue_date, "range": date_range,
+                   "start": start_date, "end": end_date, "searches": []}
+
+        date_filter_sets = [
+            ("issue_date", {"start_issue_date": start_date, "end_issue_date": end_date}),
+            ("due_date",   {"start_due_date": start_date,   "end_due_date": end_date}),
+        ]
+        for deal_type in ("income", "expense"):
+            for label, date_filters in date_filter_sets:
+                params = {"company_id": FREEE_COMPANY_ID, "type": deal_type, "limit": 100, "offset": 0, **date_filters}
+                r = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
+                if r.status_code != 200:
+                    results["searches"].append({"type": deal_type, "filter": label, "error": r.status_code})
+                    continue
+                deals = r.json().get("deals", [])
+                hits = []
+                for d in deals:
+                    partner = (d.get("partner") or {}).get("name", "")
+                    da = abs(int(d.get("amount", 0))) if d.get("amount") is not None else 0
+                    details_total = sum(abs(x.get("amount", 0)) for x in d.get("details", []))
+                    is_benesse = "ベネッセ" in partner
+                    is_match = da == amount or details_total == amount
+                    if is_benesse or is_match:
+                        hits.append({"id": d.get("id"), "partner": partner, "deal_amount": da,
+                                     "details_total": details_total, "issue_date": d.get("issue_date"),
+                                     "due_date": d.get("due_date"), "benesse": is_benesse, "amount_match": is_match})
+                results["searches"].append({"type": deal_type, "filter": label, "total": len(deals), "hits": hits})
+        return jsonify(results)
+    except Exception as e:
+        logger.exception("照合デバッグエラー")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
 # 証憑プレビュー・ダウンロードプロキシ
 # ============================================================
 @app.route("/api/receipt/<int:receipt_id>/download", methods=["GET"])

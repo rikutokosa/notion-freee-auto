@@ -1211,6 +1211,15 @@ def execute_delete_invoice(invoice_id: int) -> dict:
 # 本店部門IDセット
 HONTEN_SECTION_IDS = {2925134, 3423934, 3423935, 3423936, 3428069}
 
+# 部門ID → 表示名マッピング
+SECTION_ID_TO_NAME = {
+    2925134: "本店：その他",
+    3423934: "本店：CA",
+    3423935: "本店：PCA",
+    3423936: "本店：PRA",
+    3428069: "本店：AIスカウト",
+}
+
 # 「振込依頼済」メモタグID
 FURIKOMI_TAG_ID = 35285961
 
@@ -1321,6 +1330,9 @@ def get_payment_deals(
             # 添付あり → 振込対象。口座情報も事前に確認してアラートに振り分ける
             bank = get_partner_bank(partner_id) if partner_id else {}
             has_bank = bool(bank.get("bank_code") and bank.get("account_number"))
+            # 部門名リストを取得
+            section_ids_in_deal = {det.get("section_id") for det in d.get("details", []) if det.get("section_id")}
+            section_names = [SECTION_ID_TO_NAME.get(sid, f"部門{sid}") for sid in section_ids_in_deal if sid in HONTEN_SECTION_IDS]
             entry = {
                 "deal_id": d.get("id"),
                 "partner_id": partner_id,
@@ -1331,6 +1343,8 @@ def get_payment_deals(
                 "days_until_due": days_until_due,
                 "receipts": d.get("receipts", []),
                 "bank_registered": has_bank,
+                "section_names": section_names,
+                "group_key": f"{due_date_str}|{partner_name}",  # グループ化用キー
             }
             if has_bank:
                 transfer_targets.append(entry)
@@ -1341,6 +1355,8 @@ def get_payment_deals(
         else:
             # 添付なし・期日10日以内 → アラート対象
             if days_until_due is not None and days_until_due <= alert_days:
+                section_ids_in_deal = {det.get("section_id") for det in d.get("details", []) if det.get("section_id")}
+                section_names = [SECTION_ID_TO_NAME.get(sid, f"部門{sid}") for sid in section_ids_in_deal if sid in HONTEN_SECTION_IDS]
                 alert_targets.append({
                     "deal_id": d.get("id"),
                     "partner_id": partner_id,
@@ -1351,6 +1367,8 @@ def get_payment_deals(
                     "days_until_due": days_until_due,
                     "alert_reason": "no_receipt",
                     "bank_registered": False,
+                    "section_names": section_names,
+                    "group_key": f"{due_date_str}|{partner_name}",
                 })
 
     return {

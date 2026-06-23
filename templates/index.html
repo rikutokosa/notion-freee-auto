@@ -414,9 +414,8 @@ function resetPaymentUI() {
 
 function _buildPaymentHTML(data) {
   let html = '';
-  const today = new Date();
 
-  // アラートセクション
+  // ---- アラートセクション ----
   if (data.alert_targets && data.alert_targets.length > 0) {
     // 口座未登録アラート（赤）
     const bankMissing = data.alert_targets.filter(a => a.alert_reason === 'bank_missing');
@@ -424,7 +423,7 @@ function _buildPaymentHTML(data) {
       html += `<div style="background:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; padding:12px 16px; margin-bottom:12px;">`;
       html += `<div style="font-weight:700; font-size:13px; color:#721c24; margin-bottom:8px;">🚨 請求書添付済だが銀行口座が未登録—振込できません（${bankMissing.length}件）</div>`;
       html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
-      html += `<thead><tr style="border-bottom:1px solid #f5c6cb;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th></tr></thead><tbody>`;
+      html += `<thead><tr style="border-bottom:1px solid #f5c6cb;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th><th style="padding:4px 8px; text-align:left;">部門</th></tr></thead><tbody>`;
       bankMissing.forEach(a => {
         const daysColor = a.days_until_due !== null && a.days_until_due <= 3 ? '#721c24' : '#856404';
         html += `<tr style="border-bottom:1px solid #f9e0e3;">`;
@@ -432,6 +431,7 @@ function _buildPaymentHTML(data) {
         html += `<td style="padding:5px 8px; text-align:right;">¥${(a.amount||0).toLocaleString()}</td>`;
         html += `<td style="padding:5px 8px;">${a.due_date || '-'}</td>`;
         html += `<td style="padding:5px 8px; text-align:center; font-weight:700; color:${daysColor};">${a.days_until_due !== null ? a.days_until_due + '日' : '-'}</td>`;
+        html += `<td style="padding:5px 8px; font-size:11px; color:#555;">${(a.section_names||[]).join(', ') || '-'}</td>`;
         html += `</tr>`;
       });
       html += `</tbody></table>`;
@@ -444,7 +444,7 @@ function _buildPaymentHTML(data) {
       html += `<div style="background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:12px 16px; margin-bottom:16px;">`;
       html += `<div style="font-weight:700; font-size:13px; color:#856404; margin-bottom:8px;">⚠️ 請求書未添付・支払期日が迫っています（${noReceipt.length}件）</div>`;
       html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
-      html += `<thead><tr style="border-bottom:1px solid #ffc107;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th></tr></thead><tbody>`;
+      html += `<thead><tr style="border-bottom:1px solid #ffc107;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th><th style="padding:4px 8px; text-align:left;">部門</th></tr></thead><tbody>`;
       noReceipt.forEach(a => {
         const daysColor = a.days_until_due !== null && a.days_until_due <= 3 ? '#dc3545' : '#856404';
         html += `<tr style="border-bottom:1px solid #ffe8a1;">`;
@@ -452,33 +452,80 @@ function _buildPaymentHTML(data) {
         html += `<td style="padding:5px 8px; text-align:right;">¥${(a.amount||0).toLocaleString()}</td>`;
         html += `<td style="padding:5px 8px;">${a.due_date || '-'}</td>`;
         html += `<td style="padding:5px 8px; text-align:center; font-weight:700; color:${daysColor};">${a.days_until_due !== null ? a.days_until_due + '日' : '-'}</td>`;
+        html += `<td style="padding:5px 8px; font-size:11px; color:#555;">${(a.section_names||[]).join(', ') || '-'}</td>`;
         html += `</tr>`;
       });
       html += `</tbody></table></div>`;
     }
   }
 
-  // 振込対象セクション
+  // ---- 振込対象セクション（支払期日ごとにグループ化） ----
   if (data.transfer_targets && data.transfer_targets.length > 0) {
     const totalAmount = data.transfer_targets.reduce((s, t) => s + (t.amount || 0), 0);
-    html += `<div style="margin-bottom:16px;">`;
-    html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">`;
-    html += `<div style="font-weight:700; font-size:13px; color:#155724;">✅ 振込対象（請求書添付済み・${data.transfer_targets.length}件）</div>`;
-    html += `<div style="font-size:15px; font-weight:700; color:#155724;">合計: ¥${totalAmount.toLocaleString()}</div>`;
-    html += `</div>`;
-    html += `<table style="width:100%; font-size:12px; border-collapse:collapse; border:1px solid #dee2e6; border-radius:6px; overflow:hidden;">`;
-    html += `<thead><tr style="background:#d4edda;"><th style="padding:7px 10px; text-align:left;">取引先</th><th style="padding:7px 10px; text-align:right;">金額</th><th style="padding:7px 10px; text-align:left;">支払期日</th><th style="padding:7px 10px; text-align:center;">残日数</th><th style="padding:7px 10px; text-align:center;">証憑</th></tr></thead><tbody>`;
+    html += `<div style="font-weight:700; font-size:13px; color:#155724; margin-bottom:10px;">✅ 振込対象（請求書添付済み・${data.transfer_targets.length}件 / 合計: ¥${totalAmount.toLocaleString()}）</div>`;
+
+    // 支払期日ごとにグループ化
+    const byDate = {};
     data.transfer_targets.forEach(t => {
-      const daysColor = t.days_until_due !== null && t.days_until_due <= 3 ? '#dc3545' : (t.days_until_due !== null && t.days_until_due <= 10 ? '#856404' : '#555');
-      html += `<tr style="border-bottom:1px solid #e9f5ec;">`;
-      html += `<td style="padding:6px 10px;">${t.partner_name || '(不明)'}</td>`;
-      html += `<td style="padding:6px 10px; text-align:right; font-weight:600;">¥${(t.amount||0).toLocaleString()}</td>`;
-      html += `<td style="padding:6px 10px;">${t.due_date || '-'}</td>`;
-      html += `<td style="padding:6px 10px; text-align:center; color:${daysColor}; font-weight:600;">${t.days_until_due !== null ? t.days_until_due + '日' : '-'}</td>`;
-      html += `<td style="padding:6px 10px; text-align:center;"><span style="color:#28a745;">📎 ${t.receipts.length}件</span></td>`;
-      html += `</tr>`;
+      const key = t.due_date || '期日不明';
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(t);
     });
-    html += `</tbody></table></div>`;
+
+    // 日付順にソート
+    const sortedDates = Object.keys(byDate).sort();
+
+    sortedDates.forEach(dueDate => {
+      const items = byDate[dueDate];
+
+      // 同一取引先をまとめる（金額合算・部門名マージ・証憑数合算）
+      const merged = {};
+      items.forEach(t => {
+        const pKey = t.partner_name || '(不明)';
+        if (!merged[pKey]) {
+          merged[pKey] = {
+            partner_name: pKey,
+            amount: 0,
+            due_date: t.due_date,
+            days_until_due: t.days_until_due,
+            receipts_count: 0,
+            section_names: new Set(),
+            deal_ids: [],
+          };
+        }
+        merged[pKey].amount += (t.amount || 0);
+        merged[pKey].receipts_count += (t.receipts || []).length;
+        (t.section_names || []).forEach(s => merged[pKey].section_names.add(s));
+        merged[pKey].deal_ids.push(t.deal_id);
+      });
+      const mergedList = Object.values(merged);
+      const groupTotal = mergedList.reduce((s, m) => s + m.amount, 0);
+      const daysUntil = mergedList[0].days_until_due;
+      const daysColor = daysUntil !== null && daysUntil <= 3 ? '#dc3545' : (daysUntil !== null && daysUntil <= 10 ? '#856404' : '#155724');
+      const dealIdsForDate = items.map(t => t.deal_id);
+
+      html += `<div style="border:1px solid #c3e6cb; border-radius:8px; margin-bottom:14px; overflow:hidden;">`;
+      // グループヘッダー
+      html += `<div style="background:#d4edda; padding:8px 14px; display:flex; justify-content:space-between; align-items:center;">`;
+      html += `<div><span style="font-weight:700; font-size:13px;">📅 支払期日: ${dueDate}</span>`;
+      html += `<span style="margin-left:12px; font-size:12px; color:${daysColor}; font-weight:600;">${daysUntil !== null ? '残' + daysUntil + '日' : ''}</span></div>`;
+      html += `<div style="display:flex; align-items:center; gap:12px;">`;
+      html += `<span style="font-size:13px; font-weight:700; color:#155724;">¥${groupTotal.toLocaleString()}</span>`;
+      html += `<button onclick="downloadFBForDate('${dueDate}', ${JSON.stringify(dealIdsForDate)})" style="font-size:11px; padding:4px 10px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">⬇ この日付分をダウンロード</button>`;
+      html += `</div></div>`;
+      // 明細テーブル
+      html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
+      html += `<thead><tr style="background:#f0faf2; border-bottom:1px solid #c3e6cb;"><th style="padding:6px 10px; text-align:left;">取引先</th><th style="padding:6px 10px; text-align:right;">金額</th><th style="padding:6px 10px; text-align:left;">部門</th><th style="padding:6px 10px; text-align:center;">証憑</th></tr></thead><tbody>`;
+      mergedList.forEach(m => {
+        html += `<tr style="border-bottom:1px solid #e9f5ec;">`;
+        html += `<td style="padding:6px 10px; font-weight:600;">${m.partner_name}</td>`;
+        html += `<td style="padding:6px 10px; text-align:right;">¥${m.amount.toLocaleString()}</td>`;
+        html += `<td style="padding:6px 10px; font-size:11px; color:#555;">${[...m.section_names].join(', ') || '-'}</td>`;
+        html += `<td style="padding:6px 10px; text-align:center;"><span style="color:#28a745;">📎 ${m.receipts_count}件</span></td>`;
+        html += `</tr>`;
+      });
+      html += `</tbody></table></div>`;
+    });
   } else {
     html += `<div style="color:#888; font-size:13px; padding:12px 0;">振込対象の仕訳はありませんでした（請求書添付済みで未決済のものがありません）。</div>`;
   }
@@ -510,69 +557,57 @@ async function runPaymentPreview() {
 
     btnPreview.style.display = 'none';
     btnReset.style.display = '';
-    if (data.transfer_targets && data.transfer_targets.length > 0) {
-      btnFB.style.display = '';
-    }
+    // 日付別ダウンロードボタンは各グループ内に表示するため、全体ボタンは非表示のまま
+    btnFB.style.display = 'none';
   } catch(e) {
     resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
     btnPreview.disabled = false;
   }
 }
 
-async function downloadFB() {
-  const btnFB = document.getElementById('btn-payment-fb');
-  btnFB.disabled = true;
-  btnFB.textContent = '⏳ 生成中...';
+async function downloadFBForDate(dueDate, dealIds) {
+  // 支払期日をYYYYMMDD形式に変換
+  const transferDate = dueDate.replace(/-/g, '');
+  const filename = `sogohurikomi_${transferDate}.txt`;
 
-  // 振込指定日（今日）
-  const today = new Date();
-  const transferDate = today.getFullYear().toString()
-    + String(today.getMonth()+1).padStart(2,'0')
-    + String(today.getDate()).padStart(2,'0');
+  // ボタンを無効化
+  const btns = document.querySelectorAll('[onclick^="downloadFBForDate"]');
+  btns.forEach(b => b.disabled = true);
 
   try {
     const r = await fetch('/api/payment/generate_fb', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({transfer_date: transferDate})
+      body: JSON.stringify({transfer_date: transferDate, deal_ids: dealIds})
     });
 
     if (!r.ok) {
       const err = await r.json();
       alert('エラー: ' + (err.error || r.statusText));
-      btnFB.disabled = false;
-      btnFB.textContent = '✅ 内容を確認した。振込データをダウンロードする';
+      btns.forEach(b => b.disabled = false);
       return;
     }
 
     const count = r.headers.get('X-Transfer-Count') || '?';
     const amount = r.headers.get('X-Transfer-Amount') || '?';
-    const skipped = r.headers.get('X-Skipped-Count') || '0';
     const tagged = r.headers.get('X-Tagged-Count') || '?';
 
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sogohurikomi_${transferDate}.txt`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
 
-    btnFB.textContent = `✅ ダウンロード完了（${count}件 / ¥${Number(amount).toLocaleString()}）`;
-    btnFB.style.background = '#28a745';
-    btnFB.disabled = true;
-
-    // 振込依頼済タグ付与完了メッセージ
+    // 完了メッセージを表示
     const resultDiv = document.getElementById('payment-result');
-    resultDiv.innerHTML += `<div style="margin-top:10px; background:#d4edda; border:1px solid #c3e6cb; border-radius:6px; padding:10px 14px; font-size:12px; color:#155724;">✅ freeeの対象仕訳に「振込依頼済」タグを付与しました（${tagged}件）。次回のプレビューでは除外されます。</div>`;
-    if (parseInt(skipped) > 0) {
-      resultDiv.innerHTML +=
-        `<div style="margin-top:8px; color:#856404; font-size:12px;">⚠️ 銀行口座未登録のためスキップ: ${skipped}件</div>`;
-    }
+    resultDiv.insertAdjacentHTML('afterbegin',
+      `<div style="background:#d4edda; border:1px solid #c3e6cb; border-radius:6px; padding:10px 14px; font-size:12px; color:#155724; margin-bottom:10px;">✅ ${dueDate}分の振込データをダウンロードしました（${count}件 / ¥${Number(amount).toLocaleString()}）。freeeの${tagged}件の仕訳に「振込依頼済」タグを付与しました。</div>`
+    );
   } catch(e) {
     alert('エラー: ' + e.message);
-    btnFB.disabled = false;
-    btnFB.textContent = '✅ 内容を確認した。振込データをダウンロードする';
+    btns.forEach(b => b.disabled = false);
   }
 }
 </script>

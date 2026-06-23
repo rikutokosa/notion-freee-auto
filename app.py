@@ -26,7 +26,7 @@ import threading
 from datetime import datetime
 import tempfile
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, jsonify, url_for
+from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file
 
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
@@ -41,6 +41,7 @@ from freee_client import (
     resolve_partner_id,
 )
 from matcher import run_matching
+from payment import build_fb_file
 from notion_client import fetch_pending_records, get_record
 from rules import build_journal_entries
 from processor import run_once, process_single_by_id, processing_log
@@ -1754,6 +1755,71 @@ def api_freee_token_debug():
         token = get_valid_token()
         return jsonify({"access_token": token, "company_id": _CID})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# 支払管理・振込データ生成エンドポイント
+# ============================================================
+
+@app.route("/api/payment/preview", methods=["GET"])
+def api_payment_preview():
+    """
+    振込対象・アラート対象の仕訳一覧をプレビューする（FBファイル生成前の確認用）
+    """
+    try:
+        from freee_client import get_payment_deals
+        result = get_payment_deals(months_back=3, alert_days=10)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("支払管理プレビューエラー")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/payment/generate_fb", methods=["POST"])
+def api_payment_generate_fb():
+    """
+    振込対象仕訳から全銀FBファイルを生成してダウンロードさせる
+    """
+    import io
+    data = request.get_json() or {}
+    transfer_date = data.get("transfer_date")  # YYYYMMDD
+    deal_ids = data.get("deal_ids")  # 選択した仕訳IDリスト（Noneなら全件）
+
+    if not transfer_date:
+        from datetime import datetime as _dt
+        transfer_date = _dt.now().strftime("%Y%m%d")
+
+    try:
+        from freee_client import get_payment_deals
+        result = get_payment_deals(months_back=3, alert_days=10)
+        targets = result["transfer_targets"]
+
+        # 選択されたIDのみに絞り込む
+        if deal_ids:
+            targets = [t for t in targets if t["deal_id"] in deal_ids]
+
+        if not targets:
+            return jsonify({"error": "振込対象の仕訳がありません"}), 400
+
+        fb_text, summary = build_fb_file(targets, transfer_date)
+
+        # Shift-JIS（全銀標準）でエンコード
+        fb_bytes = fb_text.encode("shift_jis", errors="replace")
+        filename = f"sogohurikomi_{transfer_date}.txt"
+
+        return send_file(
+            io.BytesIO(fb_bytes),
+            mimetype="text/plain; charset=shift_jis",
+            as_attachment=True,
+            download_name=filename,
+        ), 200, {
+            "X-Transfer-Count": str(summary["valid_count"]),
+            "X-Transfer-Amount": str(summary["total_amount"]),
+            "X-Skipped-Count": str(len(summary["skipped"])),
+        }
+    except Exception as e:
+        logger.exception("FBファイル生成エラー")
         return jsonify({"error": str(e)}), 500
 
 

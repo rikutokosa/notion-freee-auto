@@ -1202,3 +1202,185 @@ def execute_delete_invoice(invoice_id: int) -> dict:
     """
     delete_invoice(invoice_id)
     return {"status": "cancelled", "invoice_id": invoice_id}
+
+
+# ============================================================
+# 支払管理・振込データ生成用関数
+# ============================================================
+
+# 本店部門IDセット
+HONTEN_SECTION_IDS = {2925134, 3423934, 3423935, 3423936, 3428069}
+
+# 振込除外対象の取引先名（部分一致）
+EXCLUDE_PARTNER_KEYWORDS = [
+    "給与", "シンクバンク", "日本政策金融公庫", "横浜銀行", "さわやか信用金庫", "西武信用金庫",
+    "WANTEDLY", "wantedly", "ウォンテッドリー",
+    "L MESSAGE", "Lメッセージ",
+    "オリコフォレント",
+    "フォンデスク",
+    "MJE",
+    "年金事務所", "労働局", "税務署", "都税", "市税", "区役所",
+]
+
+# 振込除外対象の勘定科目名（部分一致）
+EXCLUDE_ACCOUNT_KEYWORDS = [
+    "給与", "賞与", "法定福利費", "長期借入金", "短期借入金",
+    "所得税", "住民税", "消費税", "法人税", "印紙税",
+    "社宅",
+]
+
+
+def get_payment_deals(
+    months_back: int = 3,
+    alert_days: int = 10,
+) -> dict:
+    """
+    本店部門・未決済の支出仕訳を取得し、振込対象とアラート対象に分類する。
+
+    Returns:
+        {
+            "transfer_targets": [...],   # 添付ファイルあり・除外対象外 → 振込FBファイル生成対象
+            "alert_targets": [...],      # 添付ファイルなし・支払期日まで10日以内 → アラート対象
+            "excluded": [...],           # 除外対象（参考）
+        }
+    """
+    from datetime import timedelta
+    today = datetime.now()
+    start = (today - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
+    end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
+
+    # 未決済の支出仕訳を全件取得（ページング対応）
+    all_deals = []
+    offset = 0
+    while True:
+        resp = requests.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params={
+            "company_id": FREEE_COMPANY_ID,
+            "type": "expense",
+            "payment_status": "unsettled",
+            "start_due_date": start,
+            "end_due_date": end,
+            "limit": 100,
+            "offset": offset,
+        }, timeout=30)
+        if resp.status_code != 200:
+            raise ValueError(f"deals取得失敗: {resp.status_code} {resp.text[:200]}")
+        deals = resp.json().get("deals", [])
+        all_deals.extend(deals)
+        if len(deals) < 100:
+            break
+        offset += 100
+
+    # 本店部門に属する仕訳のみ絞り込み
+    honten_deals = []
+    for d in all_deals:
+        section_ids = {det.get("section_id") for det in d.get("details", [])}
+        if section_ids & HONTEN_SECTION_IDS:
+            honten_deals.append(d)
+
+    transfer_targets = []
+    alert_targets = []
+    excluded = []
+
+    for d in honten_deals:
+        partner_id = d.get("partner_id")
+        partner_name = _get_partner_name_cached(partner_id) if partner_id else ""
+        due_date_str = d.get("due_date") or d.get("issue_date", "")
+        has_receipt = len(d.get("receipts", [])) > 0
+        amount = d.get("amount", 0)
+
+        # 除外判定
+        if _is_excluded(d, partner_name):
+            excluded.append({**d, "_partner_name": partner_name})
+            continue
+
+        # 支払期日までの日数
+        days_until_due = None
+        if due_date_str:
+            try:
+                due_dt = datetime.strptime(due_date_str, "%Y-%m-%d")
+                days_until_due = (due_dt - today).days
+            except ValueError:
+                pass
+
+        if has_receipt:
+            # 添付あり → 振込対象
+            transfer_targets.append({
+                "deal_id": d.get("id"),
+                "partner_id": partner_id,
+                "partner_name": partner_name,
+                "issue_date": d.get("issue_date"),
+                "due_date": due_date_str,
+                "amount": amount,
+                "days_until_due": days_until_due,
+                "receipts": d.get("receipts", []),
+            })
+        else:
+            # 添付なし・期日10日以内 → アラート対象
+            if days_until_due is not None and days_until_due <= alert_days:
+                alert_targets.append({
+                    "deal_id": d.get("id"),
+                    "partner_id": partner_id,
+                    "partner_name": partner_name,
+                    "issue_date": d.get("issue_date"),
+                    "due_date": due_date_str,
+                    "amount": amount,
+                    "days_until_due": days_until_due,
+                })
+
+    return {
+        "transfer_targets": transfer_targets,
+        "alert_targets": alert_targets,
+        "excluded": excluded,
+        "total_honten": len(honten_deals),
+    }
+
+
+# 取引先名キャッシュ（APIコール削減）
+_partner_name_cache: dict = {}
+
+
+def _get_partner_name_cached(partner_id: int) -> str:
+    if partner_id in _partner_name_cache:
+        return _partner_name_cache[partner_id]
+    try:
+        r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
+                         params={"company_id": FREEE_COMPANY_ID}, timeout=15)
+        if r.status_code == 200:
+            name = r.json().get("partner", {}).get("name", "")
+            _partner_name_cache[partner_id] = name
+            return name
+    except Exception:
+        pass
+    return ""
+
+
+def get_partner_bank(partner_id: int) -> dict:
+    """取引先の銀行口座情報を取得する"""
+    r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
+                     params={"company_id": FREEE_COMPANY_ID}, timeout=15)
+    if r.status_code != 200:
+        return {}
+    partner = r.json().get("partner", {})
+    bank = partner.get("partner_bank_account_attributes", {})
+    return {
+        "partner_name": partner.get("name", ""),
+        "bank_code": bank.get("bank_code", ""),
+        "bank_name": bank.get("bank_name", ""),
+        "branch_code": bank.get("branch_code", ""),
+        "branch_name": bank.get("branch_name", ""),
+        "account_type": bank.get("account_type", "ordinary"),
+        "account_number": bank.get("account_number", ""),
+        "account_name": bank.get("account_name", ""),
+    }
+
+
+def _is_excluded(deal: dict, partner_name: str) -> bool:
+    """振込除外対象かどうか判定する"""
+    # 取引先名で除外
+    for kw in EXCLUDE_PARTNER_KEYWORDS:
+        if kw in partner_name:
+            return True
+    # 勘定科目名で除外（account_item_idから名称を引くのはコストが高いため、
+    # descriptionやpartner_nameで判断する簡易版）
+    # TODO: 必要に応じてaccount_item_idからマスタ参照する処理を追加
+    return False

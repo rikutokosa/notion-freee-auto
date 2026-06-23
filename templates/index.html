@@ -73,6 +73,20 @@
   <div id="match-result" style="margin-top:14px;"></div>
 </div>
 
+<!-- 支払管理・振込データ生成 -->
+<div class="card" style="border-left:4px solid #28a745; margin-top:20px;">
+  <h2 style="margin-bottom:6px;">💸 支払管理・振込データ生成</h2>
+  <p style="font-size:13px; color:#666; margin-bottom:14px;">
+    本店部門（CA/PCA/PRA/AIスカウト/その他）の未決済仕訳を確認し、請求書添付済みのものをSBI総合振込用FBファイルとして出力します。
+  </p>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+    <button class="btn btn-secondary" onclick="runPaymentPreview()" id="btn-payment-preview">🔍 支払プレビュー</button>
+    <button class="btn btn-success" onclick="downloadFB()" id="btn-payment-fb" style="display:none;">⬇ 振込FBファイルをダウンロード</button>
+    <button class="btn" onclick="resetPaymentUI()" id="btn-payment-reset" style="display:none; background:#f8f9fa; color:#666; border:1px solid #dee2e6;">✕ 閉じる</button>
+  </div>
+  <div id="payment-result" style="margin-top:14px;"></div>
+</div>
+
 <!-- 処理ログ -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -380,6 +394,155 @@ async function runMatchExecute() {
     resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
     btnExec.disabled = false;
     btnReset.disabled = false;
+  }
+}
+
+// ============================================================
+// 支払管理・振込データ生成
+// ============================================================
+
+let _paymentPreviewData = null;
+
+function resetPaymentUI() {
+  _paymentPreviewData = null;
+  document.getElementById('payment-result').innerHTML = '';
+  document.getElementById('btn-payment-preview').style.display = '';
+  document.getElementById('btn-payment-preview').disabled = false;
+  document.getElementById('btn-payment-fb').style.display = 'none';
+  document.getElementById('btn-payment-reset').style.display = 'none';
+}
+
+function _buildPaymentHTML(data) {
+  let html = '';
+  const today = new Date();
+
+  // アラートセクション（請求書なし・期日10日以内）
+  if (data.alert_targets && data.alert_targets.length > 0) {
+    html += `<div style="background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:12px 16px; margin-bottom:16px;">`;
+    html += `<div style="font-weight:700; font-size:13px; color:#856404; margin-bottom:8px;">⚠️ 請求書未添付・支払期日が迫っています（${data.alert_targets.length}件）</div>`;
+    html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
+    html += `<thead><tr style="border-bottom:1px solid #ffc107;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th></tr></thead><tbody>`;
+    data.alert_targets.forEach(a => {
+      const daysColor = a.days_until_due <= 3 ? '#dc3545' : '#856404';
+      html += `<tr style="border-bottom:1px solid #ffe8a1;">`;
+      html += `<td style="padding:5px 8px;">${a.partner_name || '(不明)'}</td>`;
+      html += `<td style="padding:5px 8px; text-align:right;">¥${(a.amount||0).toLocaleString()}</td>`;
+      html += `<td style="padding:5px 8px;">${a.due_date || '-'}</td>`;
+      html += `<td style="padding:5px 8px; text-align:center; font-weight:700; color:${daysColor};">${a.days_until_due !== null ? a.days_until_due + '日' : '-'}</td>`;
+      html += `</tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+
+  // 振込対象セクション
+  if (data.transfer_targets && data.transfer_targets.length > 0) {
+    const totalAmount = data.transfer_targets.reduce((s, t) => s + (t.amount || 0), 0);
+    html += `<div style="margin-bottom:16px;">`;
+    html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">`;
+    html += `<div style="font-weight:700; font-size:13px; color:#155724;">✅ 振込対象（請求書添付済み・${data.transfer_targets.length}件）</div>`;
+    html += `<div style="font-size:15px; font-weight:700; color:#155724;">合計: ¥${totalAmount.toLocaleString()}</div>`;
+    html += `</div>`;
+    html += `<table style="width:100%; font-size:12px; border-collapse:collapse; border:1px solid #dee2e6; border-radius:6px; overflow:hidden;">`;
+    html += `<thead><tr style="background:#d4edda;"><th style="padding:7px 10px; text-align:left;">取引先</th><th style="padding:7px 10px; text-align:right;">金額</th><th style="padding:7px 10px; text-align:left;">支払期日</th><th style="padding:7px 10px; text-align:center;">残日数</th><th style="padding:7px 10px; text-align:center;">証憑</th></tr></thead><tbody>`;
+    data.transfer_targets.forEach(t => {
+      const daysColor = t.days_until_due !== null && t.days_until_due <= 3 ? '#dc3545' : (t.days_until_due !== null && t.days_until_due <= 10 ? '#856404' : '#555');
+      html += `<tr style="border-bottom:1px solid #e9f5ec;">`;
+      html += `<td style="padding:6px 10px;">${t.partner_name || '(不明)'}</td>`;
+      html += `<td style="padding:6px 10px; text-align:right; font-weight:600;">¥${(t.amount||0).toLocaleString()}</td>`;
+      html += `<td style="padding:6px 10px;">${t.due_date || '-'}</td>`;
+      html += `<td style="padding:6px 10px; text-align:center; color:${daysColor}; font-weight:600;">${t.days_until_due !== null ? t.days_until_due + '日' : '-'}</td>`;
+      html += `<td style="padding:6px 10px; text-align:center;"><span style="color:#28a745;">📎 ${t.receipts.length}件</span></td>`;
+      html += `</tr>`;
+    });
+    html += `</tbody></table></div>`;
+  } else {
+    html += `<div style="color:#888; font-size:13px; padding:12px 0;">振込対象の仕訳はありませんでした（請求書添付済みで未決済のものがありません）。</div>`;
+  }
+
+  return html;
+}
+
+async function runPaymentPreview() {
+  const resultDiv = document.getElementById('payment-result');
+  const btnPreview = document.getElementById('btn-payment-preview');
+  const btnFB = document.getElementById('btn-payment-fb');
+  const btnReset = document.getElementById('btn-payment-reset');
+
+  resultDiv.innerHTML = '<div style="color:#555; font-size:13px; padding:12px 0;">🔍 支払対象を取得中...</div>';
+  btnPreview.disabled = true;
+
+  try {
+    const r = await fetch('/api/payment/preview');
+    const data = await r.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${data.error}</div>`;
+      btnPreview.disabled = false;
+      return;
+    }
+
+    _paymentPreviewData = data;
+    resultDiv.innerHTML = _buildPaymentHTML(data);
+
+    btnPreview.style.display = 'none';
+    btnReset.style.display = '';
+    if (data.transfer_targets && data.transfer_targets.length > 0) {
+      btnFB.style.display = '';
+    }
+  } catch(e) {
+    resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
+    btnPreview.disabled = false;
+  }
+}
+
+async function downloadFB() {
+  const btnFB = document.getElementById('btn-payment-fb');
+  btnFB.disabled = true;
+  btnFB.textContent = '⏳ 生成中...';
+
+  // 振込指定日（今日）
+  const today = new Date();
+  const transferDate = today.getFullYear().toString()
+    + String(today.getMonth()+1).padStart(2,'0')
+    + String(today.getDate()).padStart(2,'0');
+
+  try {
+    const r = await fetch('/api/payment/generate_fb', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({transfer_date: transferDate})
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      alert('エラー: ' + (err.error || r.statusText));
+      btnFB.disabled = false;
+      btnFB.textContent = '⬇ 振込FBファイルをダウンロード';
+      return;
+    }
+
+    const count = r.headers.get('X-Transfer-Count') || '?';
+    const amount = r.headers.get('X-Transfer-Amount') || '?';
+    const skipped = r.headers.get('X-Skipped-Count') || '0';
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sogohurikomi_${transferDate}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    btnFB.textContent = `✅ ダウンロード完了（${count}件 / ¥${Number(amount).toLocaleString()}）`;
+    btnFB.style.background = '#28a745';
+    if (parseInt(skipped) > 0) {
+      document.getElementById('payment-result').innerHTML +=
+        `<div style="margin-top:8px; color:#856404; font-size:12px;">⚠️ 銀行口座未登録のためスキップ: ${skipped}件</div>`;
+    }
+  } catch(e) {
+    alert('エラー: ' + e.message);
+    btnFB.disabled = false;
+    btnFB.textContent = '⬇ 振込FBファイルをダウンロード';
   }
 }
 </script>

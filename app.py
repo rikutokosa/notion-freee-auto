@@ -1490,13 +1490,12 @@ def api_assistant_execute_delete():
     invoice_ids = data.get("invoice_ids", [])
 
     # 請求書から作成された仕訳は削除不可のため、そのエラーはskippedとして扱う
-    # また、請求書cancel後に紐付き仕訳が自動削除された場合の404エラーもskipped扱い
+    # 判定は厳密なキーワードのみ（短い文字列による誤マッチを防ぐ）
     INVOICE_LINKED_DEAL_ERRORS = [
         "freee請求書から作成された取引は削除できません",
-        "invoice",
-        "linked",
-        "404",  # 請求書cancel後に紐付き仕訳が自動削除された場合
+        "請求書から作成",
         "存在しないか既に削除された",
+        "not found",
     ]
 
     results = {

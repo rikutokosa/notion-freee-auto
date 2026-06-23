@@ -258,42 +258,59 @@ def get_deals_by_amount_and_date(amount: int, issue_date: str,
     end_date = (base_date + timedelta(days=date_range_days)).strftime("%Y-%m-%d")
 
     all_deals = []
-    for deal_type in ("income", "expense"):
-        params = {
-            "company_id": FREEE_COMPANY_ID,
-            "type": deal_type,
-            "start_issue_date": start_date,
-            "end_issue_date": end_date,
-            "limit": 100,
-            "offset": 0,
-        }
-        resp = requests.get(
-            f"{FREEE_API_BASE}/deals",
-            headers=_api_headers(),
-            params=params,
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            logger.warning(f"取引検索失敗 ({deal_type}): {resp.status_code}")
-            continue
+    seen_ids = set()
 
-        deals = resp.json().get("deals", [])
-        # 金額でフィルタリング（明細行の合計金額と照合）
-        for deal in deals:
-            deal_amount = _calc_deal_amount(deal)
-            if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:  # 完全一致
-                all_deals.append(deal)
+    # 発生日（issue_date）と支払期日（due_date）の両方で検索してマージ
+    date_filter_sets = [
+        {"start_issue_date": start_date, "end_issue_date": end_date},
+        {"start_due_date": start_date, "end_due_date": end_date},
+    ]
+
+    for deal_type in ("income", "expense"):
+        for date_filters in date_filter_sets:
+            params = {
+                "company_id": FREEE_COMPANY_ID,
+                "type": deal_type,
+                "limit": 100,
+                "offset": 0,
+                **date_filters,
+            }
+            resp = requests.get(
+                f"{FREEE_API_BASE}/deals",
+                headers=_api_headers(),
+                params=params,
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"取引検索失敗 ({deal_type}, {list(date_filters.keys())[0]}): {resp.status_code}")
+                continue
+
+            deals = resp.json().get("deals", [])
+            # 金額でフィルタリング（重複除去）
+            for deal in deals:
+                did = deal.get("id")
+                if did in seen_ids:
+                    continue
+                deal_amount = _calc_deal_amount(deal)
+                if abs(deal_amount - amount) <= AMOUNT_TOLERANCE:  # 完全一致
+                    all_deals.append(deal)
+                    seen_ids.add(did)
 
     logger.info(f"金額{amount}円・日付{issue_date}±{date_range_days}日で{len(all_deals)}件の取引が候補")
     return all_deals
 
 
 def _calc_deal_amount(deal: dict) -> int:
-    """取引の合計金額を計算する（明細行の金額合計）"""
+    """取引の合計金額を計算する。
+    deal.amount（仕訳全体の金額）を優先し、なければ明細行の合計を使用する。
+    """
+    # deal.amountがあればそれを優先使用（freeeの公式合計金額）
+    if deal.get("amount") is not None:
+        return abs(int(deal["amount"]))
+    # なければ明細行の合計
     details = deal.get("details", [])
     if not details:
         return 0
-    # 明細行の金額合計（税込）
     total = sum(abs(d.get("amount", 0)) for d in details)
     return total
 
@@ -486,7 +503,7 @@ def run_matching(dry_run: bool = False) -> dict:
             result["unmatched"].append({
                 "receipt_id": receipt_id,
                 "description": description,
-                "reason": f"一致する取引なし（金額={amount}円, 発行日={issue_date}）",
+                "reason": f"一致する取引なし（金額={amount}円, 発行日={issue_date}, 検索範囲=発行日±{DATE_RANGE_DAYS}日）",
                 "amount": amount,
                 "issue_date": issue_date,
                 "partner_name": partner_name,

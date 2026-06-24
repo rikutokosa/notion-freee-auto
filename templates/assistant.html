@@ -932,6 +932,34 @@ async function sendAiMessage() {
         replyHtml += `<br><div style="color:#27ae60;font-weight:bold;">✅ ${data.registered_ids.length}件をfreeeに登録しました（ID: ${data.registered_ids.join(', ')}）</div>`;
       }
 
+      // Function Calling版：登録確認待ちの場合
+      if (data.pending_registers && data.pending_registers.length > 0) {
+        const pr = data.pending_registers;
+        replyHtml += `<br><br>`;
+        replyHtml += `<div style="border:1px solid #b8daff;background:#f0f7ff;border-radius:8px;padding:12px;margin-top:8px;">`;
+        replyHtml += `<div style="font-weight:bold;color:#1a5276;margin-bottom:8px;">✏️ 登録内容の確認</div>`;
+        pr.forEach((item, idx) => {
+          const args = item.deal_args || {};
+          const typeLabel = item.deal_type === 'income' ? '収入' : '支出';
+          replyHtml += `<div style="font-size:13px;margin-bottom:6px;">`;
+          replyHtml += `<b>${idx + 1}.</b> ${args.issue_date || '-'} / ${typeLabel} / ${args.partner_name || '-'}`;
+          if (args.details && args.details.length > 0) {
+            replyHtml += `<table style="font-size:12px;border-collapse:collapse;width:100%;margin-top:4px;">`;
+            replyHtml += `<tr style="background:#dbeafe;"><th style="padding:3px 8px;text-align:left;">勘定科目</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">部門</th><th style="padding:3px 8px;text-align:left;">備考</th></tr>`;
+            args.details.forEach(d => {
+              replyHtml += `<tr><td style="padding:3px 8px;">${d.account_item_name || '-'}</td><td style="padding:3px 8px;text-align:right;">${(d.amount || 0).toLocaleString()}円</td><td style="padding:3px 8px;">${d.section_name || '-'}</td><td style="padding:3px 8px;">${d.description || '-'}</td></tr>`;
+            });
+            replyHtml += `</table>`;
+          }
+          replyHtml += `</div>`;
+        });
+        const prJson = JSON.stringify(pr).replace(/"/g, '&quot;');
+        replyHtml += `<div style="margin-top:10px;">`;
+        replyHtml += `<button class="btn btn-primary" onclick='executeRegister(${prJson})'>▶ この内容でfreeeに登録する（${pr.length}件）</button>`;
+        replyHtml += ` <span style="font-size:11px;color:#666;">→ 登録後は手動での修正が必要です</span>`;
+        replyHtml += `</div></div>`;
+      }
+
       addAiMessage('assistant', replyHtml);
     }
     // ファイルをクリア（送信後）
@@ -942,6 +970,31 @@ async function sendAiMessage() {
     addAiMessage('error', `❌ 通信エラー: ${e.message}`);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function executeRegister(pendingRegisters) {
+  const resultDiv = addAiMessage('assistant', '⏳ freeeに登録中...');
+  try {
+    const res = await fetch('/api/assistant/execute_register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pending_registers: pendingRegisters })
+    });
+    const data = await res.json();
+    resultDiv.remove();
+    if (data.status === 'ok') {
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids || []).join(', ')}`;
+      if (data.failed && data.failed.length > 0) {
+        msg += `<br>⚠️ 失敗: ${data.failed.length}件`;
+      }
+      addAiMessage('assistant', msg);
+    } else {
+      addAiMessage('error', `❌ 登録エラー: ${data.message || JSON.stringify(data)}`);
+    }
+  } catch(e) {
+    resultDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
   }
 }
 

@@ -935,8 +935,9 @@ def api_assistant_ai():
 - 請求書登録はregister_invoiceツールを使用する
 
 # 重要な制約
-- 削除・更新などの破壊的操作は必ずユーザー確認を得てから実行する
-- 登録は確認なしで実行してよい（ユーザーが「登録して」と言った時点で実行）
+- 登録・削除・更新などの操作は必ずユーザー確認を得てから実行する
+- register_dealを呼び出すと確認ボタンがフロントに表示される。AIは「登録しました」と言わない
+- delete_dealsを呼び出すと削除確認ボタンがフロントに表示される。AIは「削除しました」と言わない
 - 確認を求める際は対象の詳細（日付・取引先・金額・件数）を明示する"""
 
         # Function Callingのツール定義
@@ -1234,22 +1235,13 @@ def api_assistant_ai():
                 return _json.dumps(deal, ensure_ascii=False)
 
             elif name == "register_deal":
-                cache = get_master_cache()
-                deal_type = args.pop("deal_type")
-                result = create_deal(args, deal_type, cache)
-                assistant_log.insert(0, {
-                    "source": "assistant",
-                    "freee_id": result.get("id"),
-                    "issue_date": args.get("issue_date", ""),
-                    "partner_name": args.get("partner_name", ""),
+                # 即時登録せず確認待ちとして返す
+                deal_type = args.get("deal_type", "expense")
+                return _json.dumps({
+                    "status": "pending_register",
+                    "deal_args": args,
                     "deal_type": deal_type,
-                    "amount": sum(d.get("amount", 0) for d in args.get("details", [])),
-                    "registered_at": _dt3.now().strftime("%Y-%m-%d %H:%M"),
-                    "note": user_message[:80],
-                })
-                del assistant_log[200:]
-                registered_ids.append(result.get("id"))
-                return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
+                }, ensure_ascii=False)
 
             elif name == "register_invoice":
                 result = register_invoice_agent(
@@ -1373,6 +1365,7 @@ def api_assistant_ai():
         messages.append({"role": "user", "content": user_message})
 
         pending_deletes = {"deal_ids": [], "invoice_ids": [], "message": "", "deals_detail": [], "invoices_detail": []}
+        pending_registers = []  # 登録確認待ちリスト
         registered_ids = []
         final_reply = ""
 
@@ -1404,7 +1397,7 @@ def api_assistant_ai():
                     "content": tool_result,
                 })
 
-                # 削除待機中の場合はフロントに渡す
+                # 削除・登録待機中の場合はフロントに渡す
                 result_obj = _json.loads(tool_result)
                 if isinstance(result_obj, dict):
                     if result_obj.get("status") == "pending_confirmation":
@@ -1418,18 +1411,20 @@ def api_assistant_ai():
                             pending_deletes["invoices_detail"].extend(result_obj["invoices_detail"])
                         pending_deletes["message"] = result_obj.get("message", "")
 
-                    # 登録成功の場合
-                    if fn_name == "register_deal" and result_obj.get("status") == "ok":
-                        registered_ids.append(result_obj.get("id"))
+                    # 登録確認待ちの場合
+                    if result_obj.get("status") == "pending_register":
+                        pending_registers.append({
+                            "deal_args": result_obj.get("deal_args", {}),
+                            "deal_type": result_obj.get("deal_type", "expense"),
+                        })
 
-            # 削除ツールが呼ばれた場合はここでループを打ち切る
-            # （AIがツール結果を受け取って「削除しました」と言わないようにするため）
-            if pending_deletes["deal_ids"] or pending_deletes["invoice_ids"]:
+            # 削除または登録ツールが呼ばれた場合はここでループを打ち切る
+            if pending_deletes["deal_ids"] or pending_deletes["invoice_ids"] or pending_registers:
                 break
 
         # 削除確認待ちがある場合はAIの「削除しました」メッセージを上書き
-        has_pending = bool(pending_deletes["deal_ids"] or pending_deletes["invoice_ids"])
-        if has_pending:
+        has_pending_delete = bool(pending_deletes["deal_ids"] or pending_deletes["invoice_ids"])
+        if has_pending_delete:
             deal_count = len(pending_deletes["deal_ids"])
             inv_count = len(pending_deletes["invoice_ids"])
             parts = []
@@ -1439,11 +1434,17 @@ def api_assistant_ai():
                 parts.append(f"請求書 {inv_count}件")
             final_reply = f"以下の{' と '.join(parts)}が見つかりました。削除してよろしいですか？"
 
+        # 登録確認待ちがある場合はAIの「登録しました」メッセージを上書き
+        if pending_registers:
+            count = len(pending_registers)
+            final_reply = f"以下の内容でfreeeに登録します。内容を確認してください。"
+
         return jsonify({
             "reply": final_reply,
             "entries": [],
             "delete_actions": [],
-            "pending_deletes": pending_deletes if has_pending else None,
+            "pending_deletes": pending_deletes if has_pending_delete else None,
+            "pending_registers": pending_registers if pending_registers else None,
             "registered_ids": registered_ids,
         })
 
@@ -1517,6 +1518,47 @@ def api_assistant_search_delete():
     except Exception as e:
         logger.exception("削除対象検索エラー")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/assistant/execute_register", methods=["POST"])
+def api_assistant_execute_register():
+    """AIが提案した仕訳をfreeeに登録する（ユーザー確認後に実行）"""
+    from freee_client import create_deal, get_master_cache
+    from datetime import datetime as _dt3
+    data = request.get_json() or {}
+    pending_registers = data.get("pending_registers", [])
+    results = {"registered": [], "failed": []}
+
+    cache = get_master_cache()
+    for item in pending_registers:
+        deal_args = item.get("deal_args", {})
+        deal_type = item.get("deal_type", "expense")
+        # deal_argsにdeal_typeが含まれている場合は除去
+        deal_args.pop("deal_type", None)
+        try:
+            result = create_deal(deal_args, deal_type, cache)
+            deal_id = result.get("id")
+            assistant_log.insert(0, {
+                "source": "assistant",
+                "freee_id": deal_id,
+                "issue_date": deal_args.get("issue_date", ""),
+                "partner_name": deal_args.get("partner_name", ""),
+                "deal_type": deal_type,
+                "amount": sum(d.get("amount", 0) for d in deal_args.get("details", [])),
+                "registered_at": _dt3.now().strftime("%Y-%m-%d %H:%M"),
+                "note": "AI登録（確認後）",
+            })
+            del assistant_log[200:]
+            results["registered"].append(deal_id)
+        except Exception as e:
+            results["failed"].append({"error": str(e), "args": deal_args})
+
+    return jsonify({
+        "status": "ok",
+        "registered": len(results["registered"]),
+        "ids": results["registered"],
+        "failed": results["failed"],
+    })
 
 
 @app.route("/api/assistant/execute_delete", methods=["POST"])

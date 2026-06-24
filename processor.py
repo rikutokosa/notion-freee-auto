@@ -333,6 +333,35 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             return result
 
         # ============================================================
+        # CSS求人: スカウト手数料（仕入）のみ登録（売上仕訳なし）
+        # ============================================================
+        if journal["action"] == "register_scout_only":
+            purchase_entry = journal.get("purchase_entry")
+            if purchase_entry:
+                from freee_client import create_deal, get_master_cache
+                cache = get_master_cache()
+                try:
+                    deal = create_deal(purchase_entry, "expense", cache)
+                    result["purchase_id"] = deal.get("id")
+                except Exception as e:
+                    error_msg = f"スカウト手数料登録エラー: {str(e)}"
+                    mark_as_error(page_id, error_msg)
+                    result["status"] = "error"
+                    result["message"] = error_msg
+                    result["errors"] = [error_msg]
+                    return result
+            mark_as_done(page_id, current_status,
+                         db_type=db_type,
+                         freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
+                         purchase_id=result.get("purchase_id"))
+            result["status"] = "success"
+            result["message"] = (
+                f"スカウト手数料仕訳を登録しました "
+                f"(仕入ID={result.get('purchase_id')})。売上仕訳は登録していません。"
+            )
+            return result
+
+        # ============================================================
         # 通常登録（仕訳のみ）
         # ============================================================
         reg_result = register_journal(

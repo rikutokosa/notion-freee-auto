@@ -78,7 +78,7 @@ RULES = {
         "billing_type": "請求書登録",
         "needs_invoice": True,
     },
-    # CSS求人はスカウト手数料のみ登録（売上仕訳のみ、仕入なし）
+    # CSS求人はスカウト手数料（売上原価/仕入）のみ登録。売上仕訳は不要。
     "CSS求人": {
         "no": 6,
         "added_date": "2026-06-17",
@@ -688,46 +688,72 @@ def build_journal_entries(record: dict) -> dict:
     tanto_ca = p.get("tanto_ca") or ""
     tag_names = [tanto_ca] if tanto_ca else []
 
-    # 売上仕訳
-    # 税込売上を優先使用。なければ税抜×1.1でフォールバック
-    uriage_amount = int(p["zeikomi_uriage"]) if p.get("zeikomi_uriage") else int(p["zeinuki_uriage"] * 1.1) if p.get("zeinuki_uriage") else 0
-    if uriage_amount > 0:
-        account_item = "CA売上【自社】"
-        if db_type == "pca":
-            account_item = "PCA売上"
+    # 売上仕訳（CSS求人=登録不要の場合はスキップ）
+    if rule["payment_rule"] != "登録不要":
+        # 税込売上を優先使用。なければ税抜×1.1でフォールバック
+        uriage_amount = int(p["zeikomi_uriage"]) if p.get("zeikomi_uriage") else int(p["zeinuki_uriage"] * 1.1) if p.get("zeinuki_uriage") else 0
+        if uriage_amount > 0:
+            account_item = "CA売上【自社】"
+            if db_type == "pca":
+                account_item = "PCA売上"
 
-        # 売上取引先: 求人データベース型の場合は取引先を設定（集客型は売上に取引先なし）
-        if rule.get("type") == "求人DB":
-            sales_partner = rule.get("supplier")
-        else:
-            sales_partner = None
+            # 売上取引先: 求人データベース型の場合は取引先を設定（集客型は売上に取引先なし）
+            if rule.get("type") == "求人DB":
+                sales_partner = rule.get("supplier")
+            else:
+                sales_partner = None
 
-        # 取引先ID: supplier_idがルールに直接指定されている場合はそれを優先使用
-        # 例: Hitolink -> supplier_id=105296246（パーソルイノベーション）
-        # 次に「freee売上取引先ID」（フォーミュラ型、取引先ID）を使用
-        rule_partner_id = rule.get("supplier_id")
-        sales_partner_id = rule_partner_id if rule_partner_id else p["freee_sales_partner_id"]
+            # 取引先ID: supplier_idがルールに直接指定されている場合はそれを優先使用
+            rule_partner_id = rule.get("supplier_id")
+            sales_partner_id = rule_partner_id if rule_partner_id else p["freee_sales_partner_id"]
 
-        # 部門設定: PCAは「本店：PCA」、本店CAは「本店：CA」（freeeの正式部門名）
-        section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
+            # 部門設定: PCAは「本店：PCA」、本店CAは「本店：CA」
+            section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
 
-        base["sales_entry"] = {
-            "issue_date": issue_date,
-            "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
-            "partner_name": sales_partner if not rule_partner_id else None,  # supplier_idがあれば名前は不要
-            "partner_id": sales_partner_id,  # supplier_id優先、なければNotionのfreee売上取引ID
-            "section_name": section_name,
-            "details": [{
-                "account_item_name": account_item,
-                "tax_code": 129,
-                "amount": uriage_amount,  # 税込売上
-                "description": biko,
-                "tag_names": tag_names,
-            }],
-            "memo": biko,
-        }
+            base["sales_entry"] = {
+                "issue_date": issue_date,
+                "due_date": uriage_kessai.isoformat() if uriage_kessai else None,
+                "partner_name": sales_partner if not rule_partner_id else None,
+                "partner_id": sales_partner_id,
+                "section_name": section_name,
+                "details": [{
+                    "account_item_name": account_item,
+                    "tax_code": 129,
+                    "amount": uriage_amount,
+                    "description": biko,
+                    "tag_names": tag_names,
+                }],
+                "memo": biko,
+            }
 
-    # 仕入仕訳（登録不要の場合はスキップ）
+    # CSS求人: スカウト手数料（売上原価/仕入）のみ登録。仕入仕訳の payment_rule は「登録不要」だが
+    # スカウト手数料は別途登録する。
+    if rule["payment_rule"] == "登録不要" and rule.get("type") == "求人DB":
+        # スカウト手数料（仕入）を登録
+        if p.get("zeinuki_shukyaku") and p["zeinuki_shukyaku"] > 0:
+            purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
+            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else int(p["zeinuki_shukyaku"] * 1.1)
+            base["purchase_entry"] = {
+                "issue_date": nyusha_date_str,
+                "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
+                "partner_name": None,
+                "partner_id": p["freee_purchase_partner_id"],
+                "section_name": purchase_section,
+                "details": [{
+                    "account_item_name": "スカウト手数料",
+                    "tax_code": 136,
+                    "amount": purchase_amount,
+                    "description": biko,
+                    "tag_names": tag_names,
+                }],
+                "memo": biko,
+            }
+        base["action"] = "register_scout_only"
+        base["message"] = f"「{job_db}」はスカウト手数料（仕入）のみ登録します。売上仕訳は登録しません。"
+        base["needs_invoice"] = False
+        return base
+
+    # 通常の仕入仕訳（登録不要でない場合）
     if rule["payment_rule"] != "登録不要":
         if p["zeinuki_shukyaku"] and p["zeinuki_shukyaku"] > 0:
             purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
@@ -772,13 +798,6 @@ def build_journal_entries(record: dict) -> dict:
             }],
             "memo": biko,
         }
-
-    # 仕入登録不要の場合
-    if rule["payment_rule"] == "登録不要":
-        base["action"] = "register_sales_only"
-        base["message"] = f"「{job_db}」は仕入仕訳登録不要です。売上仕訳のみ登録します。"
-        base["needs_invoice"] = needs_invoice
-        return base
 
     base["action"] = "register"
     base["message"] = "仕訳データを生成しました"

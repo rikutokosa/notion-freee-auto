@@ -484,7 +484,7 @@ def set_invoice_required_select(page_id: str, job_db_value: str) -> bool:
     url = f"{NOTION_BASE}/pages/{page_id}"
     payload = {
         "properties": {
-            "請求有無": {
+            "請求有無（選択）": {
                 "select": {"name": select_value}
             }
         }
@@ -493,7 +493,7 @@ def set_invoice_required_select(page_id: str, job_db_value: str) -> bool:
     if resp.status_code != 200:
         import logging
         logging.getLogger(__name__).warning(
-            f"請求有無セレクトセット失敗: page_id={page_id}, value={select_value}, "
+            f"請求有無（選択）セット失敗: page_id={page_id}, value={select_value}, "
             f"status={resp.status_code}, resp={resp.text[:300]}"
         )
     return resp.status_code == 200

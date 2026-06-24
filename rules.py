@@ -172,6 +172,15 @@ RULES = {
         "needs_invoice": False,
     },
     # --- パートナー ---
+    "マイナビスカウティング": {
+        "no": 17,
+        "added_date": "2026-06-25",
+        "type": "集客",
+        "supplier": "株式会社マイナビ",
+        "payment_rule": "入社翌々月10日",
+        "billing_type": "仕訳登録のみ",
+        "needs_invoice": False,
+    },
     "PCA": {
         "no": 16,
         "added_date": "2026-06-16",

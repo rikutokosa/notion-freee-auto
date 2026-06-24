@@ -2342,6 +2342,142 @@ def changelog():
 
 
 # ============================================================
+# メール通知
+# ============================================================
+def send_notification_email(subject: str, body: str):
+    """
+    スケジュール実行結果をメールで通知する。
+    環境変数:
+      SMTP_HOST   : SMTPサーバー（デフォルト: smtp.gmail.com）
+      SMTP_PORT   : SMTPポート（デフォルト: 587）
+      SMTP_USER   : 送信元メールアドレス
+      SMTP_PASS   : SMTPパスワード（Gmailの場合はアプリパスワード）
+      NOTIFY_TO   : 送信先メールアドレス（デフォルト: r.kosa@bearsnavi.com）
+    """
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    notify_to = os.environ.get("NOTIFY_TO", "r.kosa@bearsnavi.com")
+
+    if not smtp_user or not smtp_pass:
+        logger.warning("SMTP設定が未設定のためメール送信をスキップします")
+        return
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = smtp_user
+        msg["To"] = notify_to
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, [notify_to], msg.as_string())
+        logger.info(f"メール送信完了: {notify_to}")
+    except Exception as e:
+        logger.error(f"メール送信失敗: {e}")
+
+
+@app.route("/api/scheduled_run", methods=["POST"])
+def scheduled_run():
+    """
+    毎日昼12時のスケジュール実行エンドポイント。
+    1. 自動転記（run_once）を実行
+    2. 請求書照合（run_matching）を実行
+    3. 結果をメールで通知
+    """
+    from datetime import datetime, timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+
+    lines = []
+    lines.append(f"本店経理自動化システム 日次実行レポート")
+    lines.append(f"実行日時: {now_str} JST")
+    lines.append("=" * 50)
+
+    has_error = False
+
+    # --- 1. 自動転記 ---
+    lines.append("")
+    lines.append("▶ 自動転記（Notion → freee）")
+    try:
+        results = run_once(db_type="all", dry_run=False)
+        success = sum(1 for r in results if r.get("status") == "success")
+        errors  = sum(1 for r in results if r.get("status") == "error")
+        reviews = sum(1 for r in results if r.get("status") == "review")
+        skips   = sum(1 for r in results if r.get("status") == "skip")
+        total   = len(results)
+        if total == 0:
+            lines.append("  処理対象レコードなし（経理対応待ちなし）")
+        else:
+            lines.append(f"  合計: {total}件")
+            lines.append(f"  成功: {success}件 / エラー: {errors}件 / 要確認: {reviews}件 / スキップ: {skips}件")
+        if errors > 0:
+            has_error = True
+            lines.append("  [エラー詳細]")
+            for r in results:
+                if r.get("status") == "error":
+                    name = r.get("name") or r.get("page_id", "")
+                    msg  = r.get("message", "")
+                    lines.append(f"    - {name}: {msg}")
+    except Exception as e:
+        has_error = True
+        lines.append(f"  実行エラー: {e}")
+        logger.exception("スケジュール自動転記エラー")
+
+    # --- 2. 請求書照合 ---
+    lines.append("")
+    lines.append("▶ 請求書照合（freeeファイルボックス）")
+    try:
+        match_result = run_matching(dry_run=False)
+        matched   = match_result.get("matched_count", 0)
+        unmatched = match_result.get("unmatched_count", 0)
+        errs      = match_result.get("errors", [])
+        total_r   = match_result.get("total_receipts", 0)
+        ai_ocr    = match_result.get("ai_ocr_count", 0)
+        if total_r == 0:
+            lines.append("  未照合の書類なし")
+        else:
+            lines.append(f"  対象書類: {total_r}件")
+            lines.append(f"  照合成功: {matched}件 / 未照合: {unmatched}件")
+            if ai_ocr > 0:
+                lines.append(f"  AI-OCR使用: {ai_ocr}件")
+        if errs:
+            has_error = True
+            lines.append(f"  [エラー {len(errs)}件]")
+            for e in errs[:5]:
+                lines.append(f"    - {e}")
+    except Exception as e:
+        has_error = True
+        lines.append(f"  実行エラー: {e}")
+        logger.exception("スケジュール請求書照合エラー")
+
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("本店経理自動化システム")
+
+    body = "\n".join(lines)
+    subject_prefix = "⚠️ [要確認] " if has_error else "✅ "
+    subject = f"{subject_prefix}本店経理自動化 日次実行レポート {now_str}"
+
+    send_notification_email(subject, body)
+
+    return jsonify({
+        "status": "ok",
+        "has_error": has_error,
+        "report": body,
+        "executed_at": now_str,
+    })
+
+
+# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

@@ -1391,42 +1391,61 @@ def get_payment_deals(
     }
 
 
-# 取引先名キャッシュ（APIコール削減）
-_partner_name_cache: dict = {}
+# 取引先情報キャッシュ（名前・銀行口座を1回のAPIコールで取得・キャッシュ）
+_partner_cache: dict = {}  # partner_id -> {name, bank_code, bank_name, ...}
 
 
-def _get_partner_name_cached(partner_id: int) -> str:
-    if partner_id in _partner_name_cache:
-        return _partner_name_cache[partner_id]
+def _get_partner_cached(partner_id: int) -> dict:
+    """取引先情報（名前・銀行口座）をキャッシュ付きで取得する。APIコールは1回のみ。"""
+    if partner_id in _partner_cache:
+        return _partner_cache[partner_id]
     try:
         r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
                          params={"company_id": FREEE_COMPANY_ID}, timeout=15)
         if r.status_code == 200:
-            name = r.json().get("partner", {}).get("name", "")
-            _partner_name_cache[partner_id] = name
-            return name
+            partner = r.json().get("partner", {})
+            bank = partner.get("partner_bank_account_attributes", {}) or {}
+            info = {
+                "name": partner.get("name", ""),
+                "bank_code": bank.get("bank_code", ""),
+                "bank_name": bank.get("bank_name", ""),
+                "branch_code": bank.get("branch_code", ""),
+                "branch_name": bank.get("branch_name", ""),
+                "account_type": bank.get("account_type", "ordinary"),
+                "account_number": bank.get("account_number", ""),
+                "account_name": bank.get("account_name", ""),
+            }
+            _partner_cache[partner_id] = info
+            return info
     except Exception:
         pass
-    return ""
+    empty = {"name": "", "bank_code": "", "bank_name": "", "branch_code": "",
+             "branch_name": "", "account_type": "ordinary", "account_number": "", "account_name": ""}
+    _partner_cache[partner_id] = empty
+    return empty
+
+
+# 後方互換: 旧関数名を維持
+_partner_name_cache: dict = {}  # 旧キャッシュ（使用箇所は_get_partner_cachedに統合済み）
+
+
+def _get_partner_name_cached(partner_id: int) -> str:
+    """取引先名を返す（後方互換ラッパー）"""
+    return _get_partner_cached(partner_id).get("name", "")
 
 
 def get_partner_bank(partner_id: int) -> dict:
-    """取引先の銀行口座情報を取得する"""
-    r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
-                     params={"company_id": FREEE_COMPANY_ID}, timeout=15)
-    if r.status_code != 200:
-        return {}
-    partner = r.json().get("partner", {})
-    bank = partner.get("partner_bank_account_attributes", {})
+    """取引先の銀行口座情報を返す（キャッシュ付き）"""
+    info = _get_partner_cached(partner_id)
     return {
-        "partner_name": partner.get("name", ""),
-        "bank_code": bank.get("bank_code", ""),
-        "bank_name": bank.get("bank_name", ""),
-        "branch_code": bank.get("branch_code", ""),
-        "branch_name": bank.get("branch_name", ""),
-        "account_type": bank.get("account_type", "ordinary"),
-        "account_number": bank.get("account_number", ""),
-        "account_name": bank.get("account_name", ""),
+        "partner_name": info["name"],
+        "bank_code": info["bank_code"],
+        "bank_name": info["bank_name"],
+        "branch_code": info["branch_code"],
+        "branch_name": info["branch_name"],
+        "account_type": info["account_type"],
+        "account_number": info["account_number"],
+        "account_name": info["account_name"],
     }
 
 

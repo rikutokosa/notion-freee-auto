@@ -2307,8 +2307,16 @@ def changelog():
             timeout=10,
         )
         if resp.status_code == 200:
+            from datetime import datetime, timezone, timedelta
+            JST = timezone(timedelta(hours=9))
             for commit in resp.json():
-                date_str = commit.get("commit", {}).get("author", {}).get("date", "")[:10]
+                raw_date = commit.get("commit", {}).get("author", {}).get("date", "")
+                try:
+                    dt_utc = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                    dt_jst = dt_utc.astimezone(JST)
+                    date_str = dt_jst.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    date_str = raw_date[:16]
                 msg = commit.get("commit", {}).get("message", "").splitlines()[0]
                 sha = commit.get("sha", "")[:7]
                 history.append({"date": date_str, "message": msg, "sha": sha})
@@ -2320,7 +2328,7 @@ def changelog():
         try:
             import subprocess
             result = subprocess.run(
-                ["git", "log", "--format=%ad|%h|%s", "--date=format:%Y-%m-%d"],
+                ["git", "log", "--format=%ad|%h|%s", "--date=format:%Y-%m-%d %H:%M"],
                 capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
             )
             for line in result.stdout.strip().splitlines():

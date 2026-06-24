@@ -815,31 +815,6 @@
 
   </div>
 
-  <div id="tab-history" class="rules-section">
-    <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">rules.py の変更履歴（git log）</h3>
-    {% if rules_history %}
-    <table class="history-table">
-      <thead>
-        <tr>
-          <th>日付</th>
-          <th>変更内容（コミットメッセージ）</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for h in rules_history %}
-        <tr>
-          <td class="history-date">{{ h.date }}</td>
-          <td>{{ h.message }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div style="text-align:center;padding:48px;color:#94a3b8;">
-      <div>変更履歴を取得できませんでした（gitが利用できない環境の可能性があります）。</div>
-    </div>
-    {% endif %}
-  </div>
 
 </div>
 {% endblock %}

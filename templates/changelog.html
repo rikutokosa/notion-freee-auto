@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}変更履歴 | 本店経理自動化システム{% endblock %}
+
+{% block content %}
+<style>
+  .cl-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .cl-header h2 { margin: 0; font-size: 20px; }
+  .cl-sub {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 24px;
+  }
+  .cl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cl-table th {
+    background: #f1f5f9;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 700;
+    color: #475569;
+    border-bottom: 2px solid #e2e8f0;
+    font-size: 12px;
+  }
+  .cl-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+  }
+  .cl-table tr:hover td { background: #f8fafc; }
+  .cl-date {
+    white-space: nowrap;
+    color: #4a90d9;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .cl-sha {
+    font-family: monospace;
+    font-size: 11px;
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .cl-msg { color: #1e293b; line-height: 1.5; }
+  .cl-empty {
+    text-align: center;
+    color: #94a3b8;
+    padding: 40px;
+    font-size: 14px;
+  }
+</style>
+
+<div class="card">
+  <div class="cl-header">
+    <span style="font-size:24px;">📅</span>
+    <h2>変更履歴</h2>
+  </div>
+  <p class="cl-sub">本店経理自動化システムのすべての変更・改修履歴です（GitHubコミット履歴から自動取得）。</p>
+
+  {% if history %}
+  <table class="cl-table">
+    <thead>
+      <tr>
+        <th style="width:110px;">日付</th>
+        <th style="width:80px;">コミット</th>
+        <th>変更内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in history %}
+      <tr>
+        <td class="cl-date">{{ item.date }}</td>
+        <td><span class="cl-sha">{{ item.sha }}</span></td>
+        <td class="cl-msg">{{ item.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="cl-empty">
+    変更履歴を取得できませんでした。<br>
+    GitHub API トークンが設定されているか確認してください。
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -2283,8 +2283,17 @@ def rules_page():
     import requests as req
     from rules import RULES
 
-    # rules.pyの変更履歴をGitHub APIから取得
-    rules_history = []
+    return render_template(
+        "rules.html",
+        rules=RULES,
+    )
+
+
+@app.route("/changelog")
+def changelog():
+    """変更履歴ページ（リポジトリ全体のコミット履歴）"""
+    import requests as req
+    history = []
     try:
         github_repo = os.environ.get("GITHUB_REPO", "rikutokosa/notion-freee-auto")
         github_token = os.environ.get("GITHUB_TOKEN", "")
@@ -2294,37 +2303,34 @@ def rules_page():
         resp = req.get(
             f"https://api.github.com/repos/{github_repo}/commits",
             headers=headers,
-            params={"path": "rules.py", "per_page": 50},
+            params={"per_page": 100},
             timeout=10,
         )
         if resp.status_code == 200:
             for commit in resp.json():
                 date_str = commit.get("commit", {}).get("author", {}).get("date", "")[:10]
                 msg = commit.get("commit", {}).get("message", "").splitlines()[0]
-                rules_history.append({"date": date_str, "message": msg})
+                sha = commit.get("sha", "")[:7]
+                history.append({"date": date_str, "message": msg, "sha": sha})
     except Exception:
         pass
 
     # GitHub APIが使えない場合はgit logにフォールバック
-    if not rules_history:
+    if not history:
         try:
             import subprocess
             result = subprocess.run(
-                ["git", "log", "--format=%ad|%s", "--date=format:%Y-%m-%d", "--", "rules.py"],
+                ["git", "log", "--format=%ad|%h|%s", "--date=format:%Y-%m-%d"],
                 capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
             )
             for line in result.stdout.strip().splitlines():
-                if "|" in line:
-                    date_str, msg = line.split("|", 1)
-                    rules_history.append({"date": date_str, "message": msg})
+                parts = line.split("|", 2)
+                if len(parts) == 3:
+                    history.append({"date": parts[0], "sha": parts[1], "message": parts[2]})
         except Exception:
             pass
 
-    return render_template(
-        "rules.html",
-        rules=RULES,
-        rules_history=rules_history,
-    )
+    return render_template("changelog.html", history=history)
 
 
 # ============================================================

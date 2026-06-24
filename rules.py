@@ -100,8 +100,8 @@ RULES = {
     "Hitolink": {
         "no": 8,
         "added_date": "2026-06-22",
-        "type": "求人DB",
-        "supplier": None,
+        "type": "求人BD",
+        "supplier": "パーソルイノベーション株式会社",
         "supplier_id": 105296246,  # freee取引先ID（パーソルイノベーション）
         "payment_rule": "入社翌月末",
         "billing_type": "請求書登録",

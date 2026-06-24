@@ -15,7 +15,7 @@
   .rules-section { display:none; }
   .rules-section.active { display:block; }
 
-  /* 機能ルールテーブル */
+  /* テーブル共通 */
   .rules-table { width:100%; border-collapse:collapse; font-size:14px; }
   .rules-table th {
     background:#f1f5f9; padding:10px 14px; text-align:left;
@@ -25,15 +25,22 @@
     padding:10px 14px; border-bottom:1px solid #f1f5f9; vertical-align:top;
   }
   .rules-table tr:hover td { background:#f8fafc; }
+
+  /* バッジ */
   .badge-type {
     display:inline-block; padding:2px 8px; border-radius:12px;
     font-size:11px; font-weight:700;
   }
   .badge-求人DB { background:#dbeafe; color:#1d4ed8; }
-  .badge-集客 { background:#dcfce7; color:#15803d; }
+  .badge-集客   { background:#dcfce7; color:#15803d; }
   .badge-パートナー { background:#fef3c7; color:#b45309; }
   .badge-invoice { background:#fce7f3; color:#be185d; }
   .badge-journal { background:#ede9fe; color:#7c3aed; }
+  .badge-warn    { background:#fff7ed; color:#c2410c; }
+  .badge-ok      { background:#f0fdf4; color:#15803d; }
+  .badge-info    { background:#eff6ff; color:#1d4ed8; }
+
+  /* NO.バッジ */
   .rule-no {
     display:inline-block; min-width:32px; padding:2px 7px;
     background:#1e293b; color:#fff; border-radius:6px;
@@ -44,9 +51,20 @@
     background:#94a3b8; color:#fff; border-radius:6px;
     font-size:11px; font-weight:700; text-align:center;
   }
-  .added-date {
-    font-size:11px; color:#94a3b8; white-space:nowrap;
+  .added-date { font-size:11px; color:#94a3b8; white-space:nowrap; }
+
+  /* 機能ルールカード */
+  .func-rule-card {
+    border:1px solid #e2e8f0; border-radius:12px; margin-bottom:24px;
+    overflow:hidden;
   }
+  .func-rule-card-header {
+    background:#f8fafc; padding:14px 20px;
+    border-bottom:1px solid #e2e8f0;
+    display:flex; align-items:center; gap:12px;
+  }
+  .func-rule-card-header h3 { margin:0; font-size:16px; color:#1e293b; }
+  .func-rule-card-body { padding:20px; }
 
   /* 変更履歴 */
   .history-table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -57,113 +75,599 @@
   .history-table td { padding:8px 14px; border-bottom:1px solid #f1f5f9; }
   .history-table tr:hover td { background:#f8fafc; }
   .history-date { color:#3b82f6; font-weight:600; white-space:nowrap; }
+
+  /* インフォボックス */
+  .info-box {
+    padding:14px 18px; border-radius:10px; margin-top:16px;
+  }
+  .info-box.green  { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .info-box.blue   { background:#eff6ff; border:1px solid #bfdbfe; }
+  .info-box.yellow { background:#fffbeb; border:1px solid #fde68a; }
+  .info-box.red    { background:#fff1f2; border:1px solid #fecdd3; }
+  .info-box p { margin:6px 0 0; font-size:13px; line-height:1.7; }
 </style>
 
 <div class="card">
   <h2 style="margin:0 0 6px;">📖 ルールブック</h2>
   <p style="color:#64748b;margin:0 0 20px;font-size:14px;">
-    集客経路・求人DBごとの仕訳ルール（rules.py から自動取得）と変更履歴を管理します。
+    各機能の運用ルール・集客経路ごとの仕訳ルール・変更履歴をまとめています。
   </p>
 
   <div class="rules-tabs">
-    <button class="rules-tab-btn active" onclick="showTab('func-rules', this)">⚙️ 機能ルール</button>
-    <button class="rules-tab-btn" onclick="showTab('history', this)">🕐 変更履歴</button>
+    <button class="rules-tab-btn active" onclick="showTab('tab-jidou', this)">🔄 自動転記</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-seikyu', this)">📄 請求書登録</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-shocho', this)">🗂 書類照合</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-shiharai', this)">💸 支払管理</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-assistant', this)">🤖 仕訳アシスタント</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-keiro', this)">📋 集客経路ルール</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-history', this)">🕐 変更履歴</button>
   </div>
 
-  <!-- ① 機能ルール（rules.py） -->
-  <div id="func-rules" class="rules-section active">
-    <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">集客経路・求人DBごとの仕訳ルール</h3>
 
-    <table class="rules-table">
-      <thead>
-        <tr>
-          <th style="width:48px;">NO.</th>
-          <th>キー（Notion値）</th>
-          <th>種別</th>
-          <th>取引先</th>
-          <th>支払ルール</th>
-          <th>登録方式</th>
-          <th>請求書</th>
-          <th>追加日</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for key, rule in rules.items() %}
-        {% set rtype = rule.get('type','') %}
-        {% set rno = rule.get('no') %}
-        <tr>
-          <td style="text-align:center;">
-            {% if rno %}
-              <span class="rule-no">{{ rno }}</span>
-            {% else %}
-              <span class="rule-no-legacy">旧</span>
-            {% endif %}
-          </td>
-          <td>
-            <strong>{{ key }}</strong>
-            {% if not rno %}
-              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">後方互換キー</div>
-            {% endif %}
-          </td>
-          <td>
-            <span class="badge-type badge-{{ rtype }}">{{ rtype }}</span>
-          </td>
-          <td style="color:#475569;">{{ rule.get('supplier') or '—' }}</td>
-          <td>{{ rule.get('payment_rule','—') }}</td>
-          <td>
-            {% if rule.get('needs_invoice') %}
-              <span class="badge-type badge-invoice">請求書登録</span>
-            {% else %}
-              <span class="badge-type badge-journal">仕訳登録のみ</span>
-            {% endif %}
-          </td>
-          <td style="text-align:center;">
-            {% if rule.get('needs_invoice') %}✅{% else %}—{% endif %}
-          </td>
-          <td>
-            {% if rule.get('added_date') %}
-              <span class="added-date">{{ rule.get('added_date')[5:] | replace('-', '/') }}</span>
-            {% else %}
-              <span class="added-date">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <!-- ① 自動転記 -->
+  <div id="tab-jidou" class="rules-section active">
 
-    <div style="margin-top:20px;padding:14px 18px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
-      <strong style="color:#15803d;">💡 金額処理の基本ルール</strong>
-      <p style="margin:6px 0 0;font-size:13px;color:#166534;line-height:1.6;">
-        このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
-        Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
-        freee請求書登録時は <code>tax_entry_method="in"</code> 固定（freee_client.py）。
-        税抜変換（×1.1や÷1.1）はrules.pyでは行いません。
-      </p>
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔄</span>
+        <h3>自動転記の基本フロー</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          Notionの「②経理対応待ち」ビューに入っているレコードを自動検知し、freeeに仕訳・請求書を登録します。
+          自動転記の間隔は <strong>{{ "{:,}".format(3600) }}秒（1時間）</strong> ごとです（環境変数 <code>POLL_INTERVAL</code> で変更可）。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>Notionの請求ステータス</th>
+              <th>実行される処理</th>
+              <th>処理完了後のステータス</th>
+              <th>freee処理状態</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>本部確認済</strong></td>
+              <td>
+                「請求有無=要請求」→ 請求書登録 + 仕入仕訳登録<br>
+                「請求有無=請求不要」→ 売上仕訳 + 仕入仕訳を登録
+              </td>
+              <td>□承諾→freee登録済</td>
+              <td>仕訳成功 / 請求登録成功（要仕訳転記）</td>
+            </tr>
+            <tr>
+              <td><strong>●入社済</strong>（要請求のみ）</td>
+              <td>freee請求書IDを取得して請求書を送付</td>
+              <td>入社→請求済</td>
+              <td>請求成功</td>
+            </tr>
+            <tr>
+              <td><strong>●入社前辞退</strong></td>
+              <td>freee売上取引ID・freee仕入取引IDの仕訳を削除</td>
+              <td>□入社前辞退→freee更新済</td>
+              <td>仕訳成功</td>
+            </tr>
+            <tr>
+              <td><strong>●返金（短期離職）</strong></td>
+              <td>返金率に応じたマイナス仕訳を追加登録</td>
+              <td>□返金→freee・請求書更新済</td>
+              <td>仕訳成功</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">⚠️ PCA（本店PCA）の場合の追加処理</strong>
+          <p style="color:#92400e;">
+            PCA成約管理DBのレコードは、売上仕訳・仕入仕訳に加えて
+            <strong>パートナー（外注業者）への支払仕訳（PCA仕入高）</strong>も同時に登録します。
+            部門は「本店：PCA」固定。担当パートナーはNotionの「担当パートナー」フィールドから取得します。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 Notionフィールドとfreeeの対応</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>Notionフィールド</th><th>freeeへの反映先</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>税込売上</td><td>売上仕訳の金額（income）</td></tr>
+              <tr><td>税込集客手数料</td><td>仕入仕訳の金額（expense）</td></tr>
+              <tr><td>売上決済期日</td><td>売上仕訳の due_date</td></tr>
+              <tr><td>仕入決済期日</td><td>仕入仕訳の due_date（未設定時は入社日＋支払ルールで自動計算）</td></tr>
+              <tr><td>freee売上取引先ID</td><td>売上仕訳の partner_id</td></tr>
+              <tr><td>freee集客取引先ID</td><td>仕入仕訳の partner_id</td></tr>
+              <tr><td>担当CA（rollup）</td><td>仕訳のメモタグ</td></tr>
+              <tr><td>求職者名 + 決定企業名</td><td>仕訳の備考（description）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="info-box green" style="margin-top:12px;">
+          <strong style="color:#15803d;">💡 金額処理の基本ルール（絶対厳守）</strong>
+          <p style="color:#166534;">
+            このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
+            Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
+            freee請求書登録時は <code>tax_entry_method="in"</code> 固定。
+            <strong>税抜変換（×1.1や÷1.1）は行いません。</strong>
+            「out」に変更すると二重課税になるため絶対に変更しないこと。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">🏢 部門設定ルール</strong>
+          <p style="color:#1e40af;">
+            売上・仕入仕訳の部門は <strong>本店CA</strong> または <strong>本店PCA</strong> のいずれかを自動設定します。
+            Notionの <code>_db_type</code>（honten / pca）で判定し、pca の場合は「本店：PCA」、それ以外は「本店：CA」を使用します。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 返金処理の計算ルール</strong>
+          <p style="color:#92400e;">
+            返金額の計算は以下の優先順位で行います。<br>
+            ① Notionに「返金後入金売上」「返金後集客手数料」が入力されている場合 → その値と元の値の差額<br>
+            ② 未入力の場合 → 元の税抜金額 × 返金率 ÷ 100 × 1.1（税込換算）<br>
+            売上返金の決済期日：退職日の翌月末。仕入返金の決済期日：退職日 + 30日。
+          </p>
+        </div>
+      </div>
     </div>
 
-    <div style="margin-top:16px;padding:14px 18px;background:#eff6ff;border-radius:10px;border:1px solid #bfdbfe;">
-      <strong style="color:#1d4ed8;">📋 ステータス別の処理フロー</strong>
-      <table class="rules-table" style="margin-top:10px;">
-        <thead>
-          <tr>
-            <th>請求ステータス</th>
-            <th>処理内容</th>
-            <th>完了後ステータス</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>本部確認済</td><td>仕訳登録 or 請求書登録</td><td>□承諾→freee登録済</td></tr>
-          <tr><td>●入社済（要請求のみ）</td><td>請求書送付</td><td>入社→請求済</td></tr>
-          <tr><td>●入社前辞退</td><td>取引削除（freee売上取引ID・freee仕入取引IDを使用）</td><td>□入社前辞退→freee更新済</td></tr>
-          <tr><td>●返金（短期離職）</td><td>返金率に応じたマイナス仕訳を追加登録</td><td>□返金→freee・請求書更新済</td></tr>
-        </tbody>
-      </table>
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔁</span>
+        <h3>自動転記の停止・再開ルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead>
+            <tr><th>操作</th><th>挙動</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>「自動転記停止」ボタン</td>
+              <td>メモリ内フラグ（<code>FREEE_AUTO_STOPPED=1</code>）を立てて停止。<strong>プロセス再起動後は環境変数の初期値に戻る。</strong></td>
+            </tr>
+            <tr>
+              <td>「自動転記開始」ボタン</td>
+              <td>停止フラグを解除して強制開始（<code>force=True</code>）。</td>
+            </tr>
+            <tr>
+              <td>freeeトークン期限切れ</td>
+              <td>転記をスキップしてログに警告を記録。認証後に自動再開。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- ② 変更履歴（git log） -->
-  <div id="history" class="rules-section">
+
+  <!-- ② 請求書登録 -->
+  <div id="tab-seikyu" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📄</span>
+        <h3>請求書登録の仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          「請求有無=要請求」のレコードは仕訳登録ではなく<strong>freee請求書API</strong>で請求書を登録します。
+          売上仕訳はfreee管理画面の「取引登録」ボタンで手動転記が必要です。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>請求書フィールド</th><th>設定値・ルール</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>件名（subject）</td><td><strong>「人材紹介手数料」固定</strong></td></tr>
+            <tr><td>明細1（品目行）</td><td>品目名 = 求職者名（例：山田太郎様）、単価 = 税込売上、税率 = 10%</td></tr>
+            <tr><td>明細2（テキスト行）</td><td>「入社企業：{入社企業名}様」</td></tr>
+            <tr><td>備考（invoice_note）</td><td><strong>「振込手数料は貴社負担でお願いいたします。」固定</strong></td></tr>
+            <tr><td>社内メモ（memo）</td><td>「本店：CA」または「本店：PCA」</td></tr>
+            <tr><td>税入力方式（tax_entry_method）</td><td><strong>「in」（税込入力）固定</strong></td></tr>
+            <tr><td>請求日（billing_date）</td><td>Notionの入社日</td></tr>
+            <tr><td>支払期日（payment_date）</td><td>Notionの売上決済期日</td></tr>
+            <tr><td>取引先（partner_id）</td><td>Notionの「freee売上取引先ID」優先、なければ取引先名で検索</td></tr>
+          </tbody>
+        </table>
+
+        <div class="info-box red" style="margin-top:16px;">
+          <strong style="color:#be123c;">🚨 請求書登録後の必須作業</strong>
+          <p style="color:#9f1239;">
+            請求書登録が完了すると Notion の freee処理状態が <strong>「請求登録成功（要仕訳転記）」</strong> になります。
+            この状態では<strong>売上仕訳がfreeeに登録されていません</strong>。
+            freee管理画面で該当請求書を開き、「取引登録」ボタンを押して売上仕訳を手動で作成してください。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 請求有無の判定ルール</strong>
+          <p style="color:#1e40af;">
+            Notionの「請求有無」フォーミュラフィールドを優先参照します（「要請求」または「請求不要」）。
+            フィールドが存在しない場合は集客経路ルール（RULES辞書）の <code>needs_invoice</code> で判定します（後方互換）。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 請求書送付（●入社済）の条件</strong>
+          <p style="color:#92400e;">
+            「●入社済」ステータスで処理が走ると、Notionの「freee請求書ID」フィールドを参照して請求書を送付します。
+            <strong>freee請求書IDが未入力の場合はエラーになります。</strong>
+            「本部確認済」の処理で請求書が登録されているか先に確認してください。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ③ 書類照合 -->
+  <div id="tab-shocho" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🗂</span>
+        <h3>書類照合の仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          freeeファイルボックスの未紐づけ書類を既存仕訳と自動照合・紐づけします。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>ステップ</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>① 未紐づけ書類取得</td>
+              <td>freeeファイルボックスから <code>category=without_deal</code> の書類を全件取得（ページング対応）</td>
+            </tr>
+            <tr>
+              <td>② OCR確認</td>
+              <td>freee OCRの解析結果（金額・発行日）を確認</td>
+            </tr>
+            <tr>
+              <td>③ AI-OCRフォールバック</td>
+              <td>
+                freee OCRで金額または発行日が取れない場合、PDFをダウンロードして
+                OpenAI Vision API（gpt-5-mini）で再解析。最大3ページを画像化して処理。
+                <strong>AI-OCRでも取得できない場合は「未照合」として記録。</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>④ 仕訳検索</td>
+              <td>
+                金額完全一致（許容誤差0円）・発行日 <strong>±90日</strong> の仕訳を検索。
+                売上（income）・支出（expense）の両方を対象。
+                発生日（issue_date）と支払期日（due_date）の両方で検索してマージ。
+              </td>
+            </tr>
+            <tr>
+              <td>⑤ スコアリング</td>
+              <td>
+                日付の近さ（最大50点：同日=50点、1日ずれ=49点…）＋
+                取引先名の一致（完全一致=30点、部分一致=15点）でスコア計算。
+                最高スコアの仕訳1件に自動紐づけ。
+              </td>
+            </tr>
+            <tr>
+              <td>⑥ 紐づけ実行</td>
+              <td>
+                既存の紐づけ済み書類を保持したまま追加紐づけ（上書きしない）。
+                紐づけAPIが失敗した場合は「未照合」として記録。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">⚠️ 未照合になるケース</strong>
+          <p style="color:#92400e;">
+            ① freee OCR・AI-OCRともに金額または発行日が取得できない<br>
+            ② 金額完全一致・発行日±90日の仕訳が1件も見つからない<br>
+            ③ 紐づけAPIが失敗した<br>
+            これらのケースは手動でfreee管理画面から紐づけを行ってください。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ④ 支払管理 -->
+  <div id="tab-shiharai" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">💸</span>
+        <h3>支払管理・振込FBファイルの仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          freeeの未決済支出仕訳から振込対象を抽出し、全銀フォーマット（FB形式）ファイルを生成します。
+          生成後は SBIネット銀行の総合振込画面にアップロードして使用します。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>分類</th><th>条件</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge-type badge-ok">振込対象</span></td>
+              <td>
+                本店部門（本店：CA / 本店：PCA / 本店：PRA / 本店：AIスカウト / 本店：その他）の未決済支出仕訳で、
+                <strong>証憑（添付ファイル）あり</strong>かつ<strong>銀行口座登録済み</strong>かつ
+                <strong>除外条件に該当しない</strong>もの
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge-type badge-warn">アラート対象</span></td>
+              <td>
+                ① 証憑あり・銀行口座未登録 → 「口座未登録」アラート<br>
+                ② 証憑なし・支払期日まで <strong>10日以内</strong> → 「証憑未添付」アラート
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge-type badge-journal">除外対象</span></td>
+              <td>
+                CSS部門が1つでも含まれる仕訳、または以下の取引先・勘定科目に該当するもの
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">🚫 振込除外対象（取引先名・部分一致）</strong>
+          <p style="color:#92400e;font-size:13px;">
+            給与 / シンクバンク / 日本政策金融公庫 / 横浜銀行 / さわやか信用金庫 / 西武信用金庫 /
+            WANTEDLY / wantedly / ウォンテッドリー / L MESSAGE / Lメッセージ / オリコフォレント / フォンデスク
+          </p>
+          <strong style="color:#b45309;display:block;margin-top:8px;">🚫 振込除外対象（勘定科目名・部分一致）</strong>
+          <p style="color:#92400e;font-size:13px;">
+            給与 / 賞与 / 役員報酬 / 法定福利費 / 長期借入金 / 短期借入金 /
+            所得税 / 住民税 / 消費税 / 法人税 / 印紙税 / 社宅
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📋 FBファイル生成ルール</strong>
+          <p style="color:#1e40af;">
+            ・形式：全国銀行協会 総合振込フォーマット（固定長120バイト、Shift-JIS）<br>
+            ・振込指定日：対象仕訳の中で最も早い due_date を使用<br>
+            ・各明細の振込日：各仕訳の due_date（未設定の場合はヘッダーの日付で代用）<br>
+            ・FBファイル生成確定後：対象仕訳に「振込依頼済」メモタグ（ID=35285961）を自動付与<br>
+            ・「振込依頼済」タグが付いている仕訳は次回以降の振込対象から除外される<br>
+            ・検索範囲：過去90日〜未来60日の未決済支出仕訳
+          </p>
+        </div>
+
+        <div class="info-box green" style="margin-top:12px;">
+          <strong style="color:#15803d;">🏦 依頼人情報（住信SBIネット銀行）</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>項目</th><th>値</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>銀行コード</td><td>0038（住信SBIネット銀行）</td></tr>
+              <tr><td>支店番号</td><td>106</td></tr>
+              <tr><td>口座種別</td><td>普通（1）</td></tr>
+              <tr><td>口座番号</td><td>1356501</td></tr>
+              <tr><td>依頼人名（カナ）</td><td>ﾍﾞｱｰｽﾞﾅﾋﾞ</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ⑤ 仕訳アシスタント -->
+  <div id="tab-assistant" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🤖</span>
+        <h3>仕訳アシスタントの仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          自然言語でfreeeを操作できるAIエージェントです。OpenAI Function Callingを使用します。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>機能</th><th>ルール・制約</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>仕訳登録</strong></td>
+              <td>
+                確認なしで即時実行（ユーザーが「登録して」と指示した時点で実行）。
+                取引先がマスタに存在しない場合は自動作成してから登録。
+                繰り返し登録（repeat）に対応：指定月数分を連続登録。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>削除処理</strong></td>
+              <td>
+                必ず search_deals / search_invoices で対象を検索してIDを取得してから実行。
+                フロントエンドが削除確認ボタンを表示し、ユーザーがボタンを押した後に実際の削除が実行される。
+                AIはテキストで「削除しますか？」と聞かない。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>照会・集計</strong></td>
+              <td>
+                list_deals / list_invoices / get_deal で仕訳・請求書を取得して集計・報告。
+                「先月の売上合計」「今月の支出一覧」などの自然言語に対応。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>添付ファイル（OCR）</strong></td>
+              <td>
+                PDF・画像をアップロードすると OpenAI Vision API（gpt-4o）でテキスト抽出。
+                最大20MB。抽出テキストをAIに渡して仕訳登録に活用。
+                「画像は読めない」とは言わない。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>日付の解釈</strong></td>
+              <td>
+                「先月」→ 前月の年月、「今月」→ 当月の年月、「7月」→ 当年度の7月として解釈。
+                今年度 = 4月〜翌3月。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>取引先・勘定科目の推測</strong></td>
+              <td>
+                マスタ一覧から最も近いものを推測して使用。
+                例：「ステリファイ」→「stellify」、「売上」→「売上高」、「広告費」→「広告宣伝費」
+              </td>
+            </tr>
+            <tr>
+              <td><strong>会話履歴</strong></td>
+              <td>
+                SQLiteに保存（Railway ボリューム <code>/data/chat_history.db</code>）。
+                セッションIDで管理。最大200件の仕訳登録ログをメモリ内に保持。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box red" style="margin-top:16px;">
+          <strong style="color:#be123c;">🚨 破壊的操作（削除・更新）のルール</strong>
+          <p style="color:#9f1239;">
+            削除・更新などの破壊的操作は必ずユーザー確認を得てから実行します。
+            AIが delete_deals を呼び出すと、フロントエンドに確認ボタンが表示されます。
+            ユーザーがボタンを押した後に実際の削除が実行されます。
+            <strong>登録は確認なしで実行します</strong>（ユーザーが「登録して」と言った時点で実行）。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ⑥ 集客経路ルール -->
+  <div id="tab-keiro" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📋</span>
+        <h3>集客経路・求人DBごとの仕訳ルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          Notionの「求人データベース」selectの値に対応するルールです。rules.py の RULES 辞書から自動取得しています。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th style="width:48px;">NO.</th>
+              <th>キー（Notion値）</th>
+              <th>種別</th>
+              <th>取引先</th>
+              <th>支払ルール</th>
+              <th>登録方式</th>
+              <th>請求書</th>
+              <th>追加日</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for key, rule in rules.items() %}
+            {% set rtype = rule.get('type','') %}
+            {% set rno = rule.get('no') %}
+            <tr>
+              <td style="text-align:center;">
+                {% if rno %}
+                  <span class="rule-no">{{ rno }}</span>
+                {% else %}
+                  <span class="rule-no-legacy">旧</span>
+                {% endif %}
+              </td>
+              <td>
+                <strong>{{ key }}</strong>
+                {% if not rno %}
+                  <div style="font-size:11px;color:#94a3b8;margin-top:2px;">後方互換キー</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge-type badge-{{ rtype }}">{{ rtype }}</span>
+              </td>
+              <td style="color:#475569;">{{ rule.get('supplier') or '—' }}</td>
+              <td>{{ rule.get('payment_rule','—') }}</td>
+              <td>
+                {% if rule.get('needs_invoice') %}
+                  <span class="badge-type badge-invoice">請求書登録</span>
+                {% else %}
+                  <span class="badge-type badge-journal">仕訳登録のみ</span>
+                {% endif %}
+              </td>
+              <td style="text-align:center;">
+                {% if rule.get('needs_invoice') %}✅{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if rule.get('added_date') %}
+                  <span class="added-date">{{ rule.get('added_date')[5:] | replace('-', '/') }}</span>
+                {% else %}
+                  <span class="added-date">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="info-box blue" style="margin-top:16px;">
+          <strong style="color:#1d4ed8;">📌 支払ルールの計算方法</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>支払ルール</th><th>計算方法</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>入社翌々月10日</td><td>入社日 + 2ヶ月後の10日</td></tr>
+              <tr><td>入社翌々月4日</td><td>入社日 + 2ヶ月後の4日</td></tr>
+              <tr><td>入社翌々月末日</td><td>入社日 + 2ヶ月後の月末</td></tr>
+              <tr><td>入社翌月末</td><td>入社日 + 1ヶ月後の月末</td></tr>
+              <tr><td>入社翌月10日</td><td>入社日 + 1ヶ月後の10日</td></tr>
+              <tr><td>登録不要</td><td>仕入仕訳を登録しない（CSS求人など）</td></tr>
+              <tr><td>都度確認</td><td>自動処理せず「要確認」として手動対応</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ CSS求人の特例</strong>
+          <p style="color:#92400e;">
+            CSS求人（旧キー含む）は<strong>スカウト手数料のみ登録</strong>します。
+            仕入仕訳（集客手数料）は登録しません（payment_rule = 登録不要）。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 本店自社求人の特例</strong>
+          <p style="color:#92400e;">
+            本店自社求人は決済期日が「都度確認」のため、自動処理されません。
+            「要確認」として記録され、手動でfreeeに登録する必要があります。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ⑦ 変更履歴 -->
+  <div id="tab-history" class="rules-section">
     <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">rules.py の変更履歴（git log）</h3>
     {% if rules_history %}
     <table class="history-table">
@@ -188,6 +692,7 @@
     </div>
     {% endif %}
   </div>
+
 </div>
 {% endblock %}
 

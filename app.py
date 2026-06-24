@@ -26,6 +26,32 @@ import threading
 from datetime import datetime
 import tempfile
 from pathlib import Path
+import sqlite3
+
+# ============================================================
+# 会話履歴DB（ボリューム永続化）
+# ============================================================
+_VOLUME_PATH = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "/data")
+_DB_PATH = os.path.join(_VOLUME_PATH, "chat_history.db")
+
+def _get_db():
+    """SQLite接続を返す。DBファイルが存在しない場合は作成する。"""
+    os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            session_id TEXT NOT NULL,
+            seq        INTEGER NOT NULL,
+            role       TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (session_id, seq)
+        )
+    """)
+    conn.commit()
+    return conn
+
+
 from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file
 
 from freee_client import (
@@ -2003,6 +2029,61 @@ def api_receipt_download(receipt_id: int):
     except Exception as e:
         logger.exception("証憑ダウンロードエラー")
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# 会話履歴API
+# ============================================================
+@app.route("/api/chat_history/<session_id>", methods=["GET"])
+def api_get_chat_history(session_id):
+    """session_idの会話履歴を返す"""
+    try:
+        conn = _get_db()
+        rows = conn.execute(
+            "SELECT role, content FROM chat_sessions WHERE session_id=? ORDER BY seq ASC",
+            (session_id,)
+        ).fetchall()
+        conn.close()
+        messages = [{"role": r[0], "content": r[1]} for r in rows]
+        return jsonify({"session_id": session_id, "messages": messages})
+    except Exception as e:
+        logger.exception("chat_history取得エラー")
+        return jsonify({"session_id": session_id, "messages": []})
+
+
+@app.route("/api/chat_history/<session_id>", methods=["POST"])
+def api_save_chat_history(session_id):
+    """session_idの会話履歴を保存する（全件上書き）"""
+    try:
+        data = request.get_json(force=True)
+        messages = data.get("messages", [])
+        conn = _get_db()
+        conn.execute("DELETE FROM chat_sessions WHERE session_id=?", (session_id,))
+        for i, msg in enumerate(messages):
+            conn.execute(
+                "INSERT INTO chat_sessions (session_id, seq, role, content) VALUES (?,?,?,?)",
+                (session_id, i, msg.get("role", "user"), msg.get("content", ""))
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok", "saved": len(messages)})
+    except Exception as e:
+        logger.exception("chat_history保存エラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/chat_history/<session_id>", methods=["DELETE"])
+def api_delete_chat_history(session_id):
+    """session_idの会話履歴を削除する"""
+    try:
+        conn = _get_db()
+        conn.execute("DELETE FROM chat_sessions WHERE session_id=?", (session_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.exception("chat_history削除エラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ============================================================

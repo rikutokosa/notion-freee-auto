@@ -110,7 +110,7 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
         "issue_date": sales_entry.get("issue_date", datetime.now().strftime("%Y-%m-%d")),
         "due_date": sales_entry.get("due_date"),
         "partner_name": sales_entry.get("partner_name"),
-        "partner_id": sales_entry.get("partner_id"),  # Notionのfreee売上取引ID（取引先ID）
+        "partner_id": sales_entry.get("partner_id"),  # Notionのfreee売上取引先ID（取引先ID）
         "title": "人材紹介手数料",
         "invoice_note": "振込手数料は貴社負担でお願いいたします。",
         "memo": section_memo,
@@ -354,7 +354,8 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                          db_type=db_type,
                          freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
                          sales_id=reg_result["sales_id"],
-                         purchase_id=reg_result["purchase_id"])
+                         purchase_id=reg_result["purchase_id"],
+                         pca_id=reg_result.get("pca_id"))
             result["status"] = "success"
             result["message"] = (
                 f"仕訳を登録しました "

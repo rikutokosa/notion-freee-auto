@@ -291,6 +291,58 @@ let aiHistory = [];
 let aiFiles = [];       // AI指示タブの添付ファイル
 let formFiles = [];     // フォームタブの添付ファイル
 
+// ===== セッションID管理（会話履歴の永続化） =====
+function getOrCreateSessionId() {
+  let sid = localStorage.getItem('ai_session_id');
+  if (!sid) {
+    sid = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('ai_session_id', sid);
+  }
+  return sid;
+}
+
+async function loadChatHistory() {
+  const sid = getOrCreateSessionId();
+  try {
+    const res = await fetch(`/api/chat_history/${sid}`);
+    const data = await res.json();
+    if (data.messages && data.messages.length > 0) {
+      aiHistory = data.messages;
+      const container = document.getElementById('aiMessages');
+      container.innerHTML = '';
+      data.messages.forEach(msg => {
+        if (msg.role !== 'system') {
+          addAiMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content);
+        }
+      });
+    }
+  } catch(e) {
+    console.error('履歴読み込み失敗:', e);
+  }
+}
+
+async function saveChatHistory() {
+  const sid = getOrCreateSessionId();
+  try {
+    await fetch(`/api/chat_history/${sid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: aiHistory }),
+    });
+  } catch(e) {
+    console.error('履歴保存失敗:', e);
+  }
+}
+
+async function deleteChatHistory() {
+  const sid = getOrCreateSessionId();
+  try {
+    await fetch(`/api/chat_history/${sid}`, { method: 'DELETE' });
+  } catch(e) {
+    console.error('履歴削除失敗:', e);
+  }
+}
+
 // ページ読み込み時にマスタデータを取得
 async function loadMaster() {
   try {
@@ -327,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('issueDate').value = today;
   loadMaster();
+  loadChatHistory();
 });
 
 // ===== 繰り返し設定 =====
@@ -702,6 +755,7 @@ function clearAiChat() {
   aiHistory = [];
   aiFiles = [];
   renderAiFileList();
+  deleteChatHistory();  // SQLiteからも削除
   const container = document.getElementById('aiMessages');
   container.innerHTML = `<div class="ai-msg assistant">
     チャット履歴をクリアしました。新しい仕訳の指示をどうぞ。
@@ -765,6 +819,7 @@ async function sendAiMessage() {
     } else {
       aiHistory.push({ role: 'user', content: aiMessage });
       aiHistory.push({ role: 'assistant', content: data.reply });
+      saveChatHistory();  // SQLiteに保存
 
       let replyHtml = data.reply.replace(/\n/g, '<br>');
 

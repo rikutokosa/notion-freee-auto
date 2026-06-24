@@ -338,13 +338,15 @@ def mark_as_done(page_id: str, original_status: str,
                  freee_status: str = FREEE_STATUS_SHIWAKE_SUCCESS,
                  sales_id: Optional[int] = None,
                  purchase_id: Optional[int] = None,
+                 pca_id: Optional[int] = None,
                  invoice_id: Optional[int] = None) -> bool:
     """
     freee登録完了後にNotionのステータスを更新する
     original_status に応じて遷移先ステータスを決定する
     freee_status で「freee処理状態」の値を指定する（デフォルト: 仕訳成功）
-    
-    注意: invoice_idはログ用に受け取るが、Notionには「freee請求書ID」プロパティが存在しないため書き込まない
+    sales_id: freeeの売上仕訳ID（deal_id）→ Notionの「freee売上取引ID」に保存
+    purchase_id: freeeの仕入仕訳ID（deal_id）→ Notionの「freee仕入取引ID」に保存
+    pca_id: freeeのPCA仕入仕訳ID（deal_id）→ Notionの「freee仕入取引ID（PCA）」に保存（PCA DBのみ）
     """
     done_status = get_done_status(original_status, db_type)
 
@@ -360,8 +362,13 @@ def mark_as_done(page_id: str, original_status: str,
             "date": {"start": datetime.now(timezone.utc).isoformat()}
         }
     }
-    # 注意: freee売上取引ID・freee支出取引IDは取引先IDとして使用しているため、上書きしない
-    # invoice_idはNotionに「freee請求書ID」プロパティが存在しないため書き込まない
+    # freee仕訳IDをNotionに保存（登録時のみ。削除時はIDが消えるので書き込まない）
+    if sales_id is not None:
+        props["freee売上取引ID"] = {"number": sales_id}
+    if purchase_id is not None:
+        props["freee仕入取引ID"] = {"number": purchase_id}
+    if pca_id is not None and db_type == "pca":
+        props["freee仕入取引ID（PCA）"] = {"number": pca_id}
 
     payload = {"properties": props}
     resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)

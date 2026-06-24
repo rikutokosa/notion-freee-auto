@@ -369,8 +369,12 @@ def _extract_props(record: dict) -> dict:
     henkin_go_uriage = get_number("返金後入金売上")
     henkin_go_shukyaku = get_number("返金後集客手数料")
     # freee取引先ID（売上側・仕入側） - 請求書・仕訳登録時のpartner_idとして使用
-    freee_sales_id = get_number("freee売上取引ID")
-    freee_purchase_id = get_number("freee支出取引ID")
+    freee_sales_partner_id = get_number("freee売上取引先ID")  # フォーミュラ型: 取引先ID
+    freee_purchase_partner_id = get_number("freee集客取引先ID")  # フォーミュラ型: 集客先取引先ID
+    # freee仕訳ID（登録時にNotionに保存される実際のdeal_id） - 削除時に使用
+    freee_sales_id = get_number("freee売上取引ID")  # number型: 仕訳ID
+    freee_purchase_id = get_number("freee仕入取引ID")  # number型: 仕入仕訳ID
+    freee_pca_id = get_number("freee仕入取引ID（PCA）")  # number型: PCA仕入仕訳ID
     # PCA専用: パートナーへの支払額（「受取報酬料（税込）」を使用）
     pca_shiire = get_number("受取報酬料（税込）") if db_type == "pca" else get_number("PCA仕入高")
     # PCA専用: パートナー決済期日（末尾スペースあり）
@@ -415,8 +419,11 @@ def _extract_props(record: dict) -> dict:
         "taishoku_date": parse_date(taishoku_str),
         "henkin_go_uriage": henkin_go_uriage,
         "henkin_go_shukyaku": henkin_go_shukyaku,
-        "freee_sales_id": int(freee_sales_id) if freee_sales_id else None,
-        "freee_purchase_id": int(freee_purchase_id) if freee_purchase_id else None,
+        "freee_sales_partner_id": int(freee_sales_partner_id) if freee_sales_partner_id else None,  # 取引先ID（partner_id）
+        "freee_purchase_partner_id": int(freee_purchase_partner_id) if freee_purchase_partner_id else None,  # 集客先取引先ID
+        "freee_sales_id": int(freee_sales_id) if freee_sales_id else None,  # 仕訳ID（deal_id）
+        "freee_purchase_id": int(freee_purchase_id) if freee_purchase_id else None,  # 仕入仕訳ID
+        "freee_pca_id": int(freee_pca_id) if freee_pca_id else None,  # PCA仕入仕訳ID
         "pca_shiire": pca_shiire,
         "pca_kessai": parse_date(pca_kessai_str),
         "pca_partner_id": int(pca_partner_id) if pca_partner_id else None,
@@ -561,7 +568,7 @@ def build_journal_entries(record: dict) -> dict:
                 "issue_date": today_str,
                 "due_date": sales_due_date,
                 "partner_name": rule.get("supplier") if rule and rule.get("type") == "求人BD" else None,
-                "partner_id": p["freee_sales_id"],
+                "partner_id": p["freee_sales_partner_id"],  # 取引先ID（フォーミュラ型）
                 "section_name": section_name,
                 "details": [{
                     "account_item_name": account_item,
@@ -579,7 +586,7 @@ def build_journal_entries(record: dict) -> dict:
                 "issue_date": today_str,
                 "due_date": purchase_due_date,
                 "partner_name": rule.get("supplier"),
-                "partner_id": p["freee_purchase_id"],
+                "partner_id": p["freee_purchase_partner_id"],  # 集客先取引先ID（フォーミュラ型）
                 "section_name": section_name,
                 "details": [{
                     "account_item_name": "スカウト手数料",
@@ -699,10 +706,11 @@ def build_journal_entries(record: dict) -> dict:
         else:
             sales_partner = None
 
-        # 取引先ID: supplier_idがルールに直接指定されている場合はそれを優先使用（Notionのfreee売上取引IDより優先）
+        # 取引先ID: supplier_idがルールに直接指定されている場合はそれを優先使用
         # 例: Hitolink -> supplier_id=105296246（パーソルイノベーション）
+        # 次に「freee売上取引先ID」（フォーミュラ型、取引先ID）を使用
         rule_partner_id = rule.get("supplier_id")
-        sales_partner_id = rule_partner_id if rule_partner_id else p["freee_sales_id"]
+        sales_partner_id = rule_partner_id if rule_partner_id else p["freee_sales_partner_id"]
 
         # 部門設定: PCAは「本店：PCA」、本店CAは「本店：CA」（freeeの正式部門名）
         section_name = "本店：PCA" if db_type == "pca" else "本店：CA"
@@ -735,7 +743,7 @@ def build_journal_entries(record: dict) -> dict:
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
                 "partner_name": purchase_partner,
-                "partner_id": p["freee_purchase_id"],  # Notionの「freee支出取引ID」= 仕入側取引先ID
+                "partner_id": p["freee_purchase_partner_id"],  # Notionの「freee集客取引先ID」= 集客先取引先ID
                 "section_name": purchase_section,
                 "details": [{
                     "account_item_name": "スカウト手数料",

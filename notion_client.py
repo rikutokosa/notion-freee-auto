@@ -21,13 +21,12 @@ NOTION_BASE = "https://api.notion.com/v1"
 
 # ②経理対応待ちフィルターに該当するステータス（本店CA）
 # 「本部確認済」→ 請求書登録または仕訳登録
-# 「●入社済」→ 請求が必要な場合のみ手動で②経理対応待ちビューに移動してくる（監視対象に含める）
+# 「●入社済」→ 「請求有無=要請求」のレコードのみ②経理対応待ちビューに入る。請求書送付処理を行い「入社→請求済」に変更する
 # 「●入社前辞退」→ 取引削除
 # 「●返金（短期離職）」→ マイナス仕訳登録
-# ※「●入社済」は②経理対応待ちビューには自動的に入らない。
-#   請求が必要なレコードのみ手動で対応待ちに移動されるため、ここでは監視しない。
 PENDING_STATUSES_HONTEN = [
     "本部確認済",
+    "●入社済",
     "●入社前辞退",
     "●返金（短期離職）",
 ]
@@ -370,6 +369,8 @@ def mark_as_done(page_id: str, original_status: str,
         props["freee仕入取引ID"] = {"number": purchase_id}
     if pca_id is not None and db_type == "pca":
         props["freee仕入取引ID（PCA）"] = {"number": pca_id}
+    if invoice_id is not None:
+        props["freee請求書ID"] = {"number": invoice_id}
 
     payload = {"properties": props}
     resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)

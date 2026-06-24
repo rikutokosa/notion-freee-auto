@@ -23,6 +23,7 @@ from notion_client import (
     mark_as_error,
     clear_error,
     clear_error_set_processing,
+    set_invoice_required_select,
     FREEE_STATUS_SHIWAKE_SUCCESS,
     FREEE_STATUS_INVOICE_REGISTERED,
     FREEE_STATUS_INVOICE_SUCCESS,
@@ -156,6 +157,14 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         result["nyusha_date"] = journal.get("nyusha_date", "")
         current_status = journal.get("original_status", "")
         db_type = record.get("_db_type", "honten")
+
+        # 請求有無セレクトを自動セット（フォーミュラ型→セレクト型移行対応）
+        if not dry_run:
+            job_db_val = journal.get("job_db", "")
+            try:
+                set_invoice_required_select(page_id, job_db_val)
+            except Exception as e:
+                logger.warning(f"請求有無セレクトセット失敗（処理は続行）: {e}")
 
         # ============================================================
         # スキップ（入社済・請求不要など）

@@ -441,3 +441,59 @@ def clear_error_set_processing(page_id: str) -> bool:
     }
     resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
     return resp.status_code == 200
+
+
+# 請求有無セレクトのオプション名（Notionのセレクト型に合わせること）
+INVOICE_REQUIRED_SELECT = "要請求"
+INVOICE_NOT_REQUIRED_SELECT = "請求不要"
+
+# 請求不要の求人データベース値（フォーミュラと同じロジック）
+INVOICE_NOT_REQUIRED_JOB_DBS = {
+    "Circus",
+    "Zキャリア",
+    "クラウドエージェント",
+    "CSS求人",
+}
+
+
+def calc_invoice_required_select(job_db_value: str) -> Optional[str]:
+    """
+    求人データベースの値から「請求有無」セレクトの値を計算する
+    Notionのフォーミュラと同じロジック:
+      - 空 → None（セットしない）
+      - Circus / Zキャリア / クラウドエージェント / CSS求人 → 「請求不要」
+      - それ以外 → 「要請求」
+    """
+    if not job_db_value:
+        return None
+    if job_db_value in INVOICE_NOT_REQUIRED_JOB_DBS:
+        return INVOICE_NOT_REQUIRED_SELECT
+    return INVOICE_REQUIRED_SELECT
+
+
+def set_invoice_required_select(page_id: str, job_db_value: str) -> bool:
+    """
+    Notionの「請求有無」フィールド（セレクト型）を自動セットする
+    フォーミュラ型から変更した場合に使用。
+    本店CA・PCA両方対応。
+    """
+    select_value = calc_invoice_required_select(job_db_value)
+    if select_value is None:
+        return True  # 空の場合はスキップ
+
+    url = f"{NOTION_BASE}/pages/{page_id}"
+    payload = {
+        "properties": {
+            "請求有無": {
+                "select": {"name": select_value}
+            }
+        }
+    }
+    resp = requests.patch(url, headers=_headers(), json=payload, timeout=30)
+    if resp.status_code != 200:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"請求有無セレクトセット失敗: page_id={page_id}, value={select_value}, "
+            f"status={resp.status_code}, resp={resp.text[:300]}"
+        )
+    return resp.status_code == 200

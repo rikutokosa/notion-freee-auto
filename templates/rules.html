@@ -114,8 +114,10 @@
       </div>
       <div class="func-rule-card-body">
         <p style="font-size:13px;color:#475569;margin:0 0 16px;">
-          Notionの「②経理対応待ち」ビューに入っているレコードを自動検知し、freeeに仕訳・請求書を登録します。
-          自動転記の間隔は <strong>{{ "{:,}".format(3600) }}秒（1時間）</strong> ごとです（環境変数 <code>POLL_INTERVAL</code> で変更可）。
+          Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<br>
+          <strong>実行は手動のみ</strong>（ダッシュボードの「今すぐ実行」ボタンまたは仕訳プレビューから登録）。<br>
+          監視対象ステータス：本店CA＝<code>本部確認済 / ●入社済 / ●入社前辞退 / ●返金（短期離職）</code>、
+          PCA＝<code>本部確認済 / 入社前辞退 / ●返金（短期離職）</code>。
         </p>
 
         <table class="rules-table">
@@ -220,7 +222,7 @@
     <div class="func-rule-card">
       <div class="func-rule-card-header">
         <span style="font-size:22px;">🔁</span>
-        <h3>自動転記の停止・再開ルール</h3>
+        <h3>転記実行の停止・再開ルール</h3>
       </div>
       <div class="func-rule-card-body">
         <table class="rules-table">
@@ -229,11 +231,11 @@
           </thead>
           <tbody>
             <tr>
-              <td>「自動転記停止」ボタン</td>
+              <td>「転記停止」ボタン</td>
               <td>メモリ内フラグ（<code>FREEE_AUTO_STOPPED=1</code>）を立てて停止。<strong>プロセス再起動後は環境変数の初期値に戻る。</strong></td>
             </tr>
             <tr>
-              <td>「自動転記開始」ボタン</td>
+              <td>「転記開始」ボタン</td>
               <td>停止フラグを解除して強制開始（<code>force=True</code>）。</td>
             </tr>
             <tr>

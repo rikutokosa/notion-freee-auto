@@ -500,6 +500,19 @@
               </td>
             </tr>
             <tr>
+              <td><strong>登録必須項目</strong></td>
+              <td>
+                以下4項目がすべて揃っていることが登録の条件です。<br>
+                <ol style="margin:6px 0 0 16px;padding:0;">
+                  <li><strong>発生日</strong>: YYYY-MM-DD形式の日付</li>
+                  <li><strong>取引先</strong>: freeeマスタに登録されている取引先名</li>
+                  <li><strong>決済期日</strong>: YYYY-MM-DD形式の日付</li>
+                  <li><strong>対応部門</strong>: freeeマスタに登録されている部門名</li>
+                </ol>
+                1つでも欠けている場合は登録を実行せず、不足項目を列挙してユーザーに聞き返す。
+              </td>
+            </tr>
+            <tr>
               <td><strong>削除処理</strong></td>
               <td>
                 必ず search_deals / search_invoices で対象を検索してIDを取得してから実行。

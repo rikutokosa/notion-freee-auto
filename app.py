@@ -948,6 +948,17 @@ def api_assistant_ai():
 - 日付の解釈: 「先月」→{last_month_year}-{last_month:02d}、「今月」→{today.year}-{today.month:02d}、「7月」→{fiscal_year}-07
 - 複数件の登録指示（スケジュール表・明細表など）は全件を処理する
 
+## 2-A. 仕訳登録の必須項目（register_deal呼び出し前に必ず確認）
+仕訳を登録する際は、以下の4項目が**すべて揃っている**ことを確認してからregister_dealを呼び出すこと。
+1. **発生日**（issue_date）: YYYY-MM-DD形式の日付
+2. **取引先**（partner_name）: freeeマスタに登録されている取引先名
+3. **決済期日**（due_date）: YYYY-MM-DD形式の日付
+4. **対応部門**（section_name）: freeeマスタに登録されている部門名
+
+**いずれか1つでも欠けている場合は、register_dealを呼び出さず、不足している項目を具体的に列挙してユーザーに聞き返すこと。**
+例: 「登録に必要な情報が不足しています。以下を教えてください：\n- 決済期日（例: 2026-07-31）\n- 対応部門（例: 本店CA）」
+全項目が揃ったことを確認してからregister_dealを呼び出すこと。
+
 ## 3. 削除処理
 - 必ずsearch_deals/search_invoicesで対象を検索してからIDを取得する（IDを自分で作らない）
 - 検索後、そのまま即座にdelete_dealsを呼び出す。事前にユーザーにテキストで確認を求めない。
@@ -1014,15 +1025,16 @@ def api_assistant_ai():
                 "type": "function",
                 "function": {
                     "name": "register_deal",
-                    "description": "freeeに仕訳（取引）を登録する。",
+                    "description": "freeeに仕訳（取引）を登録する。必須項目（issue_date・partner_name・due_date・section_name）がすべて揃っていることを確認してから呼び出すこと。",
                     "parameters": {
                         "type": "object",
-                        "required": ["deal_type", "issue_date", "details"],
+                        "required": ["deal_type", "issue_date", "due_date", "partner_name", "section_name", "details"],
                         "properties": {
                             "deal_type": {"type": "string", "enum": ["income", "expense"]},
                             "issue_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "due_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "partner_name": {"type": "string"},
+                            "due_date": {"type": "string", "description": "YYYY-MM-DD（必須）"},
+                            "partner_name": {"type": "string", "description": "取引先名（必須）"},
+                            "section_name": {"type": "string", "description": "対応部門名（必須）"},
                             "details": {
                                 "type": "array",
                                 "items": {
@@ -1572,6 +1584,29 @@ def api_assistant_execute_register():
         deal_type = item.get("deal_type", "expense")
         # deal_argsにdeal_typeが含まれている場合は除去
         deal_args.pop("deal_type", None)
+
+        # ===== 必須項目バリデーション =====
+        missing = []
+        if not deal_args.get("issue_date"):
+            missing.append("発生日（issue_date）")
+        if not deal_args.get("partner_name"):
+            missing.append("取引先（partner_name）")
+        if not deal_args.get("due_date"):
+            missing.append("決済期日（due_date）")
+        # section_nameはトップレベルまたはdetails[0]のいずれかにあればOK
+        has_section = bool(deal_args.get("section_name")) or any(
+            d.get("section_name") for d in deal_args.get("details", [])
+        )
+        if not has_section:
+            missing.append("対応部門（section_name）")
+        if missing:
+            return jsonify({
+                "status": "error",
+                "message": f"必須項目が不足しています: {', '.join(missing)}",
+                "missing_fields": missing,
+            }), 400
+        # ===== バリデーションここまで =====
+
         try:
             result = create_deal(deal_args, deal_type, cache)
             deal_id = result.get("id")

@@ -1779,6 +1779,53 @@ def api_freee_token_debug():
 # 支払管理・振込データ生成エンドポイント
 # ============================================================
 
+@app.route("/api/debug_payment_raw", methods=["GET"])
+def api_debug_payment_raw():
+    """支払管理デバッグ: freee APIから生の仕訳データを返す"""
+    import requests as _req
+    from datetime import timedelta as _td
+    from freee_client import FREEE_API_BASE as _BASE, FREEE_COMPANY_ID as _CID, _api_headers, HONTEN_SECTION_IDS
+    today = datetime.now()
+    # フィルターなしで未決済支出仕訳を取得
+    r1 = _req.get(f"{_BASE}/deals", headers=_api_headers(), params={
+        "company_id": _CID, "type": "expense", "payment_status": "unsettled",
+        "limit": 10, "offset": 0
+    }, timeout=30)
+    # start_due_date付きで取得
+    r2 = _req.get(f"{_BASE}/deals", headers=_api_headers(), params={
+        "company_id": _CID, "type": "expense", "payment_status": "unsettled",
+        "start_due_date": today.strftime("%Y-%m-%d"),
+        "end_due_date": (today + _td(days=60)).strftime("%Y-%m-%d"),
+        "limit": 10, "offset": 0
+    }, timeout=30)
+    deals_no_filter = r1.json().get("deals", []) if r1.status_code == 200 else []
+    deals_with_filter = r2.json().get("deals", []) if r2.status_code == 200 else []
+    def _summarize(deals):
+        result = []
+        for d in deals:
+            section_ids = {det.get("section_id") for det in d.get("details", [])}
+            result.append({
+                "id": d.get("id"),
+                "issue_date": d.get("issue_date"),
+                "due_date": d.get("due_date"),
+                "amount": d.get("amount"),
+                "payment_status": d.get("payment_status"),
+                "receipts_count": len(d.get("receipts", [])),
+                "section_ids": list(section_ids),
+                "is_honten": bool(section_ids & HONTEN_SECTION_IDS),
+            })
+        return result
+    return jsonify({
+        "today": today.strftime("%Y-%m-%d"),
+        "no_date_filter_count": len(deals_no_filter),
+        "no_date_filter_status": r1.status_code,
+        "with_date_filter_count": len(deals_with_filter),
+        "with_date_filter_status": r2.status_code,
+        "no_date_filter_deals": _summarize(deals_no_filter),
+        "with_date_filter_deals": _summarize(deals_with_filter),
+    })
+
+
 @app.route("/api/payment/preview", methods=["GET"])
 def api_payment_preview():
     """

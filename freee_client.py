@@ -1261,7 +1261,7 @@ def get_payment_deals(
     """
     from datetime import timedelta
     today = datetime.now()
-    start = today.strftime("%Y-%m-%d")  # 今日以降の支払期日のみ対象
+    start = (today - timedelta(days=90)).strftime("%Y-%m-%d")  # 90日前まで適用（過去の未払いも対象）
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 
     # 未決済の支出仕訳を全件取得（ページング対応）

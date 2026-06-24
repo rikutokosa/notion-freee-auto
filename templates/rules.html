@@ -702,7 +702,27 @@ function showTab(id, btn) {
   document.querySelectorAll('.rules-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.rules-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
+  location.hash = id;
 }
+
+// URLハッシュがあれば対応タブを開く
+document.addEventListener('DOMContentLoaded', function() {
+  const hash = location.hash.replace('#', '');
+  if (hash) {
+    const target = document.getElementById(hash);
+    if (target) {
+      document.querySelectorAll('.rules-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.rules-tab-btn').forEach(b => b.classList.remove('active'));
+      target.classList.add('active');
+      // 対応するボタンをアクティブに
+      document.querySelectorAll('.rules-tab-btn').forEach(b => {
+        if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(hash)) {
+          b.classList.add('active');
+        }
+      });
+    }
+  }
+});
 </script>
 {% endblock %}

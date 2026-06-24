@@ -144,6 +144,9 @@ def _ocr_image_with_ai(image) -> str:
     if not openai_key:
         return ""
 
+    # API BaseURL: 環境変数から取得（本番VPSでも動くように）
+    openai_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1").rstrip("/")
+
     # PIL Image → JPEG bytes → base64
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=90)
@@ -151,10 +154,10 @@ def _ocr_image_with_ai(image) -> str:
 
     try:
         resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+            f"{openai_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
-                "model": "gpt-4o",
+                "model": "gpt-5-mini",
                 "messages": [{
                     "role": "user",
                     "content": [

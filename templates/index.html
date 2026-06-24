@@ -317,7 +317,13 @@ function _buildMatchHTML(data, isPreview) {
   }
 
   if (!data.total_receipts) {
-    html = '<div style="color:#888; font-size:13px; padding:12px 0;">📤 未紐づけの書類はありませんでした。</div>';
+    let msg = '📤 未紐づけの書類はありませんでした。';
+    if (data.errors && data.errors.length > 0) {
+      msg += '<br><span style="color:#dc3545;">' + data.errors.join('<br>') + '</span>';
+    } else {
+      msg += '<br><span style="color:#aaa; font-size:11px;">ファイルボックスにある書類がすでに仕訳に添付済みの場合は0件になります。freeeのファイルボックスで「未登録」ステータスの書類のみが対象です。</span>';
+    }
+    html = '<div style="color:#888; font-size:13px; padding:12px 0;">' + msg + '</div>';
   }
 
   return html;

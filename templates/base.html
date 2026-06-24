@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Notion→freee 自動仕訳{% endblock %}</title>
+  <title>{% block title %}本店経理自動化システム{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -187,10 +187,8 @@
 </head>
 <body>
   <nav class="navbar">
-    <a class="brand" href="/">⚡ Notion→freee</a>
-    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>ダッシュボード</a>
-    <a href="/assistant" {% if request.path == '/assistant' %}class="active"{% endif %}>仕訳アシスタント</a>
-    <a href="/preview" {% if request.path == '/preview' %}class="active"{% endif %}>仕訳プレビュー</a>
+    <a class="brand" href="/">🏢 本店経理自動化</a>
+    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>ホーム</a>
     <a href="/rules" {% if request.path == '/rules' %}class="active"{% endif %}>ルールブック</a>
   </nav>
   <div class="container">

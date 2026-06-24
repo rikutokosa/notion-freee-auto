@@ -1,693 +1,359 @@
 {% extends "base.html" %}
-{% block title %}ダッシュボード - Notion→freee{% endblock %}
+{% block title %}本店経理自動化システム{% endblock %}
+
 {% block content %}
+<style>
+  /* ===== メインタブ ===== */
+  .main-tabs {
+    display: flex; gap: 4px; margin-bottom: 0;
+    border-bottom: 2px solid #dee2e6; flex-wrap: wrap;
+  }
+  .main-tab-btn {
+    padding: 10px 20px; font-size: 13px; font-weight: bold; cursor: pointer;
+    border: none; background: #f0f4f8; color: #555;
+    border-radius: 8px 8px 0 0; transition: background 0.2s;
+  }
+  .main-tab-btn.active {
+    background: #fff; color: #1a1a2e;
+    border-bottom: 2px solid #fff; margin-bottom: -2px;
+  }
+  .main-tab-content { display: none; padding-top: 24px; }
+  .main-tab-content.active { display: block; }
 
-<h1 class="page-title">ダッシュボード</h1>
+  /* ===== 仕訳アシスタント内タブ ===== */
+  .sub-tab-bar { display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e0e0e0; }
+  .sub-tab-btn {
+    padding: 8px 20px; font-size: 13px; font-weight: bold; cursor: pointer;
+    border: none; background: #f0f4f8; color: #555; border-radius: 8px 8px 0 0;
+    margin-right: 4px; transition: background 0.2s;
+  }
+  .sub-tab-btn.active { background: #fff; color: #1a1a2e; border-bottom: 2px solid #fff; margin-bottom: -2px; }
+  .sub-tab-content { display: none; }
+  .sub-tab-content.active { display: block; }
 
-<!-- ステータスカード -->
-<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:24px;">
+  /* ===== 仕訳アシスタント ===== */
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 12px; font-weight: bold; color: #555; }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 7px 10px; border: 1px solid #ccc; border-radius: 5px;
+    font-size: 13px; font-family: inherit;
+  }
+  .form-group.flex-1 { flex: 1; min-width: 140px; }
+  .form-group.flex-2 { flex: 2; min-width: 200px; }
+  .form-group.flex-3 { flex: 3; min-width: 240px; }
+  .detail-row {
+    background: #f8f9fa; border-radius: 6px; padding: 12px;
+    margin-bottom: 8px; position: relative;
+  }
+  .detail-row .remove-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: #dc3545; color: #fff; border: none;
+    border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px;
+  }
+  .ai-chat { display: flex; flex-direction: column; gap: 12px; }
+  .ai-input-area { display: flex; gap: 8px; }
+  .ai-input-area textarea {
+    flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px;
+  }
+  .ai-messages { min-height: 200px; max-height: 500px; overflow-y: auto; }
+  .ai-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
+  .ai-msg.user { background: #e8f0fe; color: #1a1a2e; margin-left: 40px; }
+  .ai-msg.assistant { background: #fff; border: 1px solid #e0e0e0; margin-right: 40px; }
+  .ai-msg.error { background: #f8d7da; color: #721c24; }
+  .preview-table { margin-top: 12px; overflow-x: auto; }
+  .preview-table table { font-size: 12px; }
+  .preview-table th { background: #e8f0fe; }
+  .result-box {
+    padding: 12px 16px; border-radius: 6px; margin-top: 12px;
+    font-size: 13px; display: none;
+  }
+  .result-box.success { background: #d4edda; color: #155724; border: 1px solid #28a745; }
+  .result-box.error { background: #f8d7da; color: #721c24; border: 1px solid #dc3545; }
+  .repeat-section {
+    background: #fffbe6; border: 1px solid #ffc107; border-radius: 6px;
+    padding: 12px; margin-top: 8px;
+  }
+  .repeat-section label { font-size: 12px; font-weight: bold; color: #856404; }
+  .repeat-info {
+    background: #fff8e1; border-left: 3px solid #ffc107;
+    padding: 8px 12px; margin-top: 8px; font-size: 12px; color: #6d4c00;
+    border-radius: 0 4px 4px 0;
+  }
+  .repeat-info ul { margin: 4px 0 0 16px; padding: 0; }
+  .repeat-info li { margin-bottom: 2px; }
+  .repeat-preview {
+    background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;
+    padding: 10px; margin-top: 8px; font-size: 12px;
+  }
+  .attachment-section {
+    background: #f0f7ff; border: 1px solid #4a90d9; border-radius: 6px;
+    padding: 12px; margin-top: 8px;
+  }
+  .file-drop-zone {
+    border: 2px dashed #4a90d9; border-radius: 6px; padding: 20px;
+    text-align: center; cursor: pointer; transition: background 0.2s;
+    background: #fff; margin-top: 8px;
+  }
+  .file-drop-zone:hover { background: #e8f0fe; }
+  .file-drop-zone input[type="file"] { display: none; }
+  .file-list { margin-top: 8px; }
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid #cce5ff; border-radius: 4px;
+    padding: 6px 10px; margin-bottom: 4px; font-size: 12px;
+  }
+  .file-item .file-name { flex: 1; }
+  .file-item .file-remove { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .ai-file-zone {
+    border: 2px dashed #aaa; border-radius: 8px; padding: 16px 20px;
+    background: #fafafa; cursor: pointer; font-size: 13px; color: #555;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; transition: all 0.2s; min-height: 80px; text-align: center;
+  }
+  .ai-file-zone:hover { background: #f0f7ff; border-color: #4a90d9; color: #4a90d9; }
+  .ai-file-badge {
+    background: #4a90d9; color: #fff; border-radius: 12px;
+    padding: 2px 8px; font-size: 11px; font-weight: bold;
+  }
+  .spinner { display: none; margin-left: 8px; }
+  .spinner.active { display: inline-block; }
+</style>
 
-  <!-- freee認証 -->
-  <div class="card" style="padding:18px 22px;">
-    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">freee 認証</div>
-    {% if token_ok %}
-      <div style="display:flex; align-items:center;">
-        <span class="status-dot dot-green" style="animation:pulse-green 2s infinite;"></span>
-        <span style="font-size:16px; font-weight:700; color:#28a745;">接続済み</span>
-      </div>
-    {% else %}
-      <div style="display:flex; align-items:center; margin-bottom:10px;">
-        <span class="status-dot dot-red"></span>
-        <span style="font-size:16px; font-weight:700; color:#dc3545;">未認証</span>
-      </div>
-      <a href="/auth/freee" class="btn btn-danger" style="font-size:12px; padding:6px 14px;">認証する</a>
-    {% endif %}
-  </div>
-
-  <!-- システム状態 -->
-  <div class="card" style="padding:18px 22px;">
-    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">システム状態</div>
-    <div style="display:flex; align-items:center;">
-      <span class="status-dot dot-blue"></span>
-      <span style="font-size:16px; font-weight:700; color:#4a90d9;" id="system-status-text">待機中</span>
-    </div>
-    <div style="font-size:12px; color:#aaa; margin-top:4px;">ボタンを押したときだけ処理を実行します</div>
-  </div>
-
-  <!-- 処理件数 -->
-  <div class="card" style="padding:18px 22px;">
-    <div style="font-size:11px; font-weight:600; color:#888; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">処理件数（今セッション）</div>
-    <div style="font-size:36px; font-weight:700; color:#1a1a2e;">{{ logs|length }}</div>
-  </div>
-
-</div>
-
-{% if not token_ok %}
-<div class="alert alert-warning">
-  ⚠️ freeeの認証が必要です。<a href="/auth/freee" style="font-weight:bold;">こちらから認証</a>してください。
-</div>
-{% endif %}
-
-<!-- 操作ボタン -->
-<div class="card">
-  <h2>操作</h2>
-  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-    <button class="btn btn-success" onclick="runNow('all')" id="btn-run-all">▶ 全件処理（本店CA＋PCA）</button>
-    <button class="btn btn-primary" onclick="runNow('honten')">本店CAのみ</button>
-    <button class="btn btn-primary" onclick="runNow('pca')">PCAのみ</button>
-    <a href="/preview" class="btn btn-primary">👁 仕訳プレビュー</a>
-    <a href="/chat" class="btn btn-secondary">💬 チャット指示</a>
-  </div>
-  <div id="run-result" style="margin-top:14px; font-size:13px; white-space:pre-wrap;"></div>
-</div>
-
-<!-- 書類照合 -->
-<div class="card" style="border-left:4px solid #4a90d9;">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
-    <h2 style="margin:0;">📎 freee書類照合</h2>
-    <a href="/rules#tab-shocho" class="btn" style="font-size:12px; padding:4px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルール確認</a>
-  </div>
-  <p style="font-size:13px; color:#666; margin-bottom:14px;">freeeのファイルボックスにある未紐づけ書類を、既存の仕訳と自動照合します。<br>プレビューで内容を確認してから紐づけを実行できます。</p>
-  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-    <button class="btn btn-secondary" onclick="runMatchPreview()" id="btn-match-dry">🔍 照合プレビュー</button>
-    <button class="btn btn-primary" onclick="runMatchExecute()" id="btn-match" style="display:none;">✅ この内容で紐づけを実行する</button>
-    <button class="btn" onclick="resetMatchUI()" id="btn-match-reset" style="display:none; background:#f8f9fa; color:#666; border:1px solid #dee2e6;">✕ キャンセル</button>
-  </div>
-  <div id="match-result" style="margin-top:14px;"></div>
-</div>
-
-<!-- 支払管理・振込データ生成 -->
-<div class="card" style="border-left:4px solid #28a745; margin-top:20px;">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
-    <h2 style="margin:0;">💸 支払管理・振込データ生成</h2>
-    <a href="/rules#tab-shiharai" class="btn" style="font-size:12px; padding:4px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルール確認</a>
-  </div>
-  <p style="font-size:13px; color:#666; margin-bottom:14px;">
-    本店部門（CA/PCA/PRA/AIスカウト/その他）の未決済仕訳を確認し、請求書添付済みのものをSBI総合振込用FBファイルとして出力します。
-  </p>
-  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-    <button class="btn btn-secondary" onclick="runPaymentPreview()" id="btn-payment-preview">🔍 支払プレビュー</button>
-    <button class="btn btn-success" onclick="downloadFB()" id="btn-payment-fb" style="display:none;">✅ 内容を確認した。振込データをダウンロードする</button>
-    <button class="btn" onclick="resetPaymentUI()" id="btn-payment-reset" style="display:none; background:#f8f9fa; color:#666; border:1px solid #dee2e6;">✕ 閉じる</button>
-  </div>
-  <div id="payment-result" style="margin-top:14px;"></div>
-</div>
-
-<!-- 処理ログ -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-    <h2 style="margin-bottom:0;">処理ログ（直近50件）</h2>
-    <a href="/log" style="font-size:12px; color:#888; text-decoration:none;">すべて見る →</a>
+    <h2 style="margin:0; font-size:20px;">🏢 本店経理自動化システム</h2>
+    <a href="/rules" class="btn" style="font-size:12px; padding:4px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルールブック</a>
   </div>
-  {% if logs %}
-  <table>
-    <thead>
-      <tr>
-        <th>日時（JST）</th>
-        <th>求職者 / フェーズ</th>
-        <th>集客経路</th>
-        <th>入社日</th>
-        <th>結果</th>
-        <th>詳細</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for log in logs %}
-      {% if log.status != 'skip' %}
-      <tr>
-        <td style="white-space:nowrap; color:#888; font-size:12px;" class="ts-cell" data-ts="{{ log.timestamp if log.timestamp else '' }}">{{ log.timestamp[:16] if log.timestamp else '' }}</td>
-        <td style="font-weight:500;">{{ log.phase or '' }}</td>
-        <td style="color:#666;">{{ log.job_db or '' }}</td>
-        <td style="color:#666;">{{ log.nyusha_date or '' }}</td>
-        <td>
-          {% if log.status == 'success' %}
-            <span class="badge badge-ok">✅ 成功</span>
-          {% elif log.status == 'error' %}
-            <span class="badge badge-error">❌ エラー</span>
-          {% elif log.status == 'dry_run' %}
-            <span class="badge badge-skip">👁 プレビュー</span>
-          {% elif log.status == 'review' %}
-            <span class="badge badge-review">⚠️ 要確認</span>
-          {% else %}
-            <span class="badge" style="background:#e9ecef; color:#666;">{{ log.status }}</span>
-          {% endif %}
-        </td>
-        <td style="font-size:12px; color:#666;">
-          {% if log.sales_id %}
-            <span style="color:#155724;">売上ID: {{ log.sales_id }}</span>{% if log.purchase_id %} <span style="color:#666;">/ 仕入ID: {{ log.purchase_id }}</span>{% endif %}
-          {% elif log.message %}
-            {{ log.message[:80] }}
-          {% endif %}
-        </td>
-      </tr>
-      {% endif %}
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div style="text-align:center; padding:40px; color:#888;">
-    <div style="font-size:32px; margin-bottom:8px;">📭</div>
-    <p>まだ処理履歴がありません。</p>
+
+  <!-- メインタブ -->
+  <div class="main-tabs">
+    <button class="main-tab-btn active" onclick="switchMainTab('jidou', this)">🔄 自動転記</button>
+    <button class="main-tab-btn" onclick="switchMainTab('assistant', this)">🤖 仕訳アシスタント</button>
+    <button class="main-tab-btn" onclick="switchMainTab('preview', this)" id="previewTabBtn">📋 仕訳プレビュー</button>
+    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🗂 書類照合</button>
+    <button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">💸 支払管理</button>
+    <button class="main-tab-btn" onclick="switchMainTab('status', this)">⚙️ システム状態</button>
   </div>
-  {% endif %}
+
+  <!-- ===== 自動転記タブ ===== -->
+  <div id="tab-jidou" class="main-tab-content active">
+    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+      Notionの成約管理DBから対象レコードを取得し、freeeに仕訳・請求書を登録します。
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+      <button class="btn btn-success" onclick="runProcess('all')" id="btn-all">▶ 全件処理（本店CA+PCA）</button>
+      <button class="btn btn-primary" onclick="runProcess('honten')" id="btn-honten">本店CAのみ</button>
+      <button class="btn btn-primary" onclick="runProcess('pca')" id="btn-pca" style="background:#6f42c1; border-color:#6f42c1;">PCAのみ</button>
+    </div>
+    <div id="process-status" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
+    <div id="process-log" style="display:none;">
+      <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ</h3>
+      <div id="log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
+    </div>
+  </div>
+
+  <!-- ===== 仕訳アシスタントタブ ===== -->
+  <div id="tab-assistant" class="main-tab-content">
+    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+      Notionとは独立して、freeeに直接仕訳を登録できます。自然言語で指示するか、フォームで直接入力してください。
+    </p>
+    <div class="sub-tab-bar">
+      <button class="sub-tab-btn active" onclick="switchSubTab('ai', this)">🤖 AI指示（自然言語）</button>
+      <button class="sub-tab-btn" onclick="switchSubTab('form', this)">📝 フォーム入力</button>
+    </div>
+
+    <!-- AI指示タブ -->
+    <div id="sub-tab-ai" class="sub-tab-content active" style="padding-top:16px;">
+      <div class="ai-chat">
+        <div class="ai-messages" id="aiMessages">
+          <div class="ai-msg assistant">
+            こんにちは！freeeへの仕訳登録をお手伝いします。<br>
+            例えば以下のように指示してください：<br><br>
+            ・「長期借入金の返済 元金100,000円・利息3,000円を毎月1日で12ヶ月分登録して」<br>
+            ・「2026年7月1日 本店：CA部門 売掛金 500,000円 備考：テスト」<br>
+            ・「マイナビへの広告費 税抜50,000円を今月末で登録」<br><br>
+            📎 <strong>ファイルを添付</strong>すると、返済スケジュール表・請求書・領収書などを読み取って自動で仕訳を提案します。
+          </div>
+        </div>
+        <div class="ai-file-zone" id="aiFileZone"
+             onclick="document.getElementById('aiFileInput').click()"
+             ondragover="handleAiDragOver(event)"
+             ondragleave="handleAiDragLeave(event)"
+             ondrop="handleAiDrop(event)">
+          <input type="file" id="aiFileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv"
+                 onchange="handleAiFileSelect(this)">
+          <div style="font-size:24px;">📂</div>
+          <div style="font-weight:bold;">クリックまたはドラッグ＆ドロップでファイルを添付</div>
+          <div style="font-size:11px;color:#888;">PDF・画像（PNG/JPG/WEBP）・Excel・CSV（複数可）</div>
+          <span id="aiFileBadge" style="display:none;" class="ai-file-badge"></span>
+        </div>
+        <div id="aiFileList" class="file-list" style="display:none;"></div>
+        <div class="ai-input-area">
+          <textarea id="aiInput" placeholder="仕訳の内容を自然言語で入力してください...（Ctrl+Enterで送信）" onkeydown="handleAiKey(event)"></textarea>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-primary" onclick="sendAiMessage()" id="aiSendBtn">送信</button>
+            <button class="btn btn-secondary" onclick="clearAiChat()" style="font-size:12px;">クリア</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- フォーム入力タブ -->
+    <div id="sub-tab-form" class="sub-tab-content" style="padding-top:16px;">
+      <form id="journalForm">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>仕訳種別 *</label>
+            <select id="dealType" name="deal_type">
+              <option value="income">収入（売上）</option>
+              <option value="expense">支出（費用）</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label>発生日 *</label>
+            <input type="date" id="issueDate" name="issue_date" required onchange="updateRepeatPreview()">
+          </div>
+          <div class="form-group flex-1">
+            <label>決済期日</label>
+            <input type="date" id="dueDate" name="due_date" onchange="updateRepeatPreview()">
+          </div>
+          <div class="form-group flex-2">
+            <label>取引先</label>
+            <input type="text" id="partnerName" name="partner_name" list="partnerList" placeholder="取引先名を入力">
+            <datalist id="partnerList"></datalist>
+          </div>
+        </div>
+        <div class="repeat-section">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
+            <input type="checkbox" id="repeatEnabled" onchange="toggleRepeat()">
+            <label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">
+              🔁 繰り返し登録（毎月同じ仕訳を複数回登録）
+            </label>
+          </div>
+          <div class="repeat-info">
+            <strong>繰り返し登録のルール：</strong>
+            <ul>
+              <li>発生日は毎月<strong>同じ日付</strong>で登録されます</li>
+              <li>決済期日も毎月<strong>同じ日付</strong>でずれて登録されます</li>
+              <li>月末日を指定した場合は各月の末日に自動調整されます</li>
+            </ul>
+          </div>
+          <div id="repeatOptions" style="display:none;margin-top:10px;">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>繰り返し回数</label>
+                <input type="number" id="repeatCount" value="12" min="1" max="60" style="width:80px;" onchange="updateRepeatPreview()">
+                <span style="font-size:12px;color:#666;margin-top:4px;">回</span>
+              </div>
+            </div>
+            <div class="repeat-preview" id="repeatPreview" style="display:none;">
+              <strong style="font-size:12px;">📅 登録予定日一覧：</strong>
+              <div id="repeatPreviewList" style="margin-top:6px;"></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <label style="font-size:13px;font-weight:bold;">明細行</label>
+            <button type="button" class="btn btn-secondary" onclick="addDetailRow()" style="font-size:12px;padding:4px 12px;">+ 明細追加</button>
+          </div>
+          <div id="detailRows"></div>
+        </div>
+        <div class="attachment-section" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span>📎</span>
+            <label style="font-size:13px;font-weight:bold;color:#1a5276;">証憑ファイルを添付（freeeにアップロード）</label>
+            <span style="font-size:11px;color:#666;">任意 ・ PDF / 画像 / Excel</span>
+          </div>
+          <div class="file-drop-zone" id="formDropZone"
+               onclick="document.getElementById('formFileInput').click()"
+               ondragover="handleDragOver(event, 'formDropZone')"
+               ondragleave="handleDragLeave('formDropZone')"
+               ondrop="handleDrop(event, 'formFileInput')">
+            <input type="file" id="formFileInput" multiple
+                   accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv"
+                   onchange="handleFormFileSelect(this)">
+            <div>📂 クリックまたはドラッグ＆ドロップでファイルを選択</div>
+            <div style="font-size:11px;color:#888;margin-top:4px;">PDF・PNG・JPG・WEBP・Excel・CSV（複数可）</div>
+          </div>
+          <div id="formFileList" class="file-list"></div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
+          <button type="button" class="btn btn-success" onclick="submitForm()" id="formSubmitBtn">▶ freeeに登録</button>
+          <span class="spinner" id="formSpinner">⏳ 登録中...</span>
+        </div>
+        <div class="result-box" id="formResult"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== 仕訳プレビュータブ ===== -->
+  <div id="tab-preview" class="main-tab-content">
+    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+      Notionの対象レコードをfreeeに登録する前に内容を確認できます。
+    </p>
+    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="loadPreview('all')" id="prev-btn-all">全て</button>
+      <button class="btn btn-secondary" onclick="loadPreview('honten')" id="prev-btn-honten">本店CA</button>
+      <button class="btn btn-secondary" onclick="loadPreview('pca')" id="prev-btn-pca">PCA</button>
+    </div>
+    <div id="preview-loading" style="display:none; color:#888; font-size:13px;">⏳ 読み込み中...</div>
+    <div id="preview-content"></div>
+  </div>
+
+  <!-- ===== 書類照合タブ ===== -->
+  <div id="tab-shocho" class="main-tab-content">
+    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+      freeeのファイルボックスにある未紐づけ書類を、既存の仕訳と自動照合します。プレビューで内容を確認してから紐づけを実行できます。
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+      <button class="btn btn-primary" id="btnMatchPreview" onclick="loadMatchPreview()">🔍 照合プレビュー</button>
+      <button class="btn btn-success" id="btnMatchExecute" style="display:none;" onclick="executeMatch()">✅ 紐づけを実行</button>
+      <button class="btn btn-secondary" id="btnMatchReset" style="display:none;" onclick="resetMatch()">↩ リセット</button>
+      <a href="/rules#tab-shocho" class="btn" style="font-size:12px; padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルール確認</a>
+    </div>
+    <div id="match-result"></div>
+  </div>
+
+  <!-- ===== 支払管理タブ ===== -->
+  <div id="tab-shiharai" class="main-tab-content">
+    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+      freeeの未決済仕訳から振込データ（全銀フォーマット）を生成します。
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+      <button class="btn btn-primary" id="btnPayPreview" onclick="loadPaymentPreview()">💳 支払プレビュー</button>
+      <button class="btn btn-secondary" id="btnPayReset" style="display:none;" onclick="resetPayment()">↩ リセット</button>
+      <a href="/rules#tab-shiharai" class="btn" style="font-size:12px; padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルール確認</a>
+    </div>
+    <div id="payment-result"></div>
+  </div>
+
+  <!-- ===== システム状態タブ ===== -->
+  <div id="tab-status" class="main-tab-content">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:20px;">
+      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">FREEE認証</div>
+        <div id="freee-status" style="font-size:16px; font-weight:bold; color:#28a745;">● 確認中...</div>
+      </div>
+      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">処理件数（今セッション）</div>
+        <div id="process-count" style="font-size:28px; font-weight:bold; color:#1a1a2e;">0</div>
+      </div>
+      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">システム状態</div>
+        <div id="system-state" style="font-size:16px; font-weight:bold; color:#17a2b8;">待機中</div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">ボタンを押したときだけ処理を実行します</div>
+      </div>
+    </div>
+    <div id="status-log-section" style="display:none;">
+      <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ（直近50件）</h3>
+      <div id="status-log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
+    </div>
+    <button class="btn btn-secondary" onclick="loadStatusLog()" style="margin-top:8px; font-size:12px;">🔄 ログを更新</button>
+  </div>
 </div>
-
-{% endblock %}
-
-{% block scripts %}
-<script>
-// ============================================================
-// タイムスタンプをJST（日本時間）に変換して表示
-// ============================================================
-function toJST(isoStr) {
-  if (!isoStr) return '';
-  try {
-    let s = isoStr;
-    if (!s.endsWith('Z') && !s.includes('+') && s.length >= 16) s = s + 'Z';
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return isoStr.slice(0, 16);
-    return d.toLocaleString('ja-JP', {
-      timeZone: 'Asia/Tokyo',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit'
-    });
-  } catch(e) { return isoStr.slice(0, 16); }
-}
-document.querySelectorAll('.ts-cell').forEach(cell => {
-  const ts = cell.getAttribute('data-ts');
-  if (ts) cell.textContent = toJST(ts);
-});
-
-// ============================================================
-// 全件処理（手動実行）
-// ============================================================
-async function runNow(dbType = 'all') {
-  const res = document.getElementById('run-result');
-  const statusText = document.getElementById('system-status-text');
-  res.textContent = '処理中...';
-  res.style.color = '#555';
-  if (statusText) { statusText.textContent = '処理中...'; statusText.style.color = '#e67e22'; }
-
-  try {
-    const r = await fetch('/run', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({db_type: dbType})
-    });
-    const data = await r.json();
-    if (data.status === 'ok') {
-      let msg = `処理完了: ${data.total}件\n`;
-      if (data.success) msg += `✅ 成功: ${data.success}件\n`;
-      if (data.reviews) msg += `⚠️ 要確認: ${data.reviews}件\n`;
-      if (data.errors) msg += `❌ エラー: ${data.errors}件\n`;
-      (data.results || []).forEach(r => {
-        if (r.status === 'success') msg += `  ✅ ${r.phase}: ${r.message}\n`;
-        if (r.status === 'error') msg += `  ❌ ${r.phase}: ${r.message}\n`;
-        if (r.status === 'review') msg += `  ⚠️ ${r.phase}: ${r.message}\n`;
-      });
-      if (!data.results || data.results.length === 0) msg += '経理対応待ちのレコードはありませんでした。';
-      res.style.color = data.errors > 0 ? '#dc3545' : '#155724';
-      res.textContent = msg;
-    } else {
-      res.style.color = '#dc3545';
-      res.textContent = 'エラー: ' + data.message;
-    }
-  } catch(e) {
-    res.style.color = '#dc3545';
-    res.textContent = 'エラー: ' + e.message;
-  }
-
-  if (statusText) { statusText.textContent = '待機中'; statusText.style.color = '#4a90d9'; }
-  setTimeout(() => location.reload(), 4000);
-}
-
-// ============================================================
-// 書類照合
-// ============================================================
-
-// プレビュー結果を保持
- let _previewData = null;
-
-function resetMatchUI() {
-  _previewData = null;
-  document.getElementById('match-result').innerHTML = '';
-  document.getElementById('btn-match-dry').style.display = '';
-  document.getElementById('btn-match-dry').disabled = false;
-  document.getElementById('btn-match').style.display = 'none';
-  document.getElementById('btn-match-reset').style.display = 'none';
-}
-
-function _buildMatchHTML(data, isPreview) {
-  let html = '';
-
-  // サマリーバー
-  const modeBadge = isPreview
-    ? `<span style="background:#fff3cd; color:#856404; padding:2px 10px; border-radius:4px; font-size:11px; font-weight:600;">🔍 プレビューモード</span>`
-    : `<span style="background:#d4edda; color:#155724; padding:2px 10px; border-radius:4px; font-size:11px; font-weight:600;">✅ 紐づけ完了</span>`;
-  html += `<div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; padding:10px 14px; background:#f8f9fa; border-radius:6px; font-size:13px;">`;
-  html += `${modeBadge}`;
-  html += `<span>対象書類: <strong>${data.total_receipts}件</strong></span>`;
-  html += `<span style="color:#28a745;">照合成功: <strong>${data.matched_count}件</strong></span>`;
-  if (data.unmatched_count > 0) html += `<span style="color:#856404;">未照合: <strong>${data.unmatched_count}件</strong></span>`;
-  if (data.ai_ocr_count > 0) html += `<span style="color:#6c757d; font-size:11px;">AI-OCR使用: ${data.ai_ocr_count}件</span>`;
-  html += `</div>`;
-
-  // 照合成功一覧
-  if (data.matched && data.matched.length > 0) {
-    html += `<div style="margin-bottom:16px;">`;
-    html += `<div style="font-weight:600; font-size:13px; margin-bottom:8px; color:#155724;">✅ 照合成功 (${data.matched.length}件)</div>`;
-    data.matched.forEach((m, i) => {
-      const aiTag = m.used_ai_ocr
-        ? `<span style="background:#e8f4fd; color:#0c5460; font-size:10px; padding:1px 5px; border-radius:3px; margin-left:4px;">AI-OCR</span>`
-        : '';
-      const statusBadge = m.attached
-        ? '<span style="background:#d4edda; color:#155724; padding:2px 7px; border-radius:3px; font-size:11px;">紐づけ済</span>'
-        : '<span style="background:#fff3cd; color:#856404; padding:2px 7px; border-radius:3px; font-size:11px;">未紐づけ</span>';
-      html += `<div style="border:1px solid #dee2e6; border-radius:6px; padding:12px 14px; margin-bottom:8px; background:#fff;">`;
-      // 書類情報
-      html += `<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">`;
-      html += `<div>`;
-      html += `<span style="font-size:11px; color:#888;">書類 #${m.receipt_id}</span>${aiTag}<br>`;
-      html += `<span style="font-weight:600; font-size:13px;">${m.receipt_partner || m.receipt_description || '(取引先不明)'}</span>`;
-      html += `</div>`;
-      html += `<div style="text-align:right;">`;
-      html += `<div style="font-size:15px; font-weight:700; color:#212529;">￥${(m.receipt_amount || 0).toLocaleString()}</div>`;
-      html += `<div style="font-size:11px; color:#888;">発行日: ${m.receipt_date || '-'}</div>`;
-      html += `</div>`;
-      html += `</div>`;
-      // 矢印
-      html += `<div style="display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px dashed #dee2e6; border-bottom:1px dashed #dee2e6; margin-bottom:8px;">`;
-      html += `<span style="color:#4a90d9; font-size:18px;">↓</span>`;
-      html += `<span style="font-size:11px; color:#666;">紐づけ先仕訳</span>`;
-      html += `</div>`;
-      // 仕訳情報
-      html += `<div style="display:flex; justify-content:space-between; align-items:flex-start;">`;
-      html += `<div>`;
-      html += `<span style="font-size:11px; color:#888;">仕訳 #${m.deal_id}</span><br>`;
-      html += `<span style="font-weight:600; font-size:13px;">${m.deal_partner || '(取引先不明)'}</span>`;
-      html += `</div>`;
-      html += `<div style="text-align:right;">`;
-      html += `<div style="font-size:15px; font-weight:700; color:#212529;">￥${(m.deal_amount || 0).toLocaleString()}</div>`;
-      html += `<div style="font-size:11px; color:#888;">発生日: ${m.deal_date || '-'}</div>`;
-      html += `</div>`;
-      html += `</div>`;
-      // 状態
-      html += `<div style="margin-top:8px; text-align:right;">${statusBadge}</div>`;
-      html += `</div>`;
-    });
-    html += `</div>`;
-  }
-
-  // 未照合一覧
-  if (data.unmatched && data.unmatched.length > 0) {
-    html += `<details style="margin-top:4px;">`;
-    html += `<summary style="font-weight:600; font-size:13px; color:#856404; cursor:pointer; padding:8px 0;">⚠️ 未照合 (${data.unmatched.length}件) — クリックで詳細表示</summary>`;
-    html += `<table style="width:100%; font-size:12px; border-collapse:collapse; margin-top:8px;">`;
-    html += `<thead><tr style="background:#fff3cd;"><th style="padding:6px 10px; text-align:left;">書類ID</th><th style="padding:6px 10px; text-align:left;">取引先</th><th style="padding:6px 10px; text-align:right;">金額</th><th style="padding:6px 10px; text-align:left;">発行日</th><th style="padding:6px 10px; text-align:left;">未照合理由</th></tr></thead><tbody>`;
-    data.unmatched.forEach(u => {
-      const aiTag = u.used_ai_ocr ? ' <span style="background:#e8f4fd; color:#0c5460; font-size:10px; padding:1px 4px; border-radius:3px;">AI-OCR</span>' : '';
-      html += `<tr style="border-bottom:1px solid #f0f0f0;">`;
-      html += `<td style="padding:6px 10px;">#${u.receipt_id}${aiTag}</td>`;
-      html += `<td style="padding:6px 10px;">${u.partner_name || u.description || '-'}</td>`;
-      html += `<td style="padding:6px 10px; text-align:right;">${u.amount ? '￥' + u.amount.toLocaleString() : '-'}</td>`;
-      html += `<td style="padding:6px 10px;">${u.issue_date || '-'}</td>`;
-      html += `<td style="padding:6px 10px; color:#856404;">${u.reason}</td>`;
-      html += `</tr>`;
-    });
-    html += `</tbody></table></details>`;
-  }
-
-  // エラー
-  if (data.errors && data.errors.length > 0) {
-    html += `<div style="margin-top:8px; color:#dc3545; font-size:12px;"><strong>エラー:</strong> ${data.errors.join('<br>')}</div>`;
-  }
-
-  if (!data.total_receipts) {
-    let msg = '📤 未紐づけの書類はありませんでした。';
-    if (data.errors && data.errors.length > 0) {
-      msg += '<br><span style="color:#dc3545;">' + data.errors.join('<br>') + '</span>';
-    } else {
-      msg += '<br><span style="color:#aaa; font-size:11px;">ファイルボックスにある書類がすでに仕訳に添付済みの場合は0件になります。freeeのファイルボックスで「未登録」ステータスの書類のみが対象です。</span>';
-    }
-    html = '<div style="color:#888; font-size:13px; padding:12px 0;">' + msg + '</div>';
-  }
-
-  return html;
-}
-
-async function runMatchPreview() {
-  const resultDiv = document.getElementById('match-result');
-  const btnDry = document.getElementById('btn-match-dry');
-  const btnExec = document.getElementById('btn-match');
-  const btnReset = document.getElementById('btn-match-reset');
-
-  resultDiv.innerHTML = '<div style="color:#555; font-size:13px; padding:12px 0;">🔍 照合中...（PDF解析がある場合、数十秒かかることがあります）</div>';
-  btnDry.disabled = true;
-
-  try {
-    const r = await fetch('/api/match_receipts', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({dry_run: true})
-    });
-    const data = await r.json();
-
-    if (data.error) {
-      resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${data.error}</div>`;
-      btnDry.disabled = false;
-      return;
-    }
-
-    _previewData = data;
-    resultDiv.innerHTML = _buildMatchHTML(data, true);
-
-    // 照合成功があれば実行ボタンを表示
-    if (data.matched_count > 0) {
-      btnDry.style.display = 'none';
-      btnExec.style.display = '';
-      btnReset.style.display = '';
-    } else {
-      btnDry.disabled = false;
-    }
-  } catch(e) {
-    resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
-    btnDry.disabled = false;
-  }
-}
-
-async function runMatchExecute() {
-  const resultDiv = document.getElementById('match-result');
-  const btnExec = document.getElementById('btn-match');
-  const btnReset = document.getElementById('btn-match-reset');
-
-  btnExec.disabled = true;
-  btnReset.disabled = true;
-  resultDiv.innerHTML = '<div style="color:#555; font-size:13px; padding:12px 0;">🔗 紐づけ実行中...</div>';
-
-  try {
-    const r = await fetch('/api/match_receipts', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({dry_run: false})
-    });
-    const data = await r.json();
-
-    if (data.error) {
-      resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${data.error}</div>`;
-      return;
-    }
-
-    resultDiv.innerHTML = _buildMatchHTML(data, false);
-    // 実行後はリセットボタンのみ表示
-    btnExec.style.display = 'none';
-    btnReset.disabled = false;
-    btnReset.textContent = '✕ 閉じる';
-  } catch(e) {
-    resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
-    btnExec.disabled = false;
-    btnReset.disabled = false;
-  }
-}
-
-// ============================================================
-// 支払管理・振込データ生成
-// ============================================================
-
-let _paymentPreviewData = null;
-
-function resetPaymentUI() {
-  _paymentPreviewData = null;
-  document.getElementById('payment-result').innerHTML = '';
-  document.getElementById('btn-payment-preview').style.display = '';
-  document.getElementById('btn-payment-preview').disabled = false;
-  document.getElementById('btn-payment-fb').style.display = 'none';
-  document.getElementById('btn-payment-reset').style.display = 'none';
-}
-
-function _buildPaymentHTML(data) {
-  let html = '';
-
-  // ---- アラートセクション ----
-  if (data.alert_targets && data.alert_targets.length > 0) {
-    // 口座未登録アラート（赤）
-    const bankMissing = data.alert_targets.filter(a => a.alert_reason === 'bank_missing');
-    if (bankMissing.length > 0) {
-      html += `<div style="background:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; padding:12px 16px; margin-bottom:12px;">`;
-      html += `<div style="font-weight:700; font-size:13px; color:#721c24; margin-bottom:8px;">🚨 請求書添付済だが銀行口座が未登録—振込できません（${bankMissing.length}件）</div>`;
-      html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
-      html += `<thead><tr style="border-bottom:1px solid #f5c6cb;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th><th style="padding:4px 8px; text-align:left;">部門</th></tr></thead><tbody>`;
-      bankMissing.forEach(a => {
-        const daysColor = a.days_until_due !== null && a.days_until_due <= 3 ? '#721c24' : '#856404';
-        html += `<tr style="border-bottom:1px solid #f9e0e3;">`;
-        html += `<td style="padding:5px 8px; font-weight:600;">${a.partner_name || '(不明)'}</td>`;
-        html += `<td style="padding:5px 8px; text-align:right;">¥${(a.amount||0).toLocaleString()}</td>`;
-        html += `<td style="padding:5px 8px;">${a.due_date || '-'}</td>`;
-        html += `<td style="padding:5px 8px; text-align:center; font-weight:700; color:${daysColor};">${a.days_until_due !== null ? a.days_until_due + '日' : '-'}</td>`;
-        html += `<td style="padding:5px 8px; font-size:11px; color:#555;">${(a.section_names||[]).join(', ') || '-'}</td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table>`;
-      html += `<div style="margin-top:8px; font-size:11px; color:#721c24;">freeeの取引先設定から銀行口座を登録してください。</div>`;
-      html += `</div>`;
-    }
-    // 請求書未添付アラート（黄）
-    const noReceipt = data.alert_targets.filter(a => a.alert_reason === 'no_receipt');
-    if (noReceipt.length > 0) {
-      html += `<div style="background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:12px 16px; margin-bottom:16px;">`;
-      html += `<div style="font-weight:700; font-size:13px; color:#856404; margin-bottom:8px;">⚠️ 請求書未添付・支払期日が迫っています（${noReceipt.length}件）</div>`;
-      html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
-      html += `<thead><tr style="border-bottom:1px solid #ffc107;"><th style="padding:4px 8px; text-align:left;">取引先</th><th style="padding:4px 8px; text-align:right;">金額</th><th style="padding:4px 8px; text-align:left;">支払期日</th><th style="padding:4px 8px; text-align:center;">残日数</th><th style="padding:4px 8px; text-align:left;">部門</th></tr></thead><tbody>`;
-      noReceipt.forEach(a => {
-        const daysColor = a.days_until_due !== null && a.days_until_due <= 3 ? '#dc3545' : '#856404';
-        html += `<tr style="border-bottom:1px solid #ffe8a1;">`;
-        html += `<td style="padding:5px 8px;">${a.partner_name || '(不明)'}</td>`;
-        html += `<td style="padding:5px 8px; text-align:right;">¥${(a.amount||0).toLocaleString()}</td>`;
-        html += `<td style="padding:5px 8px;">${a.due_date || '-'}</td>`;
-        html += `<td style="padding:5px 8px; text-align:center; font-weight:700; color:${daysColor};">${a.days_until_due !== null ? a.days_until_due + '日' : '-'}</td>`;
-        html += `<td style="padding:5px 8px; font-size:11px; color:#555;">${(a.section_names||[]).join(', ') || '-'}</td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table></div>`;
-    }
-  }
-
-  // ---- 振込対象セクション（支払期日ごとにグループ化） ----
-  if (data.transfer_targets && data.transfer_targets.length > 0) {
-    const totalAmount = data.transfer_targets.reduce((s, t) => s + (t.amount || 0), 0);
-    html += `<div style="font-weight:700; font-size:13px; color:#155724; margin-bottom:10px;">✅ 振込対象（請求書添付済み・${data.transfer_targets.length}件 / 合計: ¥${totalAmount.toLocaleString()}）</div>`;
-
-    // 支払期日ごとにグループ化
-    const byDate = {};
-    data.transfer_targets.forEach(t => {
-      const key = t.due_date || '期日不明';
-      if (!byDate[key]) byDate[key] = [];
-      byDate[key].push(t);
-    });
-
-    // 日付順にソート
-    const sortedDates = Object.keys(byDate).sort();
-
-    sortedDates.forEach(dueDate => {
-      const items = byDate[dueDate];
-
-      // 同一取引先をまとめる（金額合算・部門名マージ・証憑数合算）
-      const merged = {};
-      items.forEach(t => {
-        const pKey = t.partner_name || '(不明)';
-        if (!merged[pKey]) {
-          merged[pKey] = {
-            partner_name: pKey,
-            amount: 0,
-            due_date: t.due_date,
-            days_until_due: t.days_until_due,
-            receipts_count: 0,
-            receipt_ids: [],
-            section_names: new Set(),
-            deal_ids: [],
-          };
-        }
-        merged[pKey].amount += (t.amount || 0);
-        (t.receipts || []).forEach(r => {
-          if (r.id) merged[pKey].receipt_ids.push(r.id);
-          merged[pKey].receipts_count++;
-        });
-        (t.section_names || []).forEach(s => merged[pKey].section_names.add(s));
-        merged[pKey].deal_ids.push(t.deal_id);
-      });
-      const mergedList = Object.values(merged);
-      const groupTotal = mergedList.reduce((s, m) => s + m.amount, 0);
-      const daysUntil = mergedList[0].days_until_due;
-      const daysColor = daysUntil !== null && daysUntil <= 3 ? '#dc3545' : (daysUntil !== null && daysUntil <= 10 ? '#856404' : '#155724');
-      const dealIdsForDate = items.map(t => t.deal_id);
-
-      html += `<div style="border:1px solid #c3e6cb; border-radius:8px; margin-bottom:14px; overflow:hidden;">`;
-      // グループヘッダー
-      html += `<div style="background:#d4edda; padding:8px 14px; display:flex; justify-content:space-between; align-items:center;">`;
-      html += `<div><span style="font-weight:700; font-size:13px;">📅 支払期日: ${dueDate}</span>`;
-      html += `<span style="margin-left:12px; font-size:12px; color:${daysColor}; font-weight:600;">${daysUntil !== null ? '残' + daysUntil + '日' : ''}</span></div>`;
-      html += `<div style="display:flex; align-items:center; gap:12px;">`;
-      html += `<span style="font-size:13px; font-weight:700; color:#155724;">¥${groupTotal.toLocaleString()}</span>`;
-      html += `<button onclick="downloadFBForDate('${dueDate}', ${JSON.stringify(dealIdsForDate)})" style="font-size:11px; padding:4px 10px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">⬇ この日付分をダウンロード</button>`;
-      html += `</div></div>`;
-      // 明細テーブル
-      html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">`;
-      html += `<thead><tr style="background:#f0faf2; border-bottom:1px solid #c3e6cb;"><th style="padding:6px 10px; text-align:left;">取引先</th><th style="padding:6px 10px; text-align:right;">金額</th><th style="padding:6px 10px; text-align:left;">部門</th><th style="padding:6px 10px; text-align:center;">証憑</th></tr></thead><tbody>`;
-      mergedList.forEach(m => {
-        html += `<tr style="border-bottom:1px solid #e9f5ec;">`;
-        html += `<td style="padding:6px 10px; font-weight:600;">${m.partner_name}</td>`;
-        html += `<td style="padding:6px 10px; text-align:right;">¥${m.amount.toLocaleString()}</td>`;
-        html += `<td style="padding:6px 10px; font-size:11px; color:#555;">${[...m.section_names].join(', ') || '-'}</td>`;
-        const rIds = JSON.stringify(m.receipt_ids);
-        const rLabel = m.receipts_count > 0
-          ? `<a href="#" onclick="openReceiptModal(${rIds}, '${m.partner_name.replace(/'/g, "\\'")}'  ); return false;" style="color:#28a745; text-decoration:none; font-weight:600;">📎 ${m.receipts_count}件</a>`
-          : `<span style="color:#aaa;">📎 0件</span>`;
-        html += `<td style="padding:6px 10px; text-align:center;">${rLabel}</td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table></div>`;
-    });
-  } else {
-    html += `<div style="color:#888; font-size:13px; padding:12px 0;">振込対象の仕訳はありませんでした（請求書添付済みで未決済のものがありません）。</div>`;
-  }
-
-  return html;
-}
-
-async function runPaymentPreview() {
-  const resultDiv = document.getElementById('payment-result');
-  const btnPreview = document.getElementById('btn-payment-preview');
-  const btnFB = document.getElementById('btn-payment-fb');
-  const btnReset = document.getElementById('btn-payment-reset');
-
-  resultDiv.innerHTML = '<div style="color:#555; font-size:13px; padding:12px 0;">🔍 支払対象を取得中...</div>';
-  btnPreview.disabled = true;
-
-  try {
-    const r = await fetch('/api/payment/preview');
-    const data = await r.json();
-
-    if (data.error) {
-      resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${data.error}</div>`;
-      btnPreview.disabled = false;
-      return;
-    }
-
-    _paymentPreviewData = data;
-    resultDiv.innerHTML = _buildPaymentHTML(data);
-
-    btnPreview.style.display = 'none';
-    btnReset.style.display = '';
-    // 日付別ダウンロードボタンは各グループ内に表示するため、全体ボタンは非表示のまま
-    btnFB.style.display = 'none';
-  } catch(e) {
-    resultDiv.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
-    btnPreview.disabled = false;
-  }
-}
-
-async function downloadFBForDate(dueDate, dealIds) {
-  // 支払期日をYYYYMMDD形式に変換
-  const transferDate = dueDate.replace(/-/g, '');
-  const filename = `sogohurikomi_${transferDate}.txt`;
-
-  // ボタンを無効化
-  const btns = document.querySelectorAll('[onclick^="downloadFBForDate"]');
-  btns.forEach(b => b.disabled = true);
-
-  try {
-    const r = await fetch('/api/payment/generate_fb', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({transfer_date: transferDate, deal_ids: dealIds})
-    });
-
-    if (!r.ok) {
-      const err = await r.json();
-      alert('エラー: ' + (err.error || r.statusText));
-      btns.forEach(b => b.disabled = false);
-      return;
-    }
-
-    const count = r.headers.get('X-Transfer-Count') || '?';
-    const amount = r.headers.get('X-Transfer-Amount') || '?';
-    const tagged = r.headers.get('X-Tagged-Count') || '?';
-
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    // 完了メッセージを表示
-    const resultDiv = document.getElementById('payment-result');
-    resultDiv.insertAdjacentHTML('afterbegin',
-      `<div style="background:#d4edda; border:1px solid #c3e6cb; border-radius:6px; padding:10px 14px; font-size:12px; color:#155724; margin-bottom:10px;">✅ ${dueDate}分の振込データをダウンロードしました（${count}件 / ¥${Number(amount).toLocaleString()}）。freeeの${tagged}件の仕訳に「振込依頼済」タグを付与しました。</div>`
-    );
-  } catch(e) {
-    alert('エラー: ' + e.message);
-    btns.forEach(b => b.disabled = false);
-  }
-}
-
-// ============================================================
-// 証憑プレビューモーダル
-// ============================================================
-function openReceiptModal(receiptIds, partnerName) {
-  const modal = document.getElementById('receipt-modal');
-  const title = document.getElementById('receipt-modal-title');
-  const body = document.getElementById('receipt-modal-body');
-
-  title.textContent = `証憑確認 — ${partnerName}（${receiptIds.length}件）`;
-  body.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">読み込み中...</div>';
-  modal.style.display = 'flex';
-
-  // 各証憑をタブ形式で表示
-  let html = '';
-  if (receiptIds.length > 1) {
-    // 複数の場合はタブボタンを表示
-    html += '<div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">';
-    receiptIds.forEach((id, i) => {
-      html += `<button onclick="switchReceiptTab(${i})" id="rtab-${i}" style="padding:4px 12px; font-size:12px; border:1px solid #28a745; border-radius:4px; background:${i===0?'#28a745':'#fff'}; color:${i===0?'#fff':'#28a745'}; cursor:pointer;">証憑 ${i+1}</button>`;
-    });
-    html += '</div>';
-  }
-  receiptIds.forEach((id, i) => {
-    const display = i === 0 ? 'block' : 'none';
-    html += `<div id="rpanel-${i}" style="display:${display};">`;
-    html += `<div style="display:flex; gap:8px; margin-bottom:8px; justify-content:flex-end;">`;
-    html += `<a href="/api/receipt/${id}/download?inline=1" target="_blank" style="font-size:12px; padding:4px 10px; background:#17a2b8; color:#fff; border-radius:4px; text-decoration:none;">🔍 別タブで開く</a>`;
-    html += `<a href="/api/receipt/${id}/download" download style="font-size:12px; padding:4px 10px; background:#6c757d; color:#fff; border-radius:4px; text-decoration:none;">⬇ ダウンロード</a>`;
-    html += `</div>`;
-    // PDFは<iframe>、画像は<img>でインラインプレビュー
-    html += `<iframe src="/api/receipt/${id}/download?inline=1" style="width:100%; height:520px; border:1px solid #dee2e6; border-radius:4px;" id="rframe-${i}"></iframe>`;
-    html += `</div>`;
-  });
-  body.innerHTML = html;
-}
-
-function switchReceiptTab(idx) {
-  const panels = document.querySelectorAll('[id^="rpanel-"]');
-  const tabs = document.querySelectorAll('[id^="rtab-"]');
-  panels.forEach((p, i) => p.style.display = i === idx ? 'block' : 'none');
-  tabs.forEach((t, i) => {
-    t.style.background = i === idx ? '#28a745' : '#fff';
-    t.style.color = i === idx ? '#fff' : '#28a745';
-  });
-}
-
-function closeReceiptModal() {
-  document.getElementById('receipt-modal').style.display = 'none';
-  document.getElementById('receipt-modal-body').innerHTML = '';
-}
-
-// モーダル外クリックで閉じる
-document.addEventListener('click', function(e) {
-  const modal = document.getElementById('receipt-modal');
-  if (e.target === modal) closeReceiptModal();
-});
-</script>
 
 <!-- 証憑プレビューモーダル -->
 <div id="receipt-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
@@ -700,4 +366,1031 @@ document.addEventListener('click', function(e) {
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== タブ切り替え =====
+function switchMainTab(name, btn) {
+  document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.main-tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  // URLハッシュ対応
+  history.replaceState(null, '', '#tab-' + name);
+}
+
+function switchSubTab(name, btn) {
+  document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('sub-tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// URLハッシュでタブを開く
+document.addEventListener('DOMContentLoaded', () => {
+  const hash = location.hash;
+  if (hash) {
+    const tabName = hash.replace('#tab-', '');
+    const btn = document.querySelector(`.main-tab-btn[onclick*="'${tabName}'"]`);
+    if (btn) {
+      document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.main-tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      btn.classList.add('active');
+    }
+  }
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('issueDate').value = today;
+  loadMaster();
+  loadChatHistory();
+  loadSystemStatus();
+});
+
+// ===== 自動転記 =====
+async function runProcess(dbType) {
+  const btnMap = { all: 'btn-all', honten: 'btn-honten', pca: 'btn-pca' };
+  const btn = document.getElementById(btnMap[dbType]);
+  const statusDiv = document.getElementById('process-status');
+  const logDiv = document.getElementById('process-log');
+  const logList = document.getElementById('log-list');
+
+  btn.disabled = true;
+  statusDiv.textContent = '⏳ 処理中...';
+  document.getElementById('system-state').textContent = '処理中';
+  document.getElementById('system-state').style.color = '#fd7e14';
+
+  try {
+    const r = await fetch('/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ db_type: dbType })
+    });
+    const data = await r.json();
+    const color = (data.errors || 0) > 0 ? '#dc3545' : '#28a745';
+    statusDiv.style.color = color;
+    statusDiv.textContent = `✅ 完了: 成功${data.success || 0}件 / 要確認${data.reviews || 0}件 / エラー${data.errors || 0}件`;
+    document.getElementById('process-count').textContent = (data.success || 0) + (data.reviews || 0);
+    document.getElementById('system-state').textContent = '待機中';
+    document.getElementById('system-state').style.color = '#17a2b8';
+    loadStatusLog();
+  } catch(e) {
+    statusDiv.style.color = '#dc3545';
+    statusDiv.textContent = '❌ エラー: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ===== システム状態 =====
+async function loadSystemStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    if (data.freee_connected) {
+      document.getElementById('freee-status').textContent = '● 接続済み';
+      document.getElementById('freee-status').style.color = '#28a745';
+    } else {
+      document.getElementById('freee-status').textContent = '● 未接続';
+      document.getElementById('freee-status').style.color = '#dc3545';
+    }
+    if (data.process_count !== undefined) {
+      document.getElementById('process-count').textContent = data.process_count;
+    }
+  } catch(e) {}
+}
+
+async function loadStatusLog() {
+  try {
+    const r = await fetch('/api/logs');
+    const data = await r.json();
+    const logs = data.logs || [];
+    const section = document.getElementById('status-log-section');
+    const list = document.getElementById('status-log-list');
+    if (logs.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    list.innerHTML = logs.map(log => {
+      const color = log.status === 'success' ? '#28a745' : log.status === 'review' ? '#856404' : '#dc3545';
+      const icon = log.status === 'success' ? '✅' : log.status === 'review' ? '⚠️' : '❌';
+      return `<div style="padding:4px 0; border-bottom:1px solid #eee; font-size:12px;">
+        <span style="color:${color};">${icon}</span>
+        <span style="color:#888; margin:0 8px;">${log.time || ''}</span>
+        <span>${log.message || ''}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+// ===== 仕訳プレビュー =====
+let currentPreviewDb = 'all';
+async function loadPreview(dbType) {
+  currentPreviewDb = dbType;
+  ['all','honten','pca'].forEach(t => {
+    const btn = document.getElementById('prev-btn-' + t);
+    btn.className = t === dbType ? 'btn btn-primary' : 'btn btn-secondary';
+  });
+  const loading = document.getElementById('preview-loading');
+  const content = document.getElementById('preview-content');
+  loading.style.display = 'block';
+  content.innerHTML = '';
+  try {
+    const r = await fetch('/api/preview?db=' + dbType);
+    const data = await r.json();
+    loading.style.display = 'none';
+    if (!data.previews || data.previews.length === 0) {
+      content.innerHTML = '<div style="color:#888; font-size:13px; padding:16px;">対象レコードはありません。</div>';
+      return;
+    }
+    content.innerHTML = data.previews.map(item => buildPreviewCard(item)).join('');
+  } catch(e) {
+    loading.style.display = 'none';
+    content.innerHTML = `<div style="color:#dc3545; font-size:13px;">❌ エラー: ${e.message}</div>`;
+  }
+}
+
+function buildPreviewCard(item) {
+  const j = item.journal || item;
+  const action = j.action || item.action;
+  const borderColor = action === 'register' || action === 'register_scout_only' ? '#28a745'
+    : action === 'delete' ? '#dc3545'
+    : action === 'refund' ? '#fd7e14'
+    : action === 'review' ? '#ffc107' : '#6c757d';
+  const actionLabel = action === 'register' ? '通常登録'
+    : action === 'register_scout_only' ? 'スカウト手数料のみ'
+    : action === 'delete' ? '取引削除（入社前辞退）'
+    : action === 'refund' ? '返金マイナス仕訳'
+    : action === 'review' ? '要手動確認' : action;
+  const badgeClass = action === 'register' || action === 'register_scout_only' ? 'badge-ok'
+    : action === 'delete' ? 'badge-error'
+    : action === 'review' || action === 'refund' ? 'badge-review' : 'badge-skip';
+
+  let html = `<div class="card" style="margin-bottom:16px; border-left:4px solid ${borderColor};">`;
+  html += `<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:12px;">`;
+  html += `<div>
+    <span style="font-size:16px; font-weight:bold;">${item.phase || ''}</span>
+    <span class="badge badge-skip" style="margin-left:8px;">${item.db_type || 'honten'}</span>
+    <span class="badge ${badgeClass}" style="margin-left:4px;">${actionLabel}</span>
+    ${j.needs_invoice ? '<span class="badge" style="background:#17a2b8;color:#fff;margin-left:4px;">請求書登録あり</span>' : ''}
+  </div>`;
+  html += `<div style="font-size:12px;color:#888;">ステータス: ${j.original_status || item.original_status || '—'} / 入社日: ${item.nyusha_date || j.nyusha_date || '—'}</div>`;
+  html += `</div>`;
+  html += `<p style="font-size:13px;color:#555;margin-bottom:12px;">${j.message || item.message || ''}</p>`;
+
+  if (action === 'review') {
+    html += `<div class="alert alert-warning" style="font-size:13px;">⚠️ 手動で確認・処理が必要です。</div>`;
+  } else if (action === 'delete') {
+    html += `<div class="alert" style="background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;font-size:13px;">🗑 入社前辞退のため、freeeの取引を削除します。</div>`;
+  } else {
+    if (j.sales_entry) html += buildEntryTable(j.sales_entry, action === 'refund' ? '▼ 売上マイナス仕訳（返金）' : '▼ 売上仕訳（収入）', action === 'refund' ? '#fd7e14' : '#28a745');
+    if (j.purchase_entry) html += buildEntryTable(j.purchase_entry, action === 'refund' ? '▼ 仕入マイナス仕訳（返金）' : '▼ 仕入仕訳（支出）', action === 'refund' ? '#fd7e14' : '#dc3545');
+    if (j.pca_entry) html += buildEntryTable(j.pca_entry, '▼ PCA支払仕訳（PCA仕入高）', '#6f42c1');
+  }
+
+  if (action !== 'review') {
+    html += `<div style="margin-top:8px;">
+      <button class="btn btn-success" style="font-size:13px;" onclick="runSinglePreview('${item.page_id}', '${item.db_type || 'honten'}', this)">▶ この1件を登録</button>
+      <span id="prev-result-${item.page_id}" style="margin-left:12px;font-size:13px;"></span>
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function buildEntryTable(entry, label, color) {
+  if (!entry || !entry.details || entry.details.length === 0) return '';
+  const d = entry.details[0];
+  return `<div style="margin-bottom:12px;">
+    <div style="font-size:12px;font-weight:bold;color:${color};margin-bottom:4px;">${label}
+      <span style="font-weight:normal;color:#555;margin-left:8px;">部門: <strong>${entry.section_name || '—'}</strong></span>
+    </div>
+    <table style="font-size:12px;width:100%;">
+      <thead><tr><th>発生日</th><th>取引先</th><th>決済期日</th><th>勘定科目</th><th>金額</th><th>備考</th><th>メモタグ</th></tr></thead>
+      <tbody><tr>
+        <td>${entry.issue_date || '—'}</td>
+        <td>${entry.partner_name || '—'}</td>
+        <td>${entry.due_date || '—'}</td>
+        <td>${d.account_item_name || '—'}</td>
+        <td style="text-align:right;font-weight:bold;">${(d.amount || 0).toLocaleString()}円</td>
+        <td>${d.description || '—'}</td>
+        <td style="color:#6f42c1;">${(d.tag_names || []).join(', ') || '—'}</td>
+      </tr></tbody>
+    </table>
+  </div>`;
+}
+
+async function runSinglePreview(pageId, dbType, btn) {
+  btn.disabled = true;
+  btn.textContent = '処理中...';
+  const span = document.getElementById('prev-result-' + pageId);
+  try {
+    const r = await fetch('/run/single', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_id: pageId, db_type: dbType })
+    });
+    const data = await r.json();
+    if (data.status === 'success') {
+      span.style.color = '#28a745';
+      span.textContent = '✅ ' + data.message;
+      btn.textContent = '✅ 登録済み';
+    } else if (data.status === 'review') {
+      span.style.color = '#856404';
+      span.textContent = '⚠️ ' + data.message;
+      btn.disabled = false;
+      btn.textContent = '▶ この1件を登録';
+    } else {
+      span.style.color = '#dc3545';
+      span.textContent = '❌ ' + data.message;
+      btn.disabled = false;
+      btn.textContent = '▶ この1件を登録';
+    }
+  } catch(e) {
+    span.style.color = '#dc3545';
+    span.textContent = 'エラー: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = '▶ この1件を登録';
+  }
+}
+
+// ===== 書類照合 =====
+let _matchPreviewData = null;
+async function loadMatchPreview() {
+  const btn = document.getElementById('btnMatchPreview');
+  const resultDiv = document.getElementById('match-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ 照合中...';
+  resultDiv.innerHTML = '<div style="color:#888;font-size:13px;">照合中...</div>';
+  try {
+    const r = await fetch('/api/match/preview');
+    const data = await r.json();
+    btn.disabled = false;
+    btn.textContent = '🔍 照合プレビュー';
+    if (data.error) {
+      resultDiv.innerHTML = `<div style="color:#dc3545;font-size:13px;">❌ ${data.error}</div>`;
+      return;
+    }
+    _matchPreviewData = data;
+    resultDiv.innerHTML = _buildMatchHTML(data);
+    document.getElementById('btnMatchExecute').style.display = '';
+    document.getElementById('btnMatchReset').style.display = '';
+    btn.style.display = 'none';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '🔍 照合プレビュー';
+    resultDiv.innerHTML = `<div style="color:#dc3545;font-size:13px;">❌ エラー: ${e.message}</div>`;
+  }
+}
+
+function _buildMatchHTML(data) {
+  const items = data.matches || [];
+  if (items.length === 0) return '<div style="color:#888;font-size:13px;padding:12px;">未照合の書類はありません。</div>';
+  let html = `<div style="font-size:13px;color:#555;margin-bottom:12px;">${items.length}件の照合候補が見つかりました。</div>`;
+  items.forEach(item => {
+    const scoreColor = item.score >= 80 ? '#28a745' : item.score >= 50 ? '#ffc107' : '#dc3545';
+    html += `<div style="border:1px solid #dee2e6;border-radius:8px;padding:12px;margin-bottom:12px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div style="font-weight:bold;font-size:13px;">📄 ${item.receipt_name || '書類'}</div>
+        <span style="background:${scoreColor};color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;">スコア: ${item.score}</span>
+      </div>
+      <div style="font-size:12px;color:#555;">
+        照合先: <strong>${item.deal_partner || '—'}</strong> / ${item.deal_date || '—'} / ${(item.deal_amount || 0).toLocaleString()}円
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
+async function executeMatch() {
+  if (!_matchPreviewData) return;
+  const btn = document.getElementById('btnMatchExecute');
+  btn.disabled = true;
+  btn.textContent = '⏳ 実行中...';
+  try {
+    const r = await fetch('/api/match/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_matchPreviewData)
+    });
+    const data = await r.json();
+    document.getElementById('match-result').innerHTML = `<div style="color:#28a745;font-size:13px;padding:12px;">✅ 完了: ${data.matched || 0}件紐づけました。</div>`;
+    resetMatch();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '✅ 紐づけを実行';
+  }
+}
+
+function resetMatch() {
+  _matchPreviewData = null;
+  document.getElementById('btnMatchPreview').style.display = '';
+  document.getElementById('btnMatchExecute').style.display = 'none';
+  document.getElementById('btnMatchReset').style.display = 'none';
+}
+
+// ===== 支払管理 =====
+let _paymentPreviewData = null;
+async function loadPaymentPreview() {
+  const btn = document.getElementById('btnPayPreview');
+  const resultDiv = document.getElementById('payment-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ 取得中...';
+  resultDiv.innerHTML = '<div style="color:#888;font-size:13px;">取得中...</div>';
+  try {
+    const r = await fetch('/api/payment/preview');
+    const data = await r.json();
+    btn.disabled = false;
+    btn.textContent = '💳 支払プレビュー';
+    if (data.error) {
+      resultDiv.innerHTML = `<div style="color:#dc3545;font-size:13px;">❌ ${data.error}</div>`;
+      return;
+    }
+    _paymentPreviewData = data;
+    resultDiv.innerHTML = _buildPaymentHTML(data);
+    document.getElementById('btnPayReset').style.display = '';
+    btn.style.display = 'none';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💳 支払プレビュー';
+    resultDiv.innerHTML = `<div style="color:#dc3545;font-size:13px;">❌ エラー: ${e.message}</div>`;
+  }
+}
+
+function _buildPaymentHTML(data) {
+  const groups = data.groups || [];
+  if (groups.length === 0) {
+    const alerts = data.alerts || [];
+    let html = '<div style="color:#888;font-size:13px;padding:12px;">支払対象の仕訳はありません。</div>';
+    if (alerts.length > 0) {
+      html += `<div style="margin-top:12px;"><h4 style="font-size:13px;font-weight:bold;color:#856404;">⚠️ 要確認（${alerts.length}件）</h4>`;
+      alerts.forEach(a => {
+        html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;">
+          ${a.partner_name || '—'} / ${a.due_date || '—'} / ${(a.amount || 0).toLocaleString()}円 — ${a.reason || ''}
+        </div>`;
+      });
+      html += '</div>';
+    }
+    return html;
+  }
+
+  let html = '';
+  groups.forEach(group => {
+    const total = (group.deals || []).reduce((s, d) => s + (d.amount || 0), 0);
+    html += `<div style="border:1px solid #dee2e6;border-radius:8px;padding:14px;margin-bottom:16px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:bold;font-size:14px;">📅 支払期日: ${group.due_date}</div>
+        <div style="font-size:13px;color:#555;">合計: <strong>${total.toLocaleString()}円</strong>（${group.deals.length}件）</div>
+      </div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:10px;">
+        <thead><tr style="background:#f8f9fa;"><th style="padding:4px 8px;text-align:left;">取引先</th><th style="padding:4px 8px;text-align:right;">金額</th><th style="padding:4px 8px;text-align:left;">備考</th></tr></thead>
+        <tbody>`;
+    group.deals.forEach(d => {
+      html += `<tr style="border-top:1px solid #eee;">
+        <td style="padding:4px 8px;">${d.partner_name || '—'}</td>
+        <td style="padding:4px 8px;text-align:right;">${(d.amount || 0).toLocaleString()}円</td>
+        <td style="padding:4px 8px;color:#888;">${d.description || ''}</td>
+      </tr>`;
+    });
+    const dealIds = group.deals.map(d => d.id);
+    html += `</tbody></table>
+      <button class="btn btn-success" style="font-size:12px;" onclick='downloadFBForDate("${group.due_date}", ${JSON.stringify(dealIds)})'>
+        ⬇ ${group.due_date} 分の振込データをダウンロード
+      </button>
+    </div>`;
+  });
+
+  const alerts = data.alerts || [];
+  if (alerts.length > 0) {
+    html += `<div style="margin-top:12px;"><h4 style="font-size:13px;font-weight:bold;color:#856404;">⚠️ 要確認（${alerts.length}件）</h4>`;
+    alerts.forEach(a => {
+      html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;">
+        ${a.partner_name || '—'} / ${a.due_date || '—'} / ${(a.amount || 0).toLocaleString()}円 — ${a.reason || ''}
+      </div>`;
+    });
+    html += '</div>';
+  }
+  return html;
+}
+
+async function downloadFBForDate(dueDate, dealIds) {
+  const transferDate = dueDate.replace(/-/g, '');
+  const filename = `sogohurikomi_${transferDate}.txt`;
+  const btns = document.querySelectorAll(`[onclick*="${dueDate}"]`);
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/api/payment/generate_fb', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transfer_date: transferDate, deal_ids: dealIds })
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      alert('エラー: ' + (err.error || r.statusText));
+      btns.forEach(b => b.disabled = false);
+      return;
+    }
+    const count = r.headers.get('X-Transfer-Count') || '?';
+    const amount = r.headers.get('X-Transfer-Amount') || '?';
+    const tagged = r.headers.get('X-Tagged-Count') || '?';
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    document.getElementById('payment-result').insertAdjacentHTML('afterbegin',
+      `<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:10px 14px;font-size:12px;color:#155724;margin-bottom:10px;">✅ ${dueDate}分の振込データをダウンロードしました（${count}件 / ¥${Number(amount).toLocaleString()}）。freeeの${tagged}件の仕訳に「振込依頼済」タグを付与しました。</div>`
+    );
+  } catch(e) {
+    alert('エラー: ' + e.message);
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+function resetPayment() {
+  _paymentPreviewData = null;
+  document.getElementById('btnPayPreview').style.display = '';
+  document.getElementById('btnPayReset').style.display = 'none';
+  document.getElementById('payment-result').innerHTML = '';
+}
+
+// ===== 証憑モーダル =====
+function openReceiptModal(receiptIds, partnerName) {
+  const modal = document.getElementById('receipt-modal');
+  const title = document.getElementById('receipt-modal-title');
+  const body = document.getElementById('receipt-modal-body');
+  title.textContent = `証憑確認 — ${partnerName}（${receiptIds.length}件）`;
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">読み込み中...</div>';
+  modal.style.display = 'flex';
+  let html = '';
+  if (receiptIds.length > 1) {
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">';
+    receiptIds.forEach((id, i) => {
+      html += `<button onclick="switchReceiptTab(${i})" id="rtab-${i}" style="padding:4px 12px;font-size:12px;border:1px solid #28a745;border-radius:4px;background:${i===0?'#28a745':'#fff'};color:${i===0?'#fff':'#28a745'};cursor:pointer;">証憑 ${i+1}</button>`;
+    });
+    html += '</div>';
+  }
+  receiptIds.forEach((id, i) => {
+    html += `<div id="rpanel-${i}" style="display:${i===0?'block':'none'};">
+      <div style="display:flex;gap:8px;margin-bottom:8px;justify-content:flex-end;">
+        <a href="/api/receipt/${id}/download?inline=1" target="_blank" style="font-size:12px;padding:4px 10px;background:#17a2b8;color:#fff;border-radius:4px;text-decoration:none;">🔍 別タブで開く</a>
+        <a href="/api/receipt/${id}/download" download style="font-size:12px;padding:4px 10px;background:#6c757d;color:#fff;border-radius:4px;text-decoration:none;">⬇ ダウンロード</a>
+      </div>
+      <iframe src="/api/receipt/${id}/download?inline=1" style="width:100%;height:520px;border:1px solid #dee2e6;border-radius:4px;"></iframe>
+    </div>`;
+  });
+  body.innerHTML = html;
+}
+
+function switchReceiptTab(idx) {
+  document.querySelectorAll('[id^="rpanel-"]').forEach((p, i) => p.style.display = i === idx ? 'block' : 'none');
+  document.querySelectorAll('[id^="rtab-"]').forEach((t, i) => {
+    t.style.background = i === idx ? '#28a745' : '#fff';
+    t.style.color = i === idx ? '#fff' : '#28a745';
+  });
+}
+
+function closeReceiptModal() {
+  document.getElementById('receipt-modal').style.display = 'none';
+  document.getElementById('receipt-modal-body').innerHTML = '';
+}
+
+document.addEventListener('click', function(e) {
+  if (e.target === document.getElementById('receipt-modal')) closeReceiptModal();
+});
+
+// ===== 仕訳アシスタント（マスタ・フォーム・AI） =====
+let masterData = { sections: [], tags: [], account_items: [], partners: [] };
+let aiHistory = [];
+let aiFiles = [];
+let formFiles = [];
+
+function getOrCreateSessionId() {
+  let sid = localStorage.getItem('ai_session_id');
+  if (!sid) {
+    sid = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('ai_session_id', sid);
+  }
+  return sid;
+}
+
+async function loadChatHistory() {
+  const sid = getOrCreateSessionId();
+  try {
+    const res = await fetch(`/api/chat_history/${sid}`);
+    const data = await res.json();
+    if (data.messages && data.messages.length > 0) {
+      aiHistory = data.messages;
+      const container = document.getElementById('aiMessages');
+      container.innerHTML = '';
+      data.messages.forEach(msg => {
+        if (msg.role !== 'system') addAiMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content);
+      });
+    }
+  } catch(e) {}
+}
+
+async function saveChatHistory() {
+  const sid = getOrCreateSessionId();
+  try {
+    await fetch(`/api/chat_history/${sid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: aiHistory }),
+    });
+  } catch(e) {}
+}
+
+async function deleteChatHistory() {
+  const sid = getOrCreateSessionId();
+  try { await fetch(`/api/chat_history/${sid}`, { method: 'DELETE' }); } catch(e) {}
+}
+
+async function loadMaster() {
+  try {
+    const res = await fetch('/api/freee_master');
+    const data = await res.json();
+    if (data.error) return;
+    masterData = data;
+    const dl = document.getElementById('partnerList');
+    dl.innerHTML = '';
+    data.partners.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      dl.appendChild(opt);
+    });
+    addDetailRow();
+  } catch(e) { addDetailRow(); }
+}
+
+function toggleRepeat() {
+  const enabled = document.getElementById('repeatEnabled').checked;
+  document.getElementById('repeatOptions').style.display = enabled ? 'block' : 'none';
+  if (enabled) updateRepeatPreview();
+  else document.getElementById('repeatPreview').style.display = 'none';
+}
+
+function updateRepeatPreview() {
+  if (!document.getElementById('repeatEnabled').checked) return;
+  const issueDate = document.getElementById('issueDate').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const count = parseInt(document.getElementById('repeatCount').value) || 1;
+  if (!issueDate) return;
+  const previewEl = document.getElementById('repeatPreview');
+  const listEl = document.getElementById('repeatPreviewList');
+  previewEl.style.display = 'block';
+  const rows = [];
+  const base = new Date(issueDate);
+  const baseDue = dueDate ? new Date(dueDate) : null;
+  for (let i = 0; i < Math.min(count, 24); i++) {
+    const d = new Date(base.getFullYear(), base.getMonth() + i, base.getDate());
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    if (d.getDate() > lastDay) d.setDate(lastDay);
+    let dueStr = '-';
+    if (baseDue) {
+      const due = new Date(baseDue.getFullYear(), baseDue.getMonth() + i, baseDue.getDate());
+      const dueLastDay = new Date(due.getFullYear(), due.getMonth() + 1, 0).getDate();
+      if (due.getDate() > dueLastDay) due.setDate(dueLastDay);
+      dueStr = due.toISOString().split('T')[0];
+    }
+    rows.push(`<span style="display:inline-block;margin-right:16px;margin-bottom:4px;">${i+1}回目: <strong>${d.toISOString().split('T')[0]}</strong>${dueStr !== '-' ? ` → 決済: <strong>${dueStr}</strong>` : ''}</span>`);
+  }
+  if (count > 24) rows.push(`<span style="color:#888;font-size:11px;">… 他 ${count - 24} 件</span>`);
+  listEl.innerHTML = rows.join('');
+}
+
+function addDetailRow() {
+  const container = document.getElementById('detailRows');
+  let accountOptions = '<option value="">勘定科目を選択</option>';
+  masterData.account_items.forEach(a => { accountOptions += `<option value="${a.name}">${a.name}</option>`; });
+  let sectionOptions = '<option value="">部門なし</option>';
+  masterData.sections.forEach(s => { sectionOptions += `<option value="${s.name}">${s.name}</option>`; });
+  let tagOptions = masterData.tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'detail-row';
+  row.innerHTML = `
+    <button type="button" class="remove-btn" onclick="removeDetailRow(this)">✕</button>
+    <div class="form-row">
+      <div class="form-group flex-2"><label>勘定科目 *</label><select name="account_item_name" required>${accountOptions}</select></div>
+      <div class="form-group flex-1"><label>税抜金額 *</label><input type="number" name="amount" placeholder="例: 100000" required min="0"></div>
+      <div class="form-group flex-1"><label>税区分コード</label>
+        <select name="tax_code">
+          <option value="1">課税売上10%（1）</option>
+          <option value="7">課税仕入10%（7）</option>
+          <option value="0">不課税（0）</option>
+          <option value="3">非課税売上（3）</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group flex-2"><label>部門</label><select name="section_name">${sectionOptions}</select></div>
+      <div class="form-group flex-2"><label>メモタグ</label><select name="tag_name"><option value="">タグなし</option>${tagOptions}</select></div>
+      <div class="form-group flex-3"><label>備考</label><input type="text" name="description" placeholder="備考（任意）"></div>
+    </div>`;
+  container.appendChild(row);
+}
+
+function removeDetailRow(btn) {
+  const row = btn.closest('.detail-row');
+  if (document.getElementById('detailRows').children.length > 1) row.remove();
+}
+
+function handleFormFileSelect(input) {
+  for (const file of input.files) {
+    if (!formFiles.find(f => f.name === file.name && f.size === file.size)) formFiles.push(file);
+  }
+  renderFormFileList(); input.value = '';
+}
+
+function renderFormFileList() {
+  const listEl = document.getElementById('formFileList');
+  if (formFiles.length === 0) { listEl.innerHTML = ''; return; }
+  listEl.innerHTML = formFiles.map((f, i) => `<div class="file-item"><span>📄</span><span class="file-name">${f.name}</span><span style="font-size:11px;color:#666;">${(f.size/1024).toFixed(0)} KB</span><button class="file-remove" onclick="removeFormFile(${i})">✕</button></div>`).join('');
+}
+
+function removeFormFile(idx) { formFiles.splice(idx, 1); renderFormFileList(); }
+
+function handleDragOver(e, zoneId) { e.preventDefault(); document.getElementById(zoneId).classList.add('dragover'); }
+function handleDragLeave(zoneId) { document.getElementById(zoneId).classList.remove('dragover'); }
+function handleDrop(e, inputId) {
+  e.preventDefault();
+  document.getElementById('formDropZone').classList.remove('dragover');
+  for (const file of e.dataTransfer.files) {
+    if (!formFiles.find(f => f.name === file.name && f.size === file.size)) formFiles.push(file);
+  }
+  renderFormFileList();
+}
+
+function handleAiDragOver(e) { e.preventDefault(); e.stopPropagation(); document.getElementById('aiFileZone').classList.add('dragover'); }
+function handleAiDragLeave(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (!document.getElementById('aiFileZone').contains(e.relatedTarget)) document.getElementById('aiFileZone').classList.remove('dragover');
+}
+function handleAiDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  document.getElementById('aiFileZone').classList.remove('dragover');
+  for (const file of e.dataTransfer.files) {
+    if (!aiFiles.find(f => f.name === file.name && f.size === file.size)) aiFiles.push(file);
+  }
+  renderAiFileList();
+}
+function handleAiFileSelect(input) {
+  for (const file of input.files) {
+    if (!aiFiles.find(f => f.name === file.name && f.size === file.size)) aiFiles.push(file);
+  }
+  renderAiFileList(); input.value = '';
+}
+function renderAiFileList() {
+  const listEl = document.getElementById('aiFileList');
+  const badge = document.getElementById('aiFileBadge');
+  if (aiFiles.length === 0) { listEl.style.display = 'none'; badge.style.display = 'none'; return; }
+  badge.textContent = `${aiFiles.length}件`; badge.style.display = 'inline-block';
+  listEl.style.display = 'block';
+  listEl.innerHTML = aiFiles.map((f, i) => `<div class="file-item"><span>📄</span><span class="file-name">${f.name}</span><span style="font-size:11px;color:#666;">${(f.size/1024).toFixed(0)} KB</span><button class="file-remove" onclick="removeAiFile(${i})">✕</button></div>`).join('');
+}
+function removeAiFile(idx) { aiFiles.splice(idx, 1); renderAiFileList(); }
+
+async function submitForm() {
+  const btn = document.getElementById('formSubmitBtn');
+  const spinner = document.getElementById('formSpinner');
+  const resultBox = document.getElementById('formResult');
+  const issueDate = document.getElementById('issueDate').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const dealType = document.getElementById('dealType').value;
+  const partnerName = document.getElementById('partnerName').value;
+  const repeatEnabled = document.getElementById('repeatEnabled').checked;
+  const repeatCount = parseInt(document.getElementById('repeatCount').value) || 1;
+  if (!issueDate) { alert('発生日を入力してください'); return; }
+  const detailRows = document.querySelectorAll('#detailRows .detail-row');
+  const details = [];
+  for (const row of detailRows) {
+    const accountName = row.querySelector('[name="account_item_name"]').value;
+    const amount = parseInt(row.querySelector('[name="amount"]').value);
+    const taxCode = parseInt(row.querySelector('[name="tax_code"]').value);
+    const sectionName = row.querySelector('[name="section_name"]').value;
+    const tagName = row.querySelector('[name="tag_name"]').value;
+    const description = row.querySelector('[name="description"]').value;
+    if (!accountName || !amount) { alert('勘定科目と金額は必須です'); return; }
+    const detail = { account_item_name: accountName, amount, tax_code: taxCode, description, tag_names: tagName ? [tagName] : [] };
+    if (sectionName) detail.section_name = sectionName;
+    details.push(detail);
+  }
+  btn.disabled = true; spinner.classList.add('active'); resultBox.style.display = 'none';
+  try {
+    const res = await fetch('/api/assistant/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_type: dealType, issue_date: issueDate, due_date: dueDate || null, partner_name: partnerName || null, details, repeat: repeatEnabled, repeat_count: repeatCount })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      let receiptMsg = '';
+      if (formFiles.length > 0 && data.ids && data.ids.length > 0) {
+        const uploadResult = await uploadReceiptsToDeals(formFiles, data.ids);
+        receiptMsg = `<br>📎 証憑: ${uploadResult}`;
+      }
+      resultBox.className = 'result-box success';
+      resultBox.innerHTML = `✅ 登録完了！${data.registered}件登録しました。<br>${data.ids ? `登録ID: ${data.ids.join(', ')}` : ''}${receiptMsg}`;
+      formFiles = []; renderFormFileList();
+    } else {
+      resultBox.className = 'result-box error';
+      resultBox.innerHTML = `❌ エラー: ${data.message || JSON.stringify(data)}`;
+    }
+    resultBox.style.display = 'block';
+  } catch(e) {
+    resultBox.className = 'result-box error';
+    resultBox.innerHTML = `❌ 通信エラー: ${e.message}`;
+    resultBox.style.display = 'block';
+  } finally {
+    btn.disabled = false; spinner.classList.remove('active');
+  }
+}
+
+async function uploadReceiptsToDeals(files, dealIds) {
+  const results = [];
+  for (const file of files) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('deal_id', dealIds[0]);
+      formData.append('description', file.name);
+      const res = await fetch('/api/assistant/upload_receipt', { method: 'POST', body: formData });
+      const data = await res.json();
+      results.push(data.status === 'ok' ? `${file.name} ✅` : `${file.name} ❌(${data.message})`);
+    } catch(e) { results.push(`${file.name} ❌(通信エラー)`); }
+  }
+  return results.join(', ');
+}
+
+function handleAiKey(e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendAiMessage(); }
+
+function addAiMessage(role, text) {
+  const container = document.getElementById('aiMessages');
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.innerHTML = text.replace(/\n/g, '<br>');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+function clearAiChat() {
+  aiHistory = []; aiFiles = []; renderAiFileList(); deleteChatHistory();
+  document.getElementById('aiMessages').innerHTML = `<div class="ai-msg assistant">チャット履歴をクリアしました。新しい仕訳の指示をどうぞ。</div>`;
+}
+
+async function sendAiMessage() {
+  const input = document.getElementById('aiInput');
+  const btn = document.getElementById('aiSendBtn');
+  const message = input.value.trim();
+  if (!message && aiFiles.length === 0) return;
+  const displayMsg = message + (aiFiles.length > 0 ? ` 📎 ${aiFiles.map(f=>f.name).join(', ')}` : '');
+  addAiMessage('user', displayMsg);
+  input.value = ''; btn.disabled = true;
+  const thinkingDiv = addAiMessage('assistant', '⏳ 考え中...');
+  try {
+    let fileContents = [];
+    if (aiFiles.length > 0) {
+      thinkingDiv.innerHTML = '⏳ ファイルを読み取り中...';
+      const formData = new FormData();
+      for (const file of aiFiles) formData.append('files', file);
+      formData.append('message', message);
+      const extractRes = await fetch('/api/assistant/extract_file', { method: 'POST', body: formData });
+      const extractData = await extractRes.json();
+      if (extractData.contents) fileContents = extractData.contents;
+      thinkingDiv.innerHTML = '⏳ AIが仕訳を提案中...';
+    }
+    const aiMessage = fileContents.length > 0 ? `${message}\n\n【添付ファイルの内容】\n${fileContents.join('\n\n---\n\n')}` : message;
+    const res = await fetch('/api/assistant/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: aiMessage, history: aiHistory, master: masterData })
+    });
+    const data = await res.json();
+    thinkingDiv.remove();
+    if (data.error) {
+      addAiMessage('error', `❌ エラー: ${data.error}`);
+    } else {
+      aiHistory.push({ role: 'user', content: aiMessage });
+      aiHistory.push({ role: 'assistant', content: data.reply });
+      saveChatHistory();
+      let replyHtml = data.reply.replace(/\n/g, '<br>');
+      if (data.entries && data.entries.length > 0) {
+        replyHtml += `<br><br><div class="preview-table"><table><tr><th>発生日</th><th>種別</th><th>取引先</th><th>勘定科目</th><th>金額</th><th>部門</th><th>備考</th></tr>`;
+        data.entries.forEach(e => {
+          e.details.forEach(d => {
+            replyHtml += `<tr><td>${e.issue_date}</td><td>${e.deal_type==='income'?'収入':'支出'}</td><td>${e.partner_name||'-'}</td><td>${d.account_item_name}</td><td>${d.amount.toLocaleString()}円</td><td>${d.section_name||'-'}</td><td>${d.description||'-'}</td></tr>`;
+          });
+        });
+        replyHtml += `</table></div><br>`;
+        const hasFiles = aiFiles.length > 0;
+        const entriesJson = JSON.stringify(data.entries).replace(/"/g, '&quot;');
+        if (hasFiles) replyHtml += `<div style="font-size:12px;color:#555;margin-bottom:8px;">📎 添付ファイル（${aiFiles.length}件）も証憑として一緒にアップロードされます</div>`;
+        replyHtml += `<button class="btn btn-success" onclick='registerAiEntries(${entriesJson})'>▶ この内容でfreeeに登録する（${data.entries.length}件）</button>`;
+        if (hasFiles) replyHtml += ` <button class="btn btn-secondary" style="font-size:12px;" onclick='registerAiEntries(${entriesJson}, false)'>証憑なしで登録</button>`;
+      }
+      if (data.delete_actions && data.delete_actions.length > 0) {
+        data.delete_actions.forEach(action => {
+          const actionJson = JSON.stringify(action).replace(/"/g, '&quot;');
+          const targetLabel = action.target === 'deal' ? '仕訳' : action.target === 'invoice' ? '請求書' : '仕訳・請求書';
+          const dateRange = (action.start_date || '') + (action.end_date ? ` 〜 ${action.end_date}` : '');
+          replyHtml += `<br><div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;margin-top:8px;">
+            <div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">🗑 削除対象の検索</div>
+            <div style="font-size:13px;margin-bottom:8px;">対象: <b>${targetLabel}</b> | 取引先: <b>${action.partner_name||'指定なし'}</b> | 期間: <b>${dateRange||'今年度'}</b></div>
+            <button class="btn btn-warning" onclick='previewDeleteAction(${actionJson})'>🔍 削除対象を検索する</button>
+          </div>`;
+        });
+      }
+      if (data.pending_deletes && (data.pending_deletes.deal_ids.length > 0 || data.pending_deletes.invoice_ids.length > 0)) {
+        const pd = data.pending_deletes;
+        replyHtml += `<br><br><div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">⚠️ 削除確認</div>
+          <div style="font-size:13px;margin-bottom:8px;">${pd.message}</div>`;
+        if ((pd.deals_detail||[]).length > 0) {
+          replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">仕訳 ${pd.deals_detail.length}件:</div>
+            <table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">
+            <tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">日付</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">取引先</th></tr>`;
+          pd.deals_detail.forEach(d => { replyHtml += `<tr><td style="padding:3px 8px;">${d.issue_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${d.amount?d.amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${d.partner_name||'-'}</td></tr>`; });
+          replyHtml += `</table>`;
+        }
+        if ((pd.invoices_detail||[]).length > 0) {
+          replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">請求書 ${pd.invoices_detail.length}件:</div>
+            <table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">
+            <tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">請求日</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">請求書番号</th></tr>`;
+          pd.invoices_detail.forEach(inv => { replyHtml += `<tr><td style="padding:3px 8px;">${inv.billing_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${inv.total_amount?inv.total_amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${inv.invoice_number||'-'}</td></tr>`; });
+          replyHtml += `</table>`;
+        }
+        const pdJson = JSON.stringify(pd).replace(/"/g, '&quot;');
+        replyHtml += `<div style="margin-top:10px;"><button class="btn btn-danger" onclick='executePendingDeletes(${pdJson})'>🗑️ 削除を実行する</button> <span style="font-size:11px;color:#666;">→ 削除後は元に戻せません</span></div></div>`;
+      }
+      if (data.registered_ids && data.registered_ids.length > 0) {
+        replyHtml += `<br><div style="color:#27ae60;font-weight:bold;">✅ ${data.registered_ids.length}件をfreeeに登録しました（ID: ${data.registered_ids.join(', ')}）</div>`;
+      }
+      if (data.pending_registers && data.pending_registers.length > 0) {
+        const pr = data.pending_registers;
+        replyHtml += `<br><br><div style="border:1px solid #b8daff;background:#f0f7ff;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:bold;color:#1a5276;margin-bottom:8px;">✏️ 登録内容の確認</div>`;
+        pr.forEach((item, idx) => {
+          const args = item.deal_args || {};
+          const typeLabel = item.deal_type === 'income' ? '収入' : '支出';
+          replyHtml += `<div style="font-size:13px;margin-bottom:6px;"><b>${idx+1}.</b> ${args.issue_date||'-'} / ${typeLabel} / ${args.partner_name||'-'}`;
+          if (args.details && args.details.length > 0) {
+            replyHtml += `<table style="font-size:12px;border-collapse:collapse;width:100%;margin-top:4px;">
+              <tr style="background:#dbeafe;"><th style="padding:3px 8px;text-align:left;">勘定科目</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">部門</th><th style="padding:3px 8px;text-align:left;">備考</th></tr>`;
+            args.details.forEach(d => { replyHtml += `<tr><td style="padding:3px 8px;">${d.account_item_name||'-'}</td><td style="padding:3px 8px;text-align:right;">${(d.amount||0).toLocaleString()}円</td><td style="padding:3px 8px;">${d.section_name||'-'}</td><td style="padding:3px 8px;">${d.description||'-'}</td></tr>`; });
+            replyHtml += `</table>`;
+          }
+          replyHtml += `</div>`;
+        });
+        const prJson = JSON.stringify(pr).replace(/"/g, '&quot;');
+        replyHtml += `<div style="margin-top:10px;"><button class="btn btn-primary" onclick='executeRegister(${prJson})'>▶ この内容でfreeeに登録する（${pr.length}件）</button> <span style="font-size:11px;color:#666;">→ 登録後は手動での修正が必要です</span></div></div>`;
+      }
+      addAiMessage('assistant', replyHtml);
+    }
+    aiFiles = []; renderAiFileList();
+  } catch(e) {
+    thinkingDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function executeRegister(pendingRegisters) {
+  const resultDiv = addAiMessage('assistant', '⏳ freeeに登録中...');
+  try {
+    const res = await fetch('/api/assistant/execute_register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pending_registers: pendingRegisters })
+    });
+    const data = await res.json();
+    resultDiv.remove();
+    if (data.status === 'ok') {
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids||[]).join(', ')}`;
+      if (data.failed && data.failed.length > 0) msg += `<br>⚠️ 失敗: ${data.failed.length}件`;
+      addAiMessage('assistant', msg);
+    } else {
+      addAiMessage('error', `❌ 登録エラー: ${data.message || JSON.stringify(data)}`);
+    }
+  } catch(e) {
+    resultDiv.remove();
+    addAiMessage('error', `❌ 通信エラー: ${e.message}`);
+  }
+}
+
+async function previewDeleteAction(action) {
+  const loadingDiv = addAiMessage('assistant', '⏳ 削除対象を検索中...');
+  try {
+    const res = await fetch('/api/assistant/search_delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+    const data = await res.json();
+    loadingDiv.remove();
+    if (data.error) { addAiMessage('error', `❌ 検索エラー: ${data.error}`); return; }
+    const deals = data.deals || [];
+    const invoices = data.invoices || [];
+    const total = deals.length + invoices.length;
+    if (total === 0) { addAiMessage('assistant', 'ℹ️ 削除対象の仕訳・請求書が見つかりませんでした。'); return; }
+    let html = `<div style="border:1px solid #f5c6cb;background:#fff5f5;border-radius:8px;padding:12px;">
+      <div style="font-weight:bold;color:#c0392b;margin-bottom:8px;">⚠️ 削除対象：${total}件</div>
+      <div style="max-height:300px;overflow-y:auto;">`;
+    if (deals.length > 0) {
+      html += `<div style="font-weight:bold;margin:8px 0 4px;">取引（仕訳） ${deals.length}件</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <tr style="background:#f8d7da;"><th style="padding:4px;text-align:left;"><input type="checkbox" id="chk_all_deals" onchange="toggleAll('deal')"> 全選</th><th>発生日</th><th>取引先</th><th>金額</th><th>種別</th></tr>`;
+      deals.forEach(d => { html += `<tr><td><input type="checkbox" class="chk_deal" value="${d.id}" checked></td><td>${d.issue_date||'-'}</td><td>${d.partner_name||'-'}</td><td>${(d.amount||0).toLocaleString()}円</td><td>${d.type==='income'?'収入':'支出'}</td></tr>`; });
+      html += `</table>`;
+    }
+    if (invoices.length > 0) {
+      html += `<div style="font-weight:bold;margin:8px 0 4px;">請求書 ${invoices.length}件</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <tr style="background:#f8d7da;"><th style="padding:4px;text-align:left;"><input type="checkbox" id="chk_all_invoices" onchange="toggleAll('invoice')"> 全選</th><th>発生日</th><th>取引先</th><th>金額</th><th>請求書番号</th></tr>`;
+      invoices.forEach(inv => { html += `<tr><td><input type="checkbox" class="chk_invoice" value="${inv.id}" checked></td><td>${inv.issue_date||'-'}</td><td>${inv.partner_name||'-'}</td><td>${(inv.total_amount||0).toLocaleString()}円</td><td>${inv.invoice_number||'-'}</td></tr>`; });
+      html += `</table>`;
+    }
+    html += `</div><div style="margin-top:12px;"><button class="btn btn-danger" onclick="executeDeleteSelected()">🗑️ チェックした項目を削除する</button> <span style="font-size:11px;color:#666;">→ 削除後は元に戻せません</span></div></div>`;
+    addAiMessage('assistant', html);
+  } catch(e) { loadingDiv.remove(); addAiMessage('error', `❌ 通信エラー: ${e.message}`); }
+}
+
+function toggleAll(type) {
+  const allChk = document.getElementById(`chk_all_${type}s`);
+  document.querySelectorAll(`.chk_${type}`).forEach(c => c.checked = allChk.checked);
+}
+
+async function executeDeleteSelected() {
+  const dealIds = [...document.querySelectorAll('.chk_deal:checked')].map(c => c.value);
+  const invoiceIds = [...document.querySelectorAll('.chk_invoice:checked')].map(c => c.value);
+  if (dealIds.length === 0 && invoiceIds.length === 0) { alert('削除する項目を選択してください。'); return; }
+  if (!confirm(`以下を削除します。よろしいですか？\n仕訳: ${dealIds.length}件 / 請求書: ${invoiceIds.length}件`)) return;
+  const loadingDiv = addAiMessage('assistant', '⏳ 削除中...');
+  try {
+    const res = await fetch('/api/assistant/execute_delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_ids: dealIds, invoice_ids: invoiceIds })
+    });
+    const data = await res.json();
+    loadingDiv.remove();
+    let msg = `✅ 削除完了！`;
+    if (data.deleted_deals.length > 0) msg += `<br>仕訳: ${data.deleted_deals.length}件削除`;
+    if (data.deleted_invoices.length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件取消`;
+    if ((data.skipped_deals||[]).length > 0) msg += `<br>ℹ️ 仕訳${data.skipped_deals.length}件は請求書連携のためスキップ`;
+    if (data.failed_deals.length > 0) msg += `<br>⚠️ 仕訳削除失敗: ${data.failed_deals.map(f=>f.id).join(', ')}`;
+    if (data.failed_invoices.length > 0) msg += `<br>⚠️ 請求書取消失敗: ${data.failed_invoices.map(f=>f.id).join(', ')}`;
+    addAiMessage('assistant', msg);
+  } catch(e) { loadingDiv.remove(); addAiMessage('error', `❌ 通信エラー: ${e.message}`); }
+}
+
+async function executePendingDeletes(pd) {
+  const dealIds = pd.deal_ids || [];
+  const invoiceIds = pd.invoice_ids || [];
+  if (!confirm(`以下を削除します。よろしいですか？\n仕訳: ${dealIds.length}件 / 請求書: ${invoiceIds.length}件\n\n削除後は元に戻せません。`)) return;
+  const loadingDiv = addAiMessage('assistant', '⏳ 削除中...');
+  try {
+    const res = await fetch('/api/assistant/execute_delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_ids: dealIds.map(String), invoice_ids: invoiceIds.map(String) })
+    });
+    const data = await res.json();
+    loadingDiv.remove();
+    let msg = `✅ 削除完了！`;
+    if ((data.deleted_deals||[]).length > 0) msg += `<br>仕訳: ${data.deleted_deals.length}件削除`;
+    if ((data.deleted_invoices||[]).length > 0) msg += `<br>請求書: ${data.deleted_invoices.length}件取消`;
+    if ((data.skipped_deals||[]).length > 0) msg += `<br>ℹ️ 仕訳${data.skipped_deals.length}件は請求書連携のためスキップ`;
+    if ((data.failed_deals||[]).length > 0) msg += `<br>⚠️ 仕訳削除失敗: ${data.failed_deals.map(f=>f.id).join(', ')}`;
+    if ((data.failed_invoices||[]).length > 0) msg += `<br>⚠️ 請求書取消失敗: ${data.failed_invoices.map(f=>f.id).join(', ')}`;
+    addAiMessage('assistant', msg);
+  } catch(e) { loadingDiv.remove(); addAiMessage('error', `❌ 通信エラー: ${e.message}`); }
+}
+
+async function registerAiEntries(entries, withFiles = true) {
+  const resultDiv = addAiMessage('assistant', '⏳ freeeに登録中...');
+  try {
+    const res = await fetch('/api/assistant/register_bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids||[]).join(', ')}`;
+      if (withFiles && aiFiles.length > 0 && data.ids && data.ids.length > 0) {
+        resultDiv.innerHTML = '⏳ 証憑ファイルをアップロード中...';
+        const uploadResult = await uploadReceiptsToDeals(aiFiles, data.ids);
+        msg += `<br>📎 証憑: ${uploadResult}`;
+        aiFiles = []; renderAiFileList();
+      }
+      resultDiv.remove(); addAiMessage('assistant', msg);
+    } else {
+      resultDiv.remove(); addAiMessage('error', `❌ 登録エラー: ${data.message}`);
+    }
+  } catch(e) { resultDiv.remove(); addAiMessage('error', `❌ 通信エラー: ${e.message}`); }
+}
+</script>
 {% endblock %}

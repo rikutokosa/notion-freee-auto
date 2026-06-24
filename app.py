@@ -214,25 +214,10 @@ def log_page():
     return render_template("log.html", logs=processing_log)
 
 
-@app.route("/chat", methods=["GET", "POST"])
+@app.route("/chat")
 def chat():
-    """自然言語指示チャット"""
-    if request.method == "GET":
-        token_ok = False
-        try:
-            get_valid_token()
-            token_ok = True
-        except Exception:
-            pass
-        return render_template("chat.html", token_ok=token_ok)
-
-    data = request.get_json() or {}
-    user_message = data.get("message", "").strip()
-    if not user_message:
-        return jsonify({"reply": "メッセージを入力してください"})
-
-    reply = handle_chat_command(user_message)
-    return jsonify({"reply": reply})
+    """旧チャット指示ページ → ホームにリダイレクト"""
+    return redirect(url_for("index"))
 
 
 # ============================================================
@@ -465,7 +450,7 @@ def api_pending():
 @app.route("/api/logs")
 def api_logs():
     limit = int(request.args.get("limit", 100))
-    return jsonify(processing_log[:limit])
+    return jsonify({"logs": processing_log[:limit]})
 
 
 @app.route("/api/status")
@@ -480,8 +465,10 @@ def api_status():
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     return jsonify({
         "token_ok": token_ok,
+        "freee_connected": token_ok,
         "mode": "manual",
         "log_count": len(processing_log),
+        "process_count": len(processing_log),
         "openai_key_set": bool(openai_key),
         "openai_key_prefix": openai_key[:10] + "..." if openai_key else "",
     })
@@ -494,8 +481,64 @@ def api_refresh_cache():
 
 
 # ============================================================
+# 仕訳プレビューAPI（新ホーム用）
+# ============================================================
+@app.route("/api/preview")
+def api_preview():
+    """仕訳プレビューをJSON形式で返す（新ホームのタブ用）"""
+    db_type = request.args.get("db", "all")
+    try:
+        records = fetch_pending_records(db_type)
+        previews = []
+        for record in records:
+            journal = build_journal_entries(record)
+            if journal.get("action") == "skip":
+                continue
+            previews.append({
+                "page_id": record.get("id"),
+                "phase": journal.get("phase", ""),
+                "job_db": journal.get("job_db", ""),
+                "nyusha_date": journal.get("nyusha_date", ""),
+                "action": journal.get("action", ""),
+                "message": journal.get("message", ""),
+                "needs_invoice": journal.get("needs_invoice", False),
+                "original_status": journal.get("original_status", ""),
+                "db_type": record.get("_db_type", "honten"),
+                "sales_entry": journal.get("sales_entry"),
+                "purchase_entry": journal.get("purchase_entry"),
+                "pca_entry": journal.get("pca_entry"),
+            })
+        return jsonify({"previews": previews})
+    except Exception as e:
+        logger.exception("プレビューAPIエラー")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
 # 書類照合
 # ============================================================
+@app.route("/api/match/preview", methods=["GET"])
+def api_match_preview():
+    """書類照合プレビュー（dry_run=True）"""
+    try:
+        result = run_matching(dry_run=True)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("書類照合プレビューエラー")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/match/execute", methods=["POST"])
+def api_match_execute():
+    """書類照合実行（dry_run=False）"""
+    try:
+        result = run_matching(dry_run=False)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("書類照合実行エラー")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/match_receipts", methods=["POST"])
 def api_match_receipts():
     """
@@ -736,14 +779,8 @@ def api_test_invoice_put():
 # ============================================================
 @app.route("/assistant")
 def assistant():
-    """仕訳アシスタントページ"""
-    token_ok = False
-    try:
-        get_valid_token()
-        token_ok = True
-    except Exception:
-        pass
-    return render_template("assistant.html", token_ok=token_ok)
+    """旧仕訳アシスタントページ → ホームにリダイレクト"""
+    return redirect(url_for("index"))
 
 
 @app.route("/api/assistant/register", methods=["POST"])

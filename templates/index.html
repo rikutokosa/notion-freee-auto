@@ -123,7 +123,7 @@
 
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-    <h2 style="margin:0; font-size:20px;">🏢 本店経理自動化システム</h2>
+    <h2 style="margin:0; font-size:20px;">⚙️ 本店経理自動化システム</h2>
     <a href="/rules" class="btn" style="font-size:12px; padding:4px 12px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; border-radius:6px; text-decoration:none;">📖 ルールブック</a>
   </div>
 
@@ -132,9 +132,9 @@
     <button class="main-tab-btn active" onclick="switchMainTab('jidou', this)">🔄 自動転記</button>
     <button class="main-tab-btn" onclick="switchMainTab('assistant', this)">🤖 仕訳アシスタント</button>
     <button class="main-tab-btn" onclick="switchMainTab('preview', this)" id="previewTabBtn">📋 仕訳プレビュー</button>
-    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🗂 書類照合</button>
-    <button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">💸 支払管理</button>
-    <button class="main-tab-btn" onclick="switchMainTab('status', this)">⚙️ システム状態</button>
+    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🧾 請求書照合</button>
+    <button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">🏦 総合振込データ作成</button>
+    <button class="main-tab-btn" onclick="switchMainTab('status', this)">🖥️ システム状態</button>
   </div>
 
   <!-- ===== 自動転記タブ ===== -->
@@ -303,7 +303,7 @@
     <div id="preview-content"></div>
   </div>
 
-  <!-- ===== 書類照合タブ ===== -->
+  <!-- ===== 請求書照合タブ ===== -->
   <div id="tab-shocho" class="main-tab-content">
     <p style="font-size:13px; color:#666; margin-bottom:16px;">
       freeeのファイルボックスにある未紐づけ書類を、既存の仕訳と自動照合します。プレビューで内容を確認してから紐づけを実行できます。
@@ -317,7 +317,7 @@
     <div id="match-result"></div>
   </div>
 
-  <!-- ===== 支払管理タブ ===== -->
+  <!-- ===== 総合振込データ作成タブ ===== -->
   <div id="tab-shiharai" class="main-tab-content">
     <p style="font-size:13px; color:#666; margin-bottom:16px;">
       freeeの未決済仕訳から振込データ（全銀フォーマット）を生成します。

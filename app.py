@@ -48,6 +48,17 @@ def _get_db():
             PRIMARY KEY (session_id, seq)
         )
     """)
+    # 運用ルール・メモテーブル
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS rules_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            category   TEXT NOT NULL,
+            title      TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
     conn.commit()
     return conn
 
@@ -1786,20 +1797,37 @@ def api_debug_payment_raw():
     from datetime import timedelta as _td
     from freee_client import FREEE_API_BASE as _BASE, FREEE_COMPANY_ID as _CID, _api_headers, HONTEN_SECTION_IDS
     today = datetime.now()
-    # フィルターなしで未決済支出仕訳を取得
-    r1 = _req.get(f"{_BASE}/deals", headers=_api_headers(), params={
-        "company_id": _CID, "type": "expense", "payment_status": "unsettled",
-        "limit": 10, "offset": 0
-    }, timeout=30)
     # start_due_date付きで取得
     r2 = _req.get(f"{_BASE}/deals", headers=_api_headers(), params={
         "company_id": _CID, "type": "expense", "payment_status": "unsettled",
         "start_due_date": today.strftime("%Y-%m-%d"),
         "end_due_date": (today + _td(days=60)).strftime("%Y-%m-%d"),
-        "limit": 10, "offset": 0
+        "limit": 5, "offset": 0
     }, timeout=30)
-    deals_no_filter = r1.json().get("deals", []) if r1.status_code == 200 else []
     deals_with_filter = r2.json().get("deals", []) if r2.status_code == 200 else []
+
+    # 個別の仕訳詳細を取得（receiptsが含まれるか確認）
+    deal_details = []
+    for d in deals_with_filter[:3]:
+        r_detail = _req.get(f"{_BASE}/deals/{d['id']}", headers=_api_headers(), params={
+            "company_id": _CID
+        }, timeout=15)
+        if r_detail.status_code == 200:
+            dd = r_detail.json().get("deal", {})
+            section_ids = {det.get("section_id") for det in dd.get("details", [])}
+            deal_details.append({
+                "id": dd.get("id"),
+                "due_date": dd.get("due_date"),
+                "amount": dd.get("amount"),
+                "payment_status": dd.get("payment_status"),
+                "receipts_count_from_list": len(d.get("receipts", [])),
+                "receipts_count_from_detail": len(dd.get("receipts", [])),
+                "receipts_raw": dd.get("receipts", []),
+                "all_keys": list(dd.keys()),
+                "section_ids": list(section_ids),
+                "is_honten": bool(section_ids & HONTEN_SECTION_IDS),
+            })
+
     def _summarize(deals):
         result = []
         for d in deals:
@@ -1811,18 +1839,17 @@ def api_debug_payment_raw():
                 "amount": d.get("amount"),
                 "payment_status": d.get("payment_status"),
                 "receipts_count": len(d.get("receipts", [])),
+                "all_keys": list(d.keys()),
                 "section_ids": list(section_ids),
                 "is_honten": bool(section_ids & HONTEN_SECTION_IDS),
             })
         return result
     return jsonify({
         "today": today.strftime("%Y-%m-%d"),
-        "no_date_filter_count": len(deals_no_filter),
-        "no_date_filter_status": r1.status_code,
         "with_date_filter_count": len(deals_with_filter),
         "with_date_filter_status": r2.status_code,
-        "no_date_filter_deals": _summarize(deals_no_filter),
         "with_date_filter_deals": _summarize(deals_with_filter),
+        "deal_details_sample": deal_details,
     })
 
 
@@ -2131,6 +2158,120 @@ def api_delete_chat_history(session_id):
     except Exception as e:
         logger.exception("chat_history削除エラー")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ============================================================
+# ルールブックページ
+# ============================================================
+@app.route("/rules")
+def rules_page():
+    """ルールブック: 機能ルール（rules.py）+ 運用メモ（SQLite）"""
+    import subprocess
+    from rules import RULES
+
+    # rules.pyの最終更新日時をgit logから取得
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%ad|%s", "--date=format:%Y-%m-%d", "--", "rules.py"],
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        rules_history = []
+        for line in result.stdout.strip().splitlines():
+            if "|" in line:
+                date_str, msg = line.split("|", 1)
+                rules_history.append({"date": date_str, "message": msg})
+    except Exception:
+        rules_history = []
+
+    # 運用メモをSQLiteから取得
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT id, category, title, content, created_at, updated_at FROM rules_notes ORDER BY category, id"
+    ).fetchall()
+    conn.close()
+    notes = [
+        {"id": r[0], "category": r[1], "title": r[2], "content": r[3],
+         "created_at": r[4], "updated_at": r[5]}
+        for r in rows
+    ]
+
+    # カテゴリ別に整理
+    notes_by_category = {}
+    for n in notes:
+        cat = n["category"]
+        if cat not in notes_by_category:
+            notes_by_category[cat] = []
+        notes_by_category[cat].append(n)
+
+    return render_template(
+        "rules.html",
+        rules=RULES,
+        rules_history=rules_history,
+        notes_by_category=notes_by_category,
+    )
+
+
+@app.route("/api/rules_notes", methods=["GET"])
+def api_get_rules_notes():
+    """運用メモ一覧を返す"""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT id, category, title, content, created_at, updated_at FROM rules_notes ORDER BY category, id"
+    ).fetchall()
+    conn.close()
+    return jsonify([{
+        "id": r[0], "category": r[1], "title": r[2], "content": r[3],
+        "created_at": r[4], "updated_at": r[5]
+    } for r in rows])
+
+
+@app.route("/api/rules_notes", methods=["POST"])
+def api_create_rules_note():
+    """運用メモを新規作成する"""
+    data = request.get_json(force=True)
+    category = data.get("category", "").strip()
+    title = data.get("title", "").strip()
+    content = data.get("content", "").strip()
+    if not category or not title:
+        return jsonify({"error": "category と title は必須です"}), 400
+    conn = _get_db()
+    cur = conn.execute(
+        "INSERT INTO rules_notes (category, title, content) VALUES (?,?,?)",
+        (category, title, content)
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return jsonify({"status": "ok", "id": new_id})
+
+
+@app.route("/api/rules_notes/<int:note_id>", methods=["PUT"])
+def api_update_rules_note(note_id):
+    """運用メモを更新する"""
+    data = request.get_json(force=True)
+    category = data.get("category", "").strip()
+    title = data.get("title", "").strip()
+    content = data.get("content", "").strip()
+    if not category or not title:
+        return jsonify({"error": "category と title は必須です"}), 400
+    conn = _get_db()
+    conn.execute(
+        "UPDATE rules_notes SET category=?, title=?, content=?, updated_at=datetime('now','localtime') WHERE id=?",
+        (category, title, content, note_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/rules_notes/<int:note_id>", methods=["DELETE"])
+def api_delete_rules_note(note_id):
+    """運用メモを削除する"""
+    conn = _get_db()
+    conn.execute("DELETE FROM rules_notes WHERE id=?", (note_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
 
 
 # ============================================================

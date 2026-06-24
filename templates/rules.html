@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}ルールブック{% endblock %}
+
+{% block content %}
+<style>
+  .rules-tabs { display:flex; gap:8px; margin-bottom:24px; flex-wrap:wrap; }
+  .rules-tab-btn {
+    padding:8px 20px; border:2px solid #e2e8f0; border-radius:8px;
+    background:#fff; cursor:pointer; font-size:14px; font-weight:600;
+    color:#64748b; transition:all .2s;
+  }
+  .rules-tab-btn.active {
+    background:#3b82f6; color:#fff; border-color:#3b82f6;
+  }
+  .rules-section { display:none; }
+  .rules-section.active { display:block; }
+
+  /* 機能ルールテーブル */
+  .rules-table { width:100%; border-collapse:collapse; font-size:14px; }
+  .rules-table th {
+    background:#f1f5f9; padding:10px 14px; text-align:left;
+    border-bottom:2px solid #e2e8f0; font-weight:700; color:#475569;
+  }
+  .rules-table td {
+    padding:10px 14px; border-bottom:1px solid #f1f5f9; vertical-align:top;
+  }
+  .rules-table tr:hover td { background:#f8fafc; }
+  .badge-type {
+    display:inline-block; padding:2px 8px; border-radius:12px;
+    font-size:11px; font-weight:700;
+  }
+  .badge-求人DB { background:#dbeafe; color:#1d4ed8; }
+  .badge-集客 { background:#dcfce7; color:#15803d; }
+  .badge-パートナー { background:#fef3c7; color:#b45309; }
+  .badge-invoice { background:#fce7f3; color:#be185d; }
+  .badge-journal { background:#ede9fe; color:#7c3aed; }
+
+  /* 運用メモ */
+  .notes-category-header {
+    display:flex; align-items:center; gap:10px;
+    margin:24px 0 12px; padding-bottom:8px;
+    border-bottom:2px solid #e2e8f0;
+  }
+  .notes-category-header h3 { margin:0; font-size:16px; color:#1e293b; }
+  .note-card {
+    background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+    padding:16px 20px; margin-bottom:12px; position:relative;
+  }
+  .note-card-header { display:flex; align-items:flex-start; gap:12px; }
+  .note-card-title { font-weight:700; font-size:15px; color:#1e293b; flex:1; }
+  .note-card-meta { font-size:11px; color:#94a3b8; margin-top:4px; }
+  .note-card-content {
+    margin-top:10px; font-size:14px; color:#475569;
+    white-space:pre-wrap; line-height:1.6;
+  }
+  .note-actions { display:flex; gap:6px; }
+  .btn-edit-note, .btn-delete-note {
+    padding:4px 10px; border-radius:6px; font-size:12px;
+    cursor:pointer; border:1px solid #e2e8f0; background:#f8fafc;
+    color:#64748b; transition:all .15s;
+  }
+  .btn-edit-note:hover { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; }
+  .btn-delete-note:hover { background:#fee2e2; color:#dc2626; border-color:#fca5a5; }
+
+  /* 追加フォーム */
+  .add-note-form {
+    background:#f8fafc; border:1px dashed #cbd5e1; border-radius:10px;
+    padding:20px; margin-top:16px;
+  }
+  .add-note-form h4 { margin:0 0 14px; font-size:14px; color:#475569; }
+  .form-row { display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .form-row input, .form-row select, .form-row textarea {
+    flex:1; min-width:160px; padding:8px 12px; border:1px solid #e2e8f0;
+    border-radius:8px; font-size:14px; background:#fff;
+  }
+  .form-row textarea { min-height:80px; resize:vertical; }
+  .btn-add-note {
+    padding:8px 20px; background:#10b981; color:#fff; border:none;
+    border-radius:8px; cursor:pointer; font-weight:600; font-size:14px;
+  }
+  .btn-add-note:hover { background:#059669; }
+
+  /* 変更履歴 */
+  .history-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .history-table th {
+    background:#f1f5f9; padding:8px 14px; text-align:left;
+    border-bottom:2px solid #e2e8f0; color:#475569; font-weight:700;
+  }
+  .history-table td { padding:8px 14px; border-bottom:1px solid #f1f5f9; }
+  .history-table tr:hover td { background:#f8fafc; }
+  .history-date { color:#3b82f6; font-weight:600; white-space:nowrap; }
+
+  /* モーダル */
+  .modal-overlay {
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);
+    z-index:1000; align-items:center; justify-content:center;
+  }
+  .modal-overlay.open { display:flex; }
+  .modal-box {
+    background:#fff; border-radius:14px; padding:28px; width:90%; max-width:520px;
+    box-shadow:0 20px 60px rgba(0,0,0,.2);
+  }
+  .modal-box h3 { margin:0 0 18px; font-size:17px; }
+  .modal-box input, .modal-box select, .modal-box textarea {
+    width:100%; box-sizing:border-box; padding:9px 12px; margin-bottom:12px;
+    border:1px solid #e2e8f0; border-radius:8px; font-size:14px;
+  }
+  .modal-box textarea { min-height:100px; resize:vertical; }
+  .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+  .btn-modal-save {
+    padding:8px 22px; background:#3b82f6; color:#fff; border:none;
+    border-radius:8px; cursor:pointer; font-weight:600;
+  }
+  .btn-modal-cancel {
+    padding:8px 22px; background:#f1f5f9; color:#64748b; border:none;
+    border-radius:8px; cursor:pointer;
+  }
+</style>
+
+<div class="card">
+  <h2 style="margin:0 0 6px;">📖 ルールブック</h2>
+  <p style="color:#64748b;margin:0 0 20px;font-size:14px;">
+    機能ルール（rules.py から自動取得）と運用メモをカテゴリ別に管理します。
+  </p>
+
+  <div class="rules-tabs">
+    <button class="rules-tab-btn active" onclick="showTab('func-rules')">⚙️ 機能ルール</button>
+    <button class="rules-tab-btn" onclick="showTab('op-notes')">📝 運用メモ</button>
+    <button class="rules-tab-btn" onclick="showTab('history')">🕐 変更履歴</button>
+  </div>
+
+  <!-- ① 機能ルール（rules.py） -->
+  <div id="func-rules" class="rules-section active">
+    <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">集客経路・求人DBごとの仕訳ルール</h3>
+
+    <table class="rules-table">
+      <thead>
+        <tr>
+          <th>キー（Notion値）</th>
+          <th>種別</th>
+          <th>取引先</th>
+          <th>支払ルール</th>
+          <th>登録方式</th>
+          <th>請求書</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, rule in rules.items() %}
+        {% set rtype = rule.get('type','') %}
+        <tr>
+          <td><strong>{{ key }}</strong></td>
+          <td>
+            <span class="badge-type badge-{{ rtype }}">{{ rtype }}</span>
+          </td>
+          <td style="color:#475569;">{{ rule.get('supplier') or '—' }}</td>
+          <td>{{ rule.get('payment_rule','—') }}</td>
+          <td>
+            {% if rule.get('needs_invoice') %}
+              <span class="badge-type badge-invoice">請求書登録</span>
+            {% else %}
+              <span class="badge-type badge-journal">仕訳登録のみ</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if rule.get('needs_invoice') %}✅{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="margin-top:20px;padding:14px 18px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
+      <strong style="color:#15803d;">💡 金額処理の基本ルール</strong>
+      <p style="margin:6px 0 0;font-size:13px;color:#166534;line-height:1.6;">
+        このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
+        Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
+        freee請求書登録時は <code>tax_entry_method="in"</code> 固定（freee_client.py）。
+        税抜変換（×1.1や÷1.1）はrules.pyでは行いません。
+      </p>
+    </div>
+
+    <div style="margin-top:16px;padding:14px 18px;background:#eff6ff;border-radius:10px;border:1px solid #bfdbfe;">
+      <strong style="color:#1d4ed8;">📋 ステータス別の処理フロー</strong>
+      <table class="rules-table" style="margin-top:10px;">
+        <thead>
+          <tr>
+            <th>請求ステータス</th>
+            <th>処理内容</th>
+            <th>完了後ステータス</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>本部確認済</td><td>仕訳登録 or 請求書登録</td><td>□承諾→freee登録済</td></tr>
+          <tr><td>●入社済（要請求のみ）</td><td>請求書送付</td><td>入社→請求済</td></tr>
+          <tr><td>●入社前辞退</td><td>取引削除（freee売上取引ID・freee仕入取引IDを使用）</td><td>□入社前辞退→freee更新済</td></tr>
+          <tr><td>●返金（短期離職）</td><td>返金率に応じたマイナス仕訳を追加登録</td><td>□返金→freee・請求書更新済</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ② 運用メモ -->
+  <div id="op-notes" class="rules-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;font-size:16px;color:#1e293b;">運用メモ・ログイン情報・設定メモ</h3>
+      <button class="btn-add-note" onclick="openAddModal()">＋ メモを追加</button>
+    </div>
+
+    <div id="notes-container">
+      {% if notes_by_category %}
+        {% for category, note_list in notes_by_category.items() %}
+        <div class="notes-category-header">
+          <h3>📂 {{ category }}</h3>
+          <span style="font-size:12px;color:#94a3b8;">{{ note_list|length }}件</span>
+        </div>
+        {% for note in note_list %}
+        <div class="note-card" id="note-{{ note.id }}">
+          <div class="note-card-header">
+            <div style="flex:1;">
+              <div class="note-card-title">{{ note.title }}</div>
+              <div class="note-card-meta">
+                作成: {{ note.created_at[:10] }}
+                {% if note.updated_at != note.created_at %}
+                  ／ 更新: {{ note.updated_at[:10] }}
+                {% endif %}
+              </div>
+            </div>
+            <div class="note-actions">
+              <button class="btn-edit-note" onclick="openEditModal({{ note.id }}, '{{ note.category|e }}', '{{ note.title|e }}', {{ note.content|tojson }})">編集</button>
+              <button class="btn-delete-note" onclick="deleteNote({{ note.id }})">削除</button>
+            </div>
+          </div>
+          <div class="note-card-content">{{ note.content }}</div>
+        </div>
+        {% endfor %}
+        {% endfor %}
+      {% else %}
+        <div style="text-align:center;padding:48px;color:#94a3b8;">
+          <div style="font-size:40px;margin-bottom:12px;">📝</div>
+          <div>まだ運用メモがありません。「＋ メモを追加」から追加してください。</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- 追加フォーム（モーダル） -->
+    <div class="modal-overlay" id="note-modal">
+      <div class="modal-box">
+        <h3 id="modal-title">メモを追加</h3>
+        <input type="hidden" id="modal-note-id" value="">
+        <input type="text" id="modal-category" placeholder="カテゴリ（例: ログイン情報、freee設定、Notion設定）">
+        <input type="text" id="modal-title-input" placeholder="タイトル（例: freeeログイン情報）">
+        <textarea id="modal-content" placeholder="内容（ログイン情報、設定値、注意事項など）"></textarea>
+        <div class="modal-actions">
+          <button class="btn-modal-cancel" onclick="closeModal()">キャンセル</button>
+          <button class="btn-modal-save" onclick="saveNote()">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 変更履歴（git log） -->
+  <div id="history" class="rules-section">
+    <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">rules.py の変更履歴（git log）</h3>
+    {% if rules_history %}
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>変更内容（コミットメッセージ）</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in rules_history %}
+        <tr>
+          <td class="history-date">{{ h.date }}</td>
+          <td>{{ h.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:48px;color:#94a3b8;">
+      <div>変更履歴を取得できませんでした（gitが利用できない環境の可能性があります）。</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(id) {
+  document.querySelectorAll('.rules-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.rules-tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function openAddModal() {
+  document.getElementById('modal-title').textContent = 'メモを追加';
+  document.getElementById('modal-note-id').value = '';
+  document.getElementById('modal-category').value = '';
+  document.getElementById('modal-title-input').value = '';
+  document.getElementById('modal-content').value = '';
+  document.getElementById('note-modal').classList.add('open');
+}
+
+function openEditModal(id, category, title, content) {
+  document.getElementById('modal-title').textContent = 'メモを編集';
+  document.getElementById('modal-note-id').value = id;
+  document.getElementById('modal-category').value = category;
+  document.getElementById('modal-title-input').value = title;
+  document.getElementById('modal-content').value = content;
+  document.getElementById('note-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('note-modal').classList.remove('open');
+}
+
+async function saveNote() {
+  const id = document.getElementById('modal-note-id').value;
+  const category = document.getElementById('modal-category').value.trim();
+  const title = document.getElementById('modal-title-input').value.trim();
+  const content = document.getElementById('modal-content').value.trim();
+  if (!category || !title) { alert('カテゴリとタイトルは必須です'); return; }
+
+  const url = id ? `/api/rules_notes/${id}` : '/api/rules_notes';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, {
+    method, headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ category, title, content })
+  });
+  if (res.ok) {
+    closeModal();
+    location.reload();
+  } else {
+    alert('保存に失敗しました');
+  }
+}
+
+async function deleteNote(id) {
+  if (!confirm('このメモを削除しますか？')) return;
+  const res = await fetch(`/api/rules_notes/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    document.getElementById(`note-${id}`)?.remove();
+  } else {
+    alert('削除に失敗しました');
+  }
+}
+
+// モーダル外クリックで閉じる
+document.getElementById('note-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

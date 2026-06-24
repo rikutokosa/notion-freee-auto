@@ -101,6 +101,7 @@
     <button class="rules-tab-btn" onclick="showTab('tab-assistant', this)">🤖 仕訳アシスタント</button>
     <button class="rules-tab-btn" onclick="showTab('tab-keiro', this)">📋 集客経路ルール</button>
     <button class="rules-tab-btn" onclick="showTab('tab-history', this)">🕐 変更履歴</button>
+    <button class="rules-tab-btn" onclick="showTab('tab-system', this)">⚙️ システム概要</button>
   </div>
 
 
@@ -668,6 +669,139 @@
 
 
   <!-- ⑦ 変更履歴 -->
+  <!-- ☆ システム概要 -->
+  <div id="tab-system" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">💻</span>
+        <h3>システム構成</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>システム名</strong></td><td>Notion→freee 自動転記システム</td></tr>
+            <tr><td><strong>言語 / FW</strong></td><td>Python 3 / Flask（gunicorn起動）</td></tr>
+            <tr><td><strong>ホスティング</strong></td><td>Railway（Hobbyプラン）</td></tr>
+            <tr><td><strong>GitHubリポジトリ</strong></td><td><a href="https://github.com/rikutokosa/notion-freee-auto" target="_blank">rikutokosa/notion-freee-auto</a></td></tr>
+            <tr><td><strong>起動コマンド</strong></td><td><code>gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120</code></td></tr>
+            <tr><td><strong>ヘルスチェック</strong></td><td><code>/api/status</code></td></tr>
+            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にトークンを保存</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔗</span>
+        <h3>Notion 接続情報</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>APIバージョン</strong></td><td>2022-06-28</td></tr>
+            <tr><td><strong>本店CA DB ID</strong></td><td><code>320a7a34-dbe2-8082-8055-c57f9b8a04bb</code></td></tr>
+            <tr><td><strong>PCA DB ID</strong></td><td><code>32fa7a34-dbe2-8005-ab91-ff33d64506e0</code></td></tr>
+            <tr><td><strong>認証方式</strong></td><td>Integration Token（<code>NOTION_TOKEN</code>環境変数）</td></tr>
+            <tr><td><strong>主要フィールド</strong></td><td>求人データベース・請求ステータス・請求有無（選択）・入社日・税込集客手数料・ freee処理状態など</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">💰</span>
+        <h3>freee 接続情報</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>APIベースURL</strong></td><td><code>https://api.freee.co.jp/api/1</code></td></tr>
+            <tr><td><strong>会社 ID</strong></td><td><code>1856949</code></td></tr>
+            <tr><td><strong>認証方式</strong></td><td>OAuth2（アクセストークンは自動リフレッシュ、<code>FREEE_REFRESH_TOKEN</code>環境変数に保存）</td></tr>
+            <tr><td><strong>課税区分</strong></td><td>課税声10%（売上・仕入共通）</td></tr>
+            <tr><td><strong>本店部門ID</strong></td><td>CA: 3423934 / PCA: 3423935 / PRA: 3423936 / AIScout: 3428069 / その他: 2925134</td></tr>
+            <tr><td><strong>CSS部門ID（除外）</strong></td><td>3423929 / 3423932 / 3425277 / 3423930 / 3403442 / 3428068</td></tr>
+            <tr><td><strong>振込依頼人情報</strong></td><td><code>freee_client.py</code>内の<code>FB_REQUESTER_*</code>定数参照</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🚀</span>
+        <h3>開発・デプロイルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>ルール</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>修正フロー</strong></td>
+              <td>コード修正 → 構文チェック（<code>python3 -c "import app"</code>）→ GitHubにプッシュ → Railway自動デプロイ</td>
+            </tr>
+            <tr>
+              <td><strong>デプロイ方式</strong></td>
+              <td>GitHubの<code>main</code>ブランチにプッシュするとRailwayが自動検知して自動デプロイ</td>
+            </tr>
+            <tr>
+              <td><strong>テストポリシー</strong></td>
+              <td>プッシュ前に必ず<code>python3 -c "import app; import processor; import notion_client; import freee_client"</code>で構文エラーがないことを確認してから報告する</td>
+            </tr>
+            <tr>
+              <td><strong>ルールブック更新</strong></td>
+              <td>機能・ルールに変更があった場合は必ずルールブック（<code>rules.html</code>）も同時に更新する</td>
+            </tr>
+            <tr>
+              <td><strong>環境変数管理</strong></td>
+              <td>Railwayダッシュボードの「Variables」から設定。コードにハードコードしない</td>
+            </tr>
+            <tr>
+              <td><strong>トークン期限切れ</strong></td>
+              <td>freeeアクセストークンは自動リフレッシュ。リフレッシュトークン切れの場合は<code>/freee/auth</code>から再認証</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📐</span>
+        <h3>環境変数一覧</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>変数名</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>NOTION_TOKEN</code></td><td>Notion Integration Token</td></tr>
+            <tr><td><code>NOTION_DB_ID_HONTEN</code></td><td>本店CA成約管理DBのID</td></tr>
+            <tr><td><code>NOTION_DB_ID_PCA</code></td><td>PCA成約管理DBのID</td></tr>
+            <tr><td><code>FREEE_CLIENT_ID</code></td><td>freee OAuth2 クライアントID</td></tr>
+            <tr><td><code>FREEE_CLIENT_SECRET</code></td><td>freee OAuth2 クライアントシークレット</td></tr>
+            <tr><td><code>FREEE_COMPANY_ID</code></td><td>freee 会社ID（デフォルト: 1856949）</td></tr>
+            <tr><td><code>FREEE_REFRESH_TOKEN</code></td><td>freee OAuth2 リフレッシュトークン（認証後に自動保存）</td></tr>
+            <tr><td><code>FREEE_TOKEN_JSON</code></td><td>freee アクセストークンJSON（自動更新）</td></tr>
+            <tr><td><code>APP_BASE_URL</code></td><td>アプリの公開 URL（freee OAuth リダイレクト用）</td></tr>
+            <tr><td><code>OPENAI_API_KEY</code></td><td>仕訳アシスタント・OCR用 OpenAI APIキー</td></tr>
+            <tr><td><code>GITHUB_TOKEN</code></td><td>変更履歴取得用 GitHubトークン（パブリックリポのため不要）</td></tr>
+            <tr><td><code>GITHUB_REPO</code></td><td>GitHubリポジトリ名（デフォルト: rikutokosa/notion-freee-auto）</td></tr>
+            <tr><td><code>SECRET_KEY</code></td><td>Flaskセッション用秘密鍵</td></tr>
+            <tr><td><code>RAILWAY_VOLUME_MOUNT_PATH</code></td><td>トークンファイル保存先パス（デフォルト: /data）</td></tr>
+            <tr><td><code>FREEE_AUTO_STOPPED</code></td><td>転記停止フラグ（1=停止、デフォルト: 0）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
   <div id="tab-history" class="rules-section">
     <h3 style="margin:0 0 14px;font-size:16px;color:#1e293b;">rules.py の変更履歴（git log）</h3>
     {% if rules_history %}

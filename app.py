@@ -2165,11 +2165,11 @@ def api_delete_chat_history(session_id):
 # ============================================================
 @app.route("/rules")
 def rules_page():
-    """ルールブック: 機能ルール（rules.py）+ 運用メモ（SQLite）"""
+    """ルールブック: 機能ルール（rules.py）+ 変更履歴（git log）"""
     import subprocess
     from rules import RULES
 
-    # rules.pyの最終更新日時をgit logから取得
+    # rules.pyの変更履歴をgit logから取得
     try:
         result = subprocess.run(
             ["git", "log", "--format=%ad|%s", "--date=format:%Y-%m-%d", "--", "rules.py"],
@@ -2183,95 +2183,11 @@ def rules_page():
     except Exception:
         rules_history = []
 
-    # 運用メモをSQLiteから取得
-    conn = _get_db()
-    rows = conn.execute(
-        "SELECT id, category, title, content, created_at, updated_at FROM rules_notes ORDER BY category, id"
-    ).fetchall()
-    conn.close()
-    notes = [
-        {"id": r[0], "category": r[1], "title": r[2], "content": r[3],
-         "created_at": r[4], "updated_at": r[5]}
-        for r in rows
-    ]
-
-    # カテゴリ別に整理
-    notes_by_category = {}
-    for n in notes:
-        cat = n["category"]
-        if cat not in notes_by_category:
-            notes_by_category[cat] = []
-        notes_by_category[cat].append(n)
-
     return render_template(
         "rules.html",
         rules=RULES,
         rules_history=rules_history,
-        notes_by_category=notes_by_category,
     )
-
-
-@app.route("/api/rules_notes", methods=["GET"])
-def api_get_rules_notes():
-    """運用メモ一覧を返す"""
-    conn = _get_db()
-    rows = conn.execute(
-        "SELECT id, category, title, content, created_at, updated_at FROM rules_notes ORDER BY category, id"
-    ).fetchall()
-    conn.close()
-    return jsonify([{
-        "id": r[0], "category": r[1], "title": r[2], "content": r[3],
-        "created_at": r[4], "updated_at": r[5]
-    } for r in rows])
-
-
-@app.route("/api/rules_notes", methods=["POST"])
-def api_create_rules_note():
-    """運用メモを新規作成する"""
-    data = request.get_json(force=True)
-    category = data.get("category", "").strip()
-    title = data.get("title", "").strip()
-    content = data.get("content", "").strip()
-    if not category or not title:
-        return jsonify({"error": "category と title は必須です"}), 400
-    conn = _get_db()
-    cur = conn.execute(
-        "INSERT INTO rules_notes (category, title, content) VALUES (?,?,?)",
-        (category, title, content)
-    )
-    conn.commit()
-    new_id = cur.lastrowid
-    conn.close()
-    return jsonify({"status": "ok", "id": new_id})
-
-
-@app.route("/api/rules_notes/<int:note_id>", methods=["PUT"])
-def api_update_rules_note(note_id):
-    """運用メモを更新する"""
-    data = request.get_json(force=True)
-    category = data.get("category", "").strip()
-    title = data.get("title", "").strip()
-    content = data.get("content", "").strip()
-    if not category or not title:
-        return jsonify({"error": "category と title は必須です"}), 400
-    conn = _get_db()
-    conn.execute(
-        "UPDATE rules_notes SET category=?, title=?, content=?, updated_at=datetime('now','localtime') WHERE id=?",
-        (category, title, content, note_id)
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/rules_notes/<int:note_id>", methods=["DELETE"])
-def api_delete_rules_note(note_id):
-    """運用メモを削除する"""
-    conn = _get_db()
-    conn.execute("DELETE FROM rules_notes WHERE id=?", (note_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "ok"})
 
 
 # ============================================================

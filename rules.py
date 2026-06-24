@@ -34,6 +34,8 @@ from typing import Optional
 RULES = {
     # --- 求人DB（新しいプロパティ名） ---
     "Circus": {
+        "no": 1,
+        "added_date": "2026-06-17",
         "type": "求人DB",
         "supplier": "circus株式会社",
         "payment_rule": "入社翌々月10日",
@@ -41,6 +43,8 @@ RULES = {
         "needs_invoice": False,
     },
     "Zキャリア": {
+        "no": 2,
+        "added_date": "2026-06-17",
         "type": "求人DB",
         "supplier": "株式会社ROXX",
         "payment_rule": "入社翌々月10日",
@@ -48,6 +52,8 @@ RULES = {
         "needs_invoice": False,
     },
     "クラウドエージェント": {
+        "no": 3,
+        "added_date": "2026-06-17",
         "type": "求人DB",
         "supplier": "株式会社Grooves",
         "payment_rule": "入社翌々月4日",
@@ -55,6 +61,8 @@ RULES = {
         "needs_invoice": False,
     },
     "マイナビJOBシェアリング": {
+        "no": 4,
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": "株式会社マイナビ",
         "payment_rule": "入社翌月末",
@@ -62,6 +70,8 @@ RULES = {
         "needs_invoice": True,
     },
     "Bee": {
+        "no": 5,
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": "株式会社ネオキャリア",
         "payment_rule": "入社翌月末",
@@ -70,6 +80,8 @@ RULES = {
     },
     # CSS求人はスカウト手数料のみ登録（売上仕訳のみ、仕入なし）
     "CSS求人": {
+        "no": 6,
+        "added_date": "2026-06-17",
         "type": "求人DB",
         "supplier": None,
         "payment_rule": "登録不要",
@@ -77,6 +89,8 @@ RULES = {
         "needs_invoice": False,
     },
     "本店自社求人": {
+        "no": 7,
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": None,
         "payment_rule": "都度確認",
@@ -84,6 +98,8 @@ RULES = {
         "needs_invoice": True,
     },
     "Hitolink": {
+        "no": 8,
+        "added_date": "2026-06-22",
         "type": "求人DB",
         "supplier": None,
         "supplier_id": 105296246,  # freee取引先ID（パーソルイノベーション）
@@ -93,6 +109,8 @@ RULES = {
     },
     # --- 旧キー名（後方互換のため残す） ---
     "Circus | 請求不要": {
+        "no": None,  # 旧キー（後方互換）
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": "circus株式会社",
         "payment_rule": "入社翌々月10日",
@@ -100,6 +118,8 @@ RULES = {
         "needs_invoice": False,
     },
     "Zキャリア | 請求書不要": {
+        "no": None,  # 旧キー（後方互換）
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": "株式会社ROXX",
         "payment_rule": "入社翌々月10日",
@@ -107,6 +127,8 @@ RULES = {
         "needs_invoice": False,
     },
     "クラウドエージェント│請求不要": {
+        "no": None,  # 旧キー（後方互換）
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": "株式会社Grooves",
         "payment_rule": "入社翌々月4日",
@@ -114,6 +136,8 @@ RULES = {
         "needs_invoice": False,
     },
     "CSS自社求人│スカウト手数料のみ登録": {
+        "no": None,  # 旧キー（後方互換）
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": None,
         "payment_rule": "登録不要",
@@ -121,6 +145,8 @@ RULES = {
         "needs_invoice": False,
     },
     "CSS自社求人│請求不要": {
+        "no": None,  # 旧キー（後方互換）
+        "added_date": "2026-06-16",
         "type": "求人DB",
         "supplier": None,
         "payment_rule": "登録不要",
@@ -129,6 +155,8 @@ RULES = {
     },
     # --- 集客 ---
     "RDS": {
+        "no": 9,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": "株式会社インディードリクルートパートナーズ",
         "payment_rule": "入社翌々月末日",
@@ -136,6 +164,8 @@ RULES = {
         "needs_invoice": False,
     },
     "マイナビ転職": {
+        "no": 10,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": "株式会社マイナビ",
         "payment_rule": "入社翌々月10日",
@@ -143,6 +173,8 @@ RULES = {
         "needs_invoice": False,
     },
     "dodaX": {
+        "no": 11,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": "パーソルキャリア株式会社",
         "payment_rule": "入社翌月末",
@@ -150,6 +182,8 @@ RULES = {
         "needs_invoice": False,
     },
     "キミナラ": {
+        "no": 12,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": "株式会社キミナラ",
         "payment_rule": "入社翌月末",
@@ -157,6 +191,8 @@ RULES = {
         "needs_invoice": False,
     },
     "ワンキャリア": {
+        "no": 13,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": "株式会社ワンキャリア",
         "payment_rule": "入社翌月末",
@@ -164,6 +200,8 @@ RULES = {
         "needs_invoice": False,
     },
     "openwork": {
+        "no": 14,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": None,
         "payment_rule": "入社翌月末",
@@ -171,6 +209,8 @@ RULES = {
         "needs_invoice": False,
     },
     "tezuna": {
+        "no": 15,
+        "added_date": "2026-06-16",
         "type": "集客",
         "supplier": None,
         "payment_rule": "入社翌月末",
@@ -179,6 +219,8 @@ RULES = {
     },
     # --- パートナー ---
     "PCA": {
+        "no": 16,
+        "added_date": "2026-06-16",
         "type": "パートナー",
         "supplier": None,  # 担当パートナー依存（マイネーム・立野など）
         "payment_rule": "入社翌々月末日",

@@ -196,6 +196,76 @@
       <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ</h3>
       <div id="log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
     </div>
+
+    <!-- 自動転記ルール -->
+    <div class="inline-rule-section">
+      <h4>📚 この機能のルール</h4>
+      <div class="inline-rule-card">
+        <div class="inline-rule-card-header">
+          <span style="font-size:20px;">🔄</span>
+          <h3>自動転記の基本フロー</h3>
+        </div>
+        <div class="inline-rule-card-body">
+          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
+            Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<strong>実行は手動のみ</strong>（ボタンを押したときのみ処理）。
+          </p>
+          <table class="inline-rules-table">
+            <thead><tr><th>Notionの請求ステータス</th><th>実行される処理</th><th>処理完了後のステータス</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>本部確認済</strong></td>
+                <td>「請求有無=要請求」→ 請求書登録 + 仕入仕訳登録<br>「請求有無=請求不要」→ 売上仕訳 + 仕入仕訳を登録</td>
+                <td>□承諾→freee登録済</td>
+              </tr>
+              <tr>
+                <td><strong>●入社済</strong>（要請求のみ）</td>
+                <td>freee請求書IDを取得して請求書を送付</td>
+                <td>入社→請求済</td>
+              </tr>
+              <tr>
+                <td><strong>●入社前辞退</strong></td>
+                <td>freee売上取引ID・freee仕入取引IDの仕訳を削除</td>
+                <td>□入社前辞退→freee更新済</td>
+              </tr>
+              <tr>
+                <td><strong>●返金（短期離職）</strong></td>
+                <td>返金率に応じたマイナス仕訳を追加登録</td>
+                <td>□返金→freee・請求書更新済</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="ibox blue">
+            <strong style="color:#1d4ed8;">📌 Notionフィールドとfreeeの対応</strong>
+            <table class="inline-rules-table" style="margin-top:10px;">
+              <thead><tr><th>Notionフィールド</th><th>freeeへの反映先</th></tr></thead>
+              <tbody>
+                <tr><td>税込売上</td><td>売上仕訳の金額（income）</td></tr>
+                <tr><td>税込集客手数料</td><td>仕入仕訳の金額（expense）</td></tr>
+                <tr><td>売上決済期日</td><td>売上仕訳の due_date</td></tr>
+                <tr><td>仕入決済期日</td><td>仕入仕訳の due_date（未設定時は入社日＋支払ルールで自動計算）</td></tr>
+                <tr><td>担当CA（rollup）</td><td>仕訳のメモタグ</td></tr>
+                <tr><td>求職者名 + 決定企業名</td><td>仕訳の備考（description）</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="ibox green">
+            <strong style="color:#15803d;">💡 金額処理の基本ルール（絶対厳守）</strong>
+            <p style="color:#166534;">
+              このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
+              Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
+              freee請求書登録時は <code>tax_entry_method="in"</code> 固定。<strong>税抜変換（×1.1や÷1.1）は行いません。</strong>
+            </p>
+          </div>
+          <div class="ibox yellow">
+            <strong style="color:#b45309;">⚠️ PCA（本店PCA）の追加処理</strong>
+            <p style="color:#92400e;">
+              PCA成約管理DBのレコードは、売上仕訳・仕入仕訳に加えて<strong>パートナー（外注業者）への支払仕訳（PCA仕入高）</strong>も同時に登録します。
+              部門は「本店：PCA」固定。担当パートナーはNotionの「担当パートナー」フィールドから取得します。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== 仕訳アシスタントタブ ===== -->
@@ -330,6 +400,70 @@
         </div>
         <div class="result-box" id="formResult"></div>
       </form>
+    </div>
+
+    <!-- 仕訳アシスタントルール -->
+    <div class="inline-rule-section">
+      <h4>📚 この機能のルール</h4>
+      <div class="inline-rule-card">
+        <div class="inline-rule-card-header">
+          <span style="font-size:20px;">🤖</span>
+          <h3>仕訳アシスタントの仕様</h3>
+        </div>
+        <div class="inline-rule-card-body">
+          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
+            自然言語freeeを操作できるAIエージェントです。OpenAI Function Callingを使用します。
+          </p>
+          <table class="inline-rules-table">
+            <thead><tr><th>機能</th><th>ルール・制約</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>仕訳登録</strong></td>
+                <td>AIが登録内容を提示し、ユーザーが「この内容でfreeeに登録する」ボタンを押した後に実行。取引先がマスタに存在しない場合は自動作成してから登録。繰り返し登録（repeat）に対応。</td>
+              </tr>
+              <tr>
+                <td><strong>登録必須項目</strong></td>
+                <td>以下4項目がすべて揃っていることが登録の条件。欠けている場合は登録を実行せず、不足項目を列挙して聞き返す。<br>
+                <ol style="margin:6px 0 0 16px;padding:0;">
+                  <li><strong>発生日</strong>（YYYY-MM-DD）</li>
+                  <li><strong>取引先</strong>（freeeマスタ登録済み）</li>
+                  <li><strong>決済期日</strong>（YYYY-MM-DD）</li>
+                  <li><strong>対応部門</strong>（freeeマスタ登録済み）</li>
+                </ol></td>
+              </tr>
+              <tr>
+                <td><strong>削除処理</strong></td>
+                <td>必ず search_deals / search_invoices で対象を検索してIDを取得してから実行。フロントエンドが削除確認ボタンを表示し、ユーザーがボタンを押した後に実際の削除が実行される。</td>
+              </tr>
+              <tr>
+                <td><strong>照会・集計</strong></td>
+                <td>list_deals / list_invoices / get_deal で仕訳・請求書を取得して集計・報告。「先月の売上合計」「今月の支出一覧」などの自然言語に対応。</td>
+              </tr>
+              <tr>
+                <td><strong>添付ファイル（OCR）</strong></td>
+                <td>PDF・画像をアップロードすると OpenAI Vision API（gpt-4o）でテキスト抽出。最大20MB。抵出テキストをAIに渡して仕訳登録に活用。</td>
+              </tr>
+              <tr>
+                <td><strong>日付の解釈</strong></td>
+                <td>「先月」→ 前月の年月、「今月」→ 当月の年月、「7月」→ 当年度の7月として解釈。今年度 = 4月～翠年3月。</td>
+              </tr>
+              <tr>
+                <td><strong>取引先・勘定科目の推測</strong></td>
+                <td>マスタ一覧から最も近いものを推測して使用。例：「ステリファイ」→「stellify」、「広告費」→「広告宣伝費」</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="ibox red">
+            <strong style="color:#be123c;">🚨 登録・削除・更新の確認ルール</strong>
+            <p style="color:#9f1239;">
+              登録・削除・更新はすべて必ずユーザー確認を得てから実行します。<br>
+              『登録』: AIが register_deal を呼び出すと登録内容を表示。「この内容でfreeeに登録する」ボタンを押した後に実行。<br>
+              『削除』: AIが delete_deals を呼び出すと削除対象を表示。「削除する」ボタンを押した後に実行。<br>
+              AIは「登録しました」「削除しました」と自分から言わない。ボタン操作後に実行される。
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

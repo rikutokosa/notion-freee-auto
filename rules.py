@@ -107,52 +107,6 @@ RULES = {
         "billing_type": "請求書登録",
         "needs_invoice": True,
     },
-    # --- 旧キー名（後方互換のため残す） ---
-    "Circus | 請求不要": {
-        "no": None,  # 旧キー（後方互換）
-        "added_date": "2026-06-16",
-        "type": "求人DB",
-        "supplier": "circus株式会社",
-        "payment_rule": "入社翌々月10日",
-        "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
-    "Zキャリア | 請求書不要": {
-        "no": None,  # 旧キー（後方互換）
-        "added_date": "2026-06-16",
-        "type": "求人DB",
-        "supplier": "株式会社ROXX",
-        "payment_rule": "入社翌々月10日",
-        "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
-    "クラウドエージェント│請求不要": {
-        "no": None,  # 旧キー（後方互換）
-        "added_date": "2026-06-16",
-        "type": "求人DB",
-        "supplier": "株式会社Grooves",
-        "payment_rule": "入社翌々月4日",
-        "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
-    "CSS自社求人│スカウト手数料のみ登録": {
-        "no": None,  # 旧キー（後方互換）
-        "added_date": "2026-06-16",
-        "type": "求人DB",
-        "supplier": None,
-        "payment_rule": "登録不要",
-        "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
-    "CSS自社求人│請求不要": {
-        "no": None,  # 旧キー（後方互換）
-        "added_date": "2026-06-16",
-        "type": "求人DB",
-        "supplier": None,
-        "payment_rule": "登録不要",
-        "billing_type": "仕訳登録のみ",
-        "needs_invoice": False,
-    },
     # --- 集客 ---
     "RDS": {
         "no": 9,

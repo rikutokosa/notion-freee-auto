@@ -2165,23 +2165,46 @@ def api_delete_chat_history(session_id):
 # ============================================================
 @app.route("/rules")
 def rules_page():
-    """ルールブック: 機能ルール（rules.py）+ 変更履歴（git log）"""
-    import subprocess
+    """ルールブック: 機能ルール（rules.py）+ 変更履歴（GitHub API）"""
+    import requests as req
     from rules import RULES
 
-    # rules.pyの変更履歴をgit logから取得
+    # rules.pyの変更履歴をGitHub APIから取得
+    rules_history = []
     try:
-        result = subprocess.run(
-            ["git", "log", "--format=%ad|%s", "--date=format:%Y-%m-%d", "--", "rules.py"],
-            capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+        github_repo = os.environ.get("GITHUB_REPO", "rikutokosa/notion-freee-auto")
+        github_token = os.environ.get("GITHUB_TOKEN", "")
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        if github_token:
+            headers["Authorization"] = f"Bearer {github_token}"
+        resp = req.get(
+            f"https://api.github.com/repos/{github_repo}/commits",
+            headers=headers,
+            params={"path": "rules.py", "per_page": 50},
+            timeout=10,
         )
-        rules_history = []
-        for line in result.stdout.strip().splitlines():
-            if "|" in line:
-                date_str, msg = line.split("|", 1)
+        if resp.status_code == 200:
+            for commit in resp.json():
+                date_str = commit.get("commit", {}).get("author", {}).get("date", "")[:10]
+                msg = commit.get("commit", {}).get("message", "").splitlines()[0]
                 rules_history.append({"date": date_str, "message": msg})
     except Exception:
-        rules_history = []
+        pass
+
+    # GitHub APIが使えない場合はgit logにフォールバック
+    if not rules_history:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "log", "--format=%ad|%s", "--date=format:%Y-%m-%d", "--", "rules.py"],
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            for line in result.stdout.strip().splitlines():
+                if "|" in line:
+                    date_str, msg = line.split("|", 1)
+                    rules_history.append({"date": date_str, "message": msg})
+        except Exception:
+            pass
 
     return render_template(
         "rules.html",

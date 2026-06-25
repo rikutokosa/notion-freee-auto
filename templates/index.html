@@ -533,7 +533,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('issueDate').value = today;
   loadMaster();
-  loadChatHistory();
+  // 会話履歴はブラウザを閉じたら消える（実行ログからは確認可能）
   loadSystemStatus();
   // 実行ログ初期ロード（各タブのログをバックグラウンドで取得）
   loadExecLog('jidou');
@@ -1066,10 +1066,10 @@ let aiFiles = [];
 let formFiles = [];
 
 function getOrCreateSessionId() {
-  let sid = localStorage.getItem('ai_session_id');
+  let sid = sessionStorage.getItem('ai_session_id');
   if (!sid) {
     sid = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    localStorage.setItem('ai_session_id', sid);
+    sessionStorage.setItem('ai_session_id', sid);
   }
   return sid;
 }

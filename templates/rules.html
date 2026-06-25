@@ -115,7 +115,7 @@
       <div class="func-rule-card-body">
         <p style="font-size:13px;color:#475569;margin:0 0 16px;">
           Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<br>
-          <strong>実行は手動のみ</strong>（ダッシュボードの「今すぐ実行」ボタンまたは仕訳プレビューから登録）。<br>
+          <strong>実行方法：手動</strong>（ダッシュボードの「今すぐ実行」ボタンまたは仕訳プレビューから登録）<strong>および毎日昼12時（JST）の自動実行</strong>。自動実行結果はメール（r.kosa@bearsnavi.com）に通知される。<br>
           監視対象ステータス：本店CA＝<code>本部確認済 / ●入社済 / ●入社前辞退 / ●返金（短期離職）</code>、
           PCA＝<code>本部確認済 / 入社前辞退 / ●返金（短期離職）</code>。
         </p>
@@ -793,6 +793,10 @@
             <tr>
               <td><strong>ルールブック更新</strong></td>
               <td>機能・ルールに変更があった場合は必ずルールブック（<code>rules.html</code>）も同時に更新する</td>
+            </tr>
+            <tr>
+              <td><strong>SYSTEM_SPEC.md</strong></td>
+              <td>リポジトリルートの <code>SYSTEM_SPEC.md</code> がシステム全体の単一の真実の源（Single Source of Truth）。他のAIが引き継ぐ際はこのファイルを最初に読むこと。コード変更時は <code>SYSTEM_SPEC.md</code> ・ <code>rules.html</code> を必ず同じコミットで更新する</td>
             </tr>
             <tr>
               <td><strong>環境変数管理</strong></td>

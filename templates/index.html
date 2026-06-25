@@ -1446,7 +1446,8 @@ async function sendAiMessage() {
         replyHtml += `<div style="margin-top:10px;"><button class="btn btn-danger" onclick='executePendingDeletes(${pdJson})'>🗑️ 削除を実行する</button> <span style="font-size:11px;color:#666;">→ 削除後は元に戻せません</span></div></div>`;
       }
       if (data.registered_ids && data.registered_ids.length > 0) {
-        replyHtml += `<br><div style="color:#27ae60;font-weight:bold;">✅ ${data.registered_ids.length}件をfreeeに登録しました（ID: ${data.registered_ids.join(', ')}）</div>`;
+        const regLinks = data.registered_ids.map(id => `<a href="https://secure.freee.co.jp/deals#deal_id=${id}" target="_blank" rel="noopener" style="color:#2563eb;">${id} ↗</a>`).join(', ');
+        replyHtml += `<br><div style="color:#27ae60;font-weight:bold;">✅ ${data.registered_ids.length}件をfreeeに登録しました（ID: ${regLinks}）</div>`;
       }
       if (data.pending_registers && data.pending_registers.length > 0) {
         const pr = data.pending_registers;
@@ -1495,7 +1496,8 @@ async function executeRegister(pendingRegisters) {
     const data = await res.json();
     resultDiv.remove();
     if (data.status === 'ok') {
-      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids||[]).join(', ')}`;
+      const idLinks = (data.ids||[]).map(id => `<a href="https://secure.freee.co.jp/deals#deal_id=${id}" target="_blank" rel="noopener" style="color:#2563eb;">${id} ↗</a>`).join(', ');
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${idLinks}`;
       if (data.failed && data.failed.length > 0) msg += `<br>⚠️ 失敗: ${data.failed.length}件`;
       addAiMessage('assistant', msg);
     } else {
@@ -1699,7 +1701,11 @@ function buildDetailHtml(tabName, detail) {
     if (results.length === 0) return '<div style="color:#94a3b8;font-size:11px;">処理結果なし</div>';
     const rows = results.slice(0, 20).map(r => {
       const sc = r.status === 'success' ? '#15803d' : r.status === 'error' ? '#b91c1c' : r.status === 'review' ? '#b45309' : '#64748b';
-      return `<tr><td style="color:${sc};font-weight:700;">${r.status}</td><td>${r.name || '-'}</td><td>${r.action || '-'}</td><td>${(r.message || '').substring(0, 60)}</td></tr>`;
+      let dealLinks = '';
+      if (r.sales_id) dealLinks += `<a href="https://secure.freee.co.jp/deals#deal_id=${r.sales_id}" target="_blank" rel="noopener" style="color:#2563eb;font-size:10px;">売上↗</a> `;
+      if (r.purchase_id) dealLinks += `<a href="https://secure.freee.co.jp/deals#deal_id=${r.purchase_id}" target="_blank" rel="noopener" style="color:#2563eb;font-size:10px;">仕入↗</a> `;
+      if (r.pca_id) dealLinks += `<a href="https://secure.freee.co.jp/deals#deal_id=${r.pca_id}" target="_blank" rel="noopener" style="color:#2563eb;font-size:10px;">PCA↗</a> `;
+      return `<tr><td style="color:${sc};font-weight:700;">${r.status}</td><td>${r.name || '-'}</td><td>${r.action || '-'}</td><td>${(r.message || '').substring(0, 40)} ${dealLinks}</td></tr>`;
     }).join('');
     const more = results.length > 20 ? `<tr><td colspan="4" style="color:#94a3b8;">... 他${results.length - 20}件</td></tr>` : '';
     return `<table class="exec-log-detail-table"><thead><tr><th>ステータス</th><th>名前</th><th>処理</th><th>メッセージ</th></tr></thead><tbody>${rows}${more}</tbody></table>`;
@@ -1826,7 +1832,8 @@ async function registerAiEntries(entries, withFiles = true) {
     });
     const data = await res.json();
     if (data.status === 'ok') {
-      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${(data.ids||[]).join(', ')}`;
+      const idLinks2 = (data.ids||[]).map(id => `<a href="https://secure.freee.co.jp/deals#deal_id=${id}" target="_blank" rel="noopener" style="color:#2563eb;">${id} ↗</a>`).join(', ');
+      let msg = `✅ 登録完了！${data.registered}件をfreeeに登録しました。<br>登録ID: ${idLinks2}`;
       if (withFiles && aiFiles.length > 0 && data.ids && data.ids.length > 0) {
         resultDiv.innerHTML = '⏳ 証憑ファイルをアップロード中...';
         const uploadResult = await uploadReceiptsToDeals(aiFiles, data.ids);

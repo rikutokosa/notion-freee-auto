@@ -341,7 +341,7 @@ def run_manual():
             _save_execution_log(
                 log_type="auto_transfer",
                 summary={"total": len(results), "success": success, "errors": errors, "reviews": reviews, "skips": skips, "db_type": db_type},
-                detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action","")} for r in results]},
+                detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action",""), "sales_id": r.get("sales_id"), "purchase_id": r.get("purchase_id"), "pca_id": r.get("pca_id"), "invoice_id": r.get("invoice_id")} for r in results]},
                 trigger="manual",
                 has_error=errors > 0
             )
@@ -708,7 +708,8 @@ def api_assistant_register():
                 "note": "",
             })
         del assistant_log[200:]
-        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
+        deal_urls = [f"https://secure.freee.co.jp/deals#deal_id={did}" for did in registered_ids]
+        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids, "urls": deal_urls})
     except Exception as e:
         logger.exception("仕訳アシスタント登録エラー")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -740,7 +741,8 @@ def api_assistant_register_bulk():
                 "note": "",
             })
         del assistant_log[200:]
-        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids})
+        deal_urls = [f"https://secure.freee.co.jp/deals#deal_id={did}" for did in registered_ids]
+        return jsonify({"status": "ok", "registered": len(registered_ids), "ids": registered_ids, "urls": deal_urls})
     except Exception as e:
         logger.exception("AI仕訳一括登録エラー")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1558,10 +1560,12 @@ def api_assistant_execute_register():
         except Exception as e:
             results["failed"].append({"error": str(e), "args": deal_args})
 
+    deal_urls = [f"https://secure.freee.co.jp/deals#deal_id={did}" for did in results["registered"]]
     return jsonify({
         "status": "ok",
         "registered": len(results["registered"]),
         "ids": results["registered"],
+        "urls": deal_urls,
         "failed": results["failed"],
     })
 
@@ -2240,6 +2244,20 @@ def scheduled_run():
         else:
             lines.append(f"  合計: {total}件")
             lines.append(f"  成功: {success}件 / エラー: {errors}件 / 要確認: {reviews}件 / スキップ: {skips}件")
+        if success > 0:
+            lines.append("  [登録済み仕訳]")
+            for r in results:
+                if r.get("status") == "success":
+                    name = r.get("name", "")
+                    deal_ids = []
+                    if r.get("sales_id"): deal_ids.append(("売上", r["sales_id"]))
+                    if r.get("purchase_id"): deal_ids.append(("仕入", r["purchase_id"]))
+                    if r.get("pca_id"): deal_ids.append(("PCA", r["pca_id"]))
+                    if deal_ids:
+                        links = " / ".join(f"{label}: https://secure.freee.co.jp/deals#deal_id={did}" for label, did in deal_ids)
+                        lines.append(f"    - {name}: {links}")
+                    elif r.get("invoice_id"):
+                        lines.append(f"    - {name}: 請求書ID={r['invoice_id']}")
         if errors > 0:
             has_error = True
             lines.append("  [エラー詳細]")
@@ -2251,7 +2269,7 @@ def scheduled_run():
         _save_execution_log(
             log_type="auto_transfer",
             summary={"total": total, "success": success, "errors": errors, "reviews": reviews, "skips": skips, "db_type": "all"},
-            detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action","")} for r in results]},
+            detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action",""), "sales_id": r.get("sales_id"), "purchase_id": r.get("purchase_id"), "pca_id": r.get("pca_id"), "invoice_id": r.get("invoice_id")} for r in results]},
             trigger="auto",
             has_error=errors > 0
         )
@@ -2278,6 +2296,17 @@ def scheduled_run():
             lines.append(f"  照合成功: {matched}件 / 未照合: {unmatched}件")
             if ai_ocr > 0:
                 lines.append(f"  AI-OCR使用: {ai_ocr}件")
+            # 照合成功分の仕訳URLを記載
+            matched_list = match_result.get("matched", [])
+            if matched_list:
+                lines.append("  [照合済み仕訳]")
+                for m in matched_list[:10]:
+                    name = (m.get("receipt_description") or m.get("receipt_name") or m.get("name", ""))[:30]
+                    deal_id = m.get("deal_id")
+                    if deal_id:
+                        lines.append(f"    - {name}: https://secure.freee.co.jp/deals#deal_id={deal_id}")
+                if len(matched_list) > 10:
+                    lines.append(f"    ... 他{len(matched_list) - 10}件")
         if errs:
             has_error = True
             lines.append(f"  [エラー {len(errs)}件]")

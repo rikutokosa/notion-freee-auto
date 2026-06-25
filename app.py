@@ -2455,11 +2455,11 @@ def rules_page():
 @app.route("/api/rules_html/<tab_id>")
 def api_rules_html(tab_id):
     """rules.htmlの指定タブのHTMLフラグメントを返す（index.htmlのインラインルール表示用）"""
-    from flask import render_template_string
     from bs4 import BeautifulSoup
     try:
-        # rules.htmlをレンダリング
-        rendered = render_template("rules.html")
+        from rules import RULES
+        # rules.htmlをレンダリング（rules変数を渡す）
+        rendered = render_template("rules.html", rules=RULES)
         soup = BeautifulSoup(rendered, "html.parser")
         tab_div = soup.find("div", {"id": tab_id})
         if not tab_div:

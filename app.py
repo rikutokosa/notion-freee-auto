@@ -1045,6 +1045,19 @@ def api_assistant_ai():
 例: 「登録に必要な情報が不足しています。以下を教えてください：\n- 決済期日（例: 2026-07-31）\n- 対応部門（例: 本店CA）」
 全項目が揃ったことを確認してからregister_dealを呼び出すこと。
 
+## 2-B. 仕訳更新の手順（update_deal呼び出し前に必ず実行）
+仕訳を更新する際は必ず以下の順序で実行すること。
+1. **search_dealsで対象仕訳を検索**：取引先名・日付範囲で検索し、実際のIDを取得する
+2. **get_dealで対象仕訳の詳細を取得**：現在の明細行（勘定科目・金額・部門・摘要）を必ず確認する
+3. **更新内容をユーザーに提示して確認を取る**：「以下の内容で更新します。よろしいですか？」と確認する
+4. **ユーザーが承認した後にupdate_dealを呼び出す**
+
+更新時の重要ルール:
+- **部門名は必ずマスタ一覧から正確な名前を使用する**：上記「部門」マスタの値をそのまま使用すること。不完全な名前や推測で補完しない。
+- **取引先名は必ずマスタ一覧から正確な名前を使用する**：上記「取引先」マスタの値をそのまま使用する。誤った取引先名を使わない。
+- **明細行の部門は現在の値を必ず引き継ぐ**：明細行の内容を変更する場合、変更しない行の部門名・勘定科目・金額は現在値をそのまま維持する。
+- **変更内容を具体的に提示**：「仕訳ID XXXXXの金額を○○円→○○円に変更、部門は「本店：その他」のまま」のように明示する。
+
 ## 3. 削除処理
 - 必ずsearch_deals/search_invoicesで対象を検索してからIDを取得する（IDを自分で作らない）
 - 検索後、そのまま即座にdelete_dealsを呼び出す。事前にユーザーにテキストで確認を求めない。
@@ -1265,7 +1278,7 @@ def api_assistant_ai():
                 "type": "function",
                 "function": {
                     "name": "update_deal",
-                    "description": "freeeの既存仕訳（取引）を更新する。金額・日付・取引先・摘要・部門などを変更する際に使用する。必ず事前にsearch_dealsまたはget_dealで対象仕訳のIDを取得してから呼び出すこと。",
+                    "description": "freeeの既存仕訳（取引）を更新する。必ず事前にsearch_dealsで対象を検索し、get_dealで現在の明細内容を確認してから呼び出すこと。明細行の部門名はマスタの正確な名前を使用すること（推測や略称不可）。変更しない明細行の部門・勘定科目・金額は必ず現在値をそのまま引き継ぐこと。",
                     "parameters": {
                         "type": "object",
                         "required": ["deal_id"],
@@ -1416,8 +1429,9 @@ def api_assistant_ai():
                     cache = get_master_cache()
                     account_items = cache.get("account_items", [])
                     sections = cache.get("sections", [])
+                    current_details = current.get("details", [])
                     new_details = []
-                    for d in args["details"]:
+                    for idx, d in enumerate(args["details"]):
                         ai_name = d.get("account_item_name", "")
                         ai_id = next((a["id"] for a in account_items if a["name"] == ai_name), None)
                         if not ai_id:
@@ -1429,9 +1443,17 @@ def api_assistant_ai():
                             "description": d.get("description", ""),
                         }
                         if d.get("section_name"):
-                            sec_id = next((s["id"] for s in sections if s["name"] == d["section_name"]), None)
+                            # 指定された部門名で完全一致を試み、失敗したら部分一致
+                            sec_name = d["section_name"]
+                            sec_id = next((s["id"] for s in sections if s["name"] == sec_name), None)
+                            if not sec_id:
+                                sec_id = next((s["id"] for s in sections if sec_name in s["name"]), None)
                             if sec_id:
                                 detail["section_id"] = sec_id
+                        else:
+                            # section_nameが指定されていない場合は現在の明細行の部門を引き継ぐ
+                            if idx < len(current_details) and current_details[idx].get("section_id"):
+                                detail["section_id"] = current_details[idx]["section_id"]
                         new_details.append(detail)
                     update_fields["details"] = new_details
                 else:

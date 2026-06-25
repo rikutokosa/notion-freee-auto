@@ -6,6 +6,7 @@ GitHub Actions（CI）で自動実行され、以下を検証する:
   1. SYSTEM_SPEC.md に記載された集客経路ルール一覧が rules.py の RULES 辞書と一致するか
   2. SYSTEM_SPEC.md に記載された定数値がコード内の実際の値と一致するか
   3. SYSTEM_SPEC.md に記載されたPENDING_STATUSESが notion_client.py と一致するか
+  4. SYSTEM_SPEC.md に記載された画面・機能仕様キーワードがコードに実装されているか
 
 不整合があった場合は exit code 1 で終了し、GitHub Actions で警告が出る。
 """
@@ -190,6 +191,64 @@ def check_pending_statuses(spec_content: str, base_dir: str) -> list[str]:
     return errors
 
 
+def check_ui_spec_keywords(spec_content: str, base_dir: str) -> list[str]:
+    """
+    SYSTEM_SPEC.md の「12-7. CIチェック対象の機能仕様キーワード」に記載されたキーワードが
+    実際のコードファイルに存在するか検証する。
+
+    キーワードテーブルの形式:
+      | キーワード | 検証対象ファイル | 意味 |
+      | `alertHtml` | `templates/index.html` | ... |
+    """
+    errors = []
+
+    # SYSTEM_SPEC.md からキーワードテーブルを抽出
+    # セクション「12-7. CIチェック対象の機能仕様キーワード」を探す
+    in_section = False
+    for line in spec_content.split("\n"):
+        if "12-7" in line and "CIチェック対象" in line:
+            in_section = True
+            continue
+        if in_section and line.startswith("## "):
+            break
+        if in_section and line.startswith("|"):
+            # ヘッダー行・区切り行をスキップ
+            if "キーワード" in line or "---" in line:
+                continue
+            # | `keyword` | `filename` | 意味 | の形式をパース
+            parts = [p.strip() for p in line.split("|") if p.strip()]
+            if len(parts) < 2:
+                continue
+            # バッククォートを除去
+            keyword_raw = parts[0].strip("`")
+            file_raw = parts[1].strip("`")
+
+            target_path = os.path.join(base_dir, file_raw)
+            if not os.path.exists(target_path):
+                errors.append(
+                    f"機能仕様チェック: 検証対象ファイル '{file_raw}' が存在しません"
+                )
+                continue
+
+            file_content = read_file(target_path)
+            # キーワードは正規表現パターンとして扱う
+            try:
+                if not re.search(keyword_raw, file_content):
+                    meaning = parts[2] if len(parts) > 2 else ""
+                    errors.append(
+                        f"機能仕様未実装: '{keyword_raw}' が {file_raw} に存在しません（{meaning}）"
+                    )
+            except re.error:
+                # 正規表現エラーの場合は単純な文字列検索にフォールバック
+                if keyword_raw not in file_content:
+                    meaning = parts[2] if len(parts) > 2 else ""
+                    errors.append(
+                        f"機能仕様未実装: '{keyword_raw}' が {file_raw} に存在しません（{meaning}）"
+                    )
+
+    return errors
+
+
 def check_rules_in_rulebook(base_dir: str, rules_dict: dict) -> list[str]:
     """
     rules_tabs.html に集客経路ルール表が動的に生成される構造があるか検証する。
@@ -249,26 +308,32 @@ def main():
     print("=" * 60)
 
     # 1. ルールキーの整合性
-    print("\n[1/4] 集客経路ルールキーの検証...")
+    print("[1/5] 集客経路ルールキーの検証...")
     errs = check_rules_keys(spec_content, rules_dict)
     all_errors.extend(errs)
     print(f"  → {'✅ OK' if not errs else '❌ ' + str(len(errs)) + '件の不整合'}")
 
     # 2. 定数値の整合性
-    print("\n[2/4] 定数値の検証...")
+    print("\n[2/5] 定数値の検証...")
     errs = check_constants(spec_content, base_dir)
     all_errors.extend(errs)
     print(f"  → {'✅ OK' if not errs else '❌ ' + str(len(errs)) + '件の不整合'}")
 
     # 3. PENDING_STATUSESの整合性
-    print("\n[3/4] PENDING_STATUSESの検証...")
+    print("\n[3/5] PENDING_STATUSESの検証...")
     errs = check_pending_statuses(spec_content, base_dir)
     all_errors.extend(errs)
     print(f"  → {'✅ OK' if not errs else '❌ ' + str(len(errs)) + '件の不整合'}")
 
     # 4. ルールブック（rules_tabs.html）の整合性
-    print("\n[4/4] rules_tabs.html の検証...")
+    print("\n[4/5] rules_tabs.html の検証...")
     errs = check_rules_in_rulebook(base_dir, rules_dict)
+    all_errors.extend(errs)
+    print(f"  → {'✅ OK' if not errs else '❌ ' + str(len(errs)) + '件の不整合'}")
+
+    # 5. 画面・機能仕様キーワードの整合性
+    print("\n[5/5] 画面・機能仕様キーワードの検証...")
+    errs = check_ui_spec_keywords(spec_content, base_dir)
     all_errors.extend(errs)
     print(f"  → {'✅ OK' if not errs else '❌ ' + str(len(errs)) + '件の不整合'}")
 

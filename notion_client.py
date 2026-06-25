@@ -9,12 +9,28 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "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")
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 
 # 本店CA成約管理DB
-NOTION_DB_ID_HONTEN = os.environ.get("NOTION_DB_ID_HONTEN", "320a7a34-dbe2-8082-8055-c57f9b8a04bb")
+NOTION_DB_ID_HONTEN = os.environ.get("NOTION_DB_ID_HONTEN", "")
 # PCA成約管理DB
-NOTION_DB_ID_PCA = os.environ.get("NOTION_DB_ID_PCA", "32fa7a34-dbe2-8005-ab91-ff33d64506e0")
+NOTION_DB_ID_PCA = os.environ.get("NOTION_DB_ID_PCA", "")
+
+# 起動時に必須環境変数の存在を確認
+def _check_required_env() -> None:
+    import logging as _lg
+    _logger = _lg.getLogger(__name__)
+    missing = []
+    if not NOTION_TOKEN:
+        missing.append("NOTION_TOKEN")
+    if not NOTION_DB_ID_HONTEN:
+        missing.append("NOTION_DB_ID_HONTEN")
+    if not NOTION_DB_ID_PCA:
+        missing.append("NOTION_DB_ID_PCA")
+    if missing:
+        _logger.critical(f"[notion_client] 必須環境変数が未設定です: {', '.join(missing)} — Notionとの連携は機能しません")
+
+_check_required_env()
 
 NOTION_VERSION = "2022-06-28"
 NOTION_BASE = "https://api.notion.com/v1"

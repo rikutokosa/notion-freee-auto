@@ -1329,17 +1329,35 @@ async function submitForm() {
 }
 
 async function uploadReceiptsToDeals(files, dealIds) {
+  // ファイルが1件・仕訳が複数の場合: 全仕訳に同じファイルを紐付ける
+  // ファイルが複数・仕訳が複数の場合: ファイル数 >= 仕訳数ならi番目のファイルをi番目の仕訳に、
+  //   ファイル数 < 仕訳数なら全仕訳に全ファイルをアップロード
   const results = [];
-  for (const file of files) {
+  const targets = [];
+  if (files.length === 1) {
+    // 1ファイル → 全仕訳に紐付け
+    for (const dealId of dealIds) targets.push({ file: files[0], dealId });
+  } else if (files.length >= dealIds.length) {
+    // ファイル数 >= 仕訳数 → i番目のファイルをi番目の仕訳に
+    for (let i = 0; i < dealIds.length; i++) targets.push({ file: files[i], dealId: dealIds[i] });
+    // 余ったファイルは最後の仕訳に紐付け
+    for (let i = dealIds.length; i < files.length; i++) targets.push({ file: files[i], dealId: dealIds[dealIds.length - 1] });
+  } else {
+    // ファイル数 < 仕訳数 → 全ファイルを全仕訳に紐付け
+    for (const dealId of dealIds) {
+      for (const file of files) targets.push({ file, dealId });
+    }
+  }
+  for (const { file, dealId } of targets) {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('deal_id', dealIds[0]);
+      formData.append('deal_id', dealId);
       formData.append('description', file.name);
       const res = await fetch('/api/assistant/upload_receipt', { method: 'POST', body: formData });
       const data = await res.json();
-      results.push(data.status === 'ok' ? `${file.name} ✅` : `${file.name} ❌(${data.message})`);
-    } catch(e) { results.push(`${file.name} ❌(通信エラー)`); }
+      results.push(data.status === 'ok' ? `${file.name}→ID:${dealId} ✅` : `${file.name}→ID:${dealId} ❌(${data.message})`);
+    } catch(e) { results.push(`${file.name}→ID:${dealId} ❌(通信エラー)`); }
   }
   return results.join(', ');
 }

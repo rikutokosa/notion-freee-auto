@@ -830,19 +830,17 @@ def upload_receipt(
 
     # 取引に紐付ける
     if deal_id and receipt_id:
-        try:
-            link_resp = requests.post(
-                f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
-                headers={**headers, "Content-Type": "application/json"},
-                json={"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id},
-                timeout=30,
-            )
-            if link_resp.status_code not in (200, 201):
-                logger.warning(
-                    f"証憷と取引の紐付け失敗: {link_resp.status_code} {link_resp.text[:300]}"
-                )
-        except Exception as e:
-            logger.warning(f"証憷と取引の紐付けエラー: {e}")
+        link_resp = requests.post(
+            f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id},
+            timeout=30,
+        )
+        if link_resp.status_code not in (200, 201):
+            error_msg = f"証憷と取引の紐付け失敗: {link_resp.status_code} {link_resp.text[:300]}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        logger.info(f"証憷と取引の紐付け成功: receipt_id={receipt_id}, deal_id={deal_id}")
 
     return receipt_data
 
@@ -1399,6 +1397,8 @@ def _get_partner_cached(partner_id: int) -> dict:
     """取引先情報（名前・銀行口座）をキャッシュ付きで取得する。APIコールは1回のみ。"""
     if partner_id in _partner_cache:
         return _partner_cache[partner_id]
+    import logging as _logging
+    _logger = _logging.getLogger(__name__)
     try:
         r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
                          params={"company_id": FREEE_COMPANY_ID}, timeout=15)
@@ -1417,12 +1417,16 @@ def _get_partner_cached(partner_id: int) -> dict:
             }
             _partner_cache[partner_id] = info
             return info
-    except Exception:
-        pass
-    empty = {"name": "", "bank_code": "", "bank_name": "", "branch_code": "",
-             "branch_name": "", "account_type": "ordinary", "account_number": "", "account_name": ""}
-    _partner_cache[partner_id] = empty
-    return empty
+        else:
+            # APIエラー時はキャッシュに書き込まず、呼び出し元にエラーを伝える
+            _logger.warning(f"取引先APIエラー: partner_id={partner_id}, status={r.status_code}")
+            raise ValueError(f"取引先情報の取得失敗: partner_id={partner_id}, status={r.status_code}")
+    except ValueError:
+        raise
+    except Exception as e:
+        # ネットワークエラー等の一時的障害時はキャッシュに書き込まず再試行可能にする
+        _logger.warning(f"取引先API例外: partner_id={partner_id}, error={e}")
+        raise ValueError(f"取引先情報の取得中にエラーが発生しました: {e}") from e
 
 
 # 後方互換: 旧関数名を維持

@@ -777,6 +777,18 @@
               <td><strong>トークン期限切れ</strong></td>
               <td>freeeアクセストークンは自動リフレッシュ。リフレッシュトークン切れの場合は<code>/freee/auth</code>から再認証</td>
             </tr>
+            <tr>
+              <td><strong>日次スケジュール</strong></td>
+              <td>毎日昼12時（JST）に自動転記・請求書照合を自動実行。実行結果（処理件数・エラー詳細）は<code>r.kosa@bearsnavi.com</code>にメール通知。エラー時は件名に『⚠️ [要確認]』が付く。処理がない場合も『処理対象レコードなし』と通知する</td>
+            </tr>
+            <tr>
+              <td><strong>スケジュール実行エンドポイント</strong></td>
+              <td><code>POST /api/scheduled_run</code> — 自動転記→請求書照合の順に実行し、結果をメール送信</td>
+            </tr>
+            <tr>
+              <td><strong>メール送信設定</strong></td>
+              <td>SMTP設定はRailway環境変数に保存済み（<code>SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / NOTIFY_TO</code>）。送信元: bearsnavi.sidesales@gmail.com、送信先: r.kosa@bearsnavi.com</td>
+            </tr>
           </tbody>
         </table>
       </div>

@@ -217,7 +217,7 @@
           </td>
           <td style="padding:8px 12px; color:#888; font-size:12px;">
             {% if log.freee_id %}
-            <a href="https://secure.freee.co.jp/deals/{{ log.freee_id }}" target="_blank" style="color:#1565c0;">#{{ log.freee_id }}</a>
+            <a href="https://secure.freee.co.jp/deals#deal_id={{ log.freee_id }}" target="_blank" style="color:#1565c0;">#{{ log.freee_id }}</a>
             {% else %}—{% endif %}
           </td>
           <td style="padding:8px 12px; color:#555; font-size:12px;">{{ log.note or '' }}</td>

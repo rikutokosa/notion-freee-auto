@@ -661,7 +661,7 @@ def run_matching(dry_run: bool = False) -> dict:
                 "partner_name": partner_name,
                 "best_score": best_score,
                 "best_deal_id": deal_id,
-                "best_deal_url": f"https://secure.freee.co.jp/accounting/deals/{deal_id}?company_id={FREEE_COMPANY_ID}",
+                "best_deal_url": f"https://secure.freee.co.jp/deals#deal_id={deal_id}",
                 "used_ai_ocr": used_ai_ocr,
             })
             result["unmatched_count"] += 1
@@ -671,7 +671,7 @@ def run_matching(dry_run: bool = False) -> dict:
         matched_info = {
             "receipt_id": receipt_id,
             "deal_id": deal_id,
-            "deal_url": f"https://secure.freee.co.jp/accounting/deals/{deal_id}?company_id={FREEE_COMPANY_ID}",
+            "deal_url": f"https://secure.freee.co.jp/deals#deal_id={deal_id}",
             "score": best_score,
             "score_breakdown": best_score_info["breakdown"],
             "score_warnings": best_score_info["warnings"],

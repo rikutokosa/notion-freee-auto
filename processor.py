@@ -428,6 +428,21 @@ def run_once(db_type: str = "all", dry_run: bool = False) -> list[dict]:
         logger.info(f"対象レコード数: {len(records)}")
 
         for record in records:
+            # DBクエリ失敗のエラーマーカーを検出し、結果に警告として追加
+            if record.get("_is_error_marker"):
+                for err_msg in record.get("_fetch_errors", []):
+                    logger.warning(f"DB取得警告: {err_msg}")
+                    results.append({
+                        "page_id": "",
+                        "phase": "",
+                        "timestamp": datetime.now().isoformat(),
+                        "action": None,
+                        "status": "warning",
+                        "message": f"⚠️ {err_msg}（一部のDBからの取得に失敗しました）",
+                        "errors": [err_msg],
+                    })
+                continue
+
             result = process_record(record, dry_run=dry_run)
             results.append(result)
             if not dry_run:

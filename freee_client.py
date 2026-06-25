@@ -385,8 +385,8 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
             if tid:
                 tag_ids.append(tid)
 
-        # 部門ID（entryのsection_nameから解決）
-        section_name = entry.get("section_name")
+        # 部門ID（明細行のsection_nameを優先、なければentry全体のsection_nameでフォールバック）
+        section_name = d.get("section_name") or entry.get("section_name")
         section_id = _find_section_id(section_name, sections) if section_name else None
 
         detail = {
@@ -952,6 +952,7 @@ def update_deal(deal_id: int, update_fields: dict) -> dict:
     """
     freeeの仕訳（取引）を更新する
     update_fields: issue_date, due_date, partner_name, details 等
+    ※ freee APIのPUT /deals/{id} は {"deal": {...}} 形式でリクエストする
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -960,7 +961,7 @@ def update_deal(deal_id: int, update_fields: dict) -> dict:
     resp = requests.put(
         f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
-        json=payload,
+        json={"deal": payload},
         timeout=30,
     )
     if resp.status_code not in (200, 201):

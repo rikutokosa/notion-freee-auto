@@ -100,7 +100,7 @@ RULES = {
     "Hitolink": {
         "no": 8,
         "added_date": "2026-06-22",
-        "type": "求人BD",
+        "type": "求人DB",
         "supplier": "パーソルイノベーション株式会社",
         "supplier_id": 105296246,  # freee取引先ID（パーソルイノベーション）
         "payment_rule": "入社翌月末",
@@ -487,7 +487,7 @@ def build_journal_entries(record: dict) -> dict:
     # ============================================================
     # ① 入社前辞退: 元の取引を削除
     # ============================================================
-    if current_status == "●入社前辞退":
+    if current_status in ("●入社前辞退", "入社前辞退"):
         if not p["freee_sales_id"] and not p["freee_purchase_id"]:
             base["action"] = "review"
             base["message"] = "入社前辞退ですが、freee取引IDが見つかりません。手動で確認してください。"
@@ -572,7 +572,7 @@ def build_journal_entries(record: dict) -> dict:
             base["sales_entry"] = {
                 "issue_date": today_str,
                 "due_date": sales_due_date,
-                "partner_name": rule.get("supplier") if rule and rule.get("type") == "求人BD" else None,
+                "partner_name": rule.get("supplier") if rule and rule.get("type") == "求人DB" else None,
                 "partner_id": p["freee_sales_partner_id"],  # 取引先ID（フォーミュラ型）
                 "section_name": section_name,
                 "details": [{

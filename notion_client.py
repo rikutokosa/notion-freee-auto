@@ -145,10 +145,16 @@ def fetch_pending_records(db_type: str = "honten") -> list[dict]:
     経理対応待ちレコードを取得する
 
     db_type: "honten" | "pca" | "all"
+
+    Returns:
+        レコードリスト。各レコードに "_db_type" が付与される。
+        DBクエリが失敗した場合、"_fetch_errors" キーにエラー情報を付与した
+        特殊レコードを先頭に追加する。
     """
     import logging
     logger = logging.getLogger(__name__)
     records = []
+    fetch_errors = []
 
     if db_type in ("honten", "all"):
         try:
@@ -158,6 +164,7 @@ def fetch_pending_records(db_type: str = "honten") -> list[dict]:
             records.extend(honten)
         except Exception as e:
             logger.error(f"本店CA DBクエリ失敗: {e}")
+            fetch_errors.append(f"本店CA DB取得失敗: {str(e)}")
 
     if db_type in ("pca", "all"):
         try:
@@ -167,6 +174,14 @@ def fetch_pending_records(db_type: str = "honten") -> list[dict]:
             records.extend(pca)
         except Exception as e:
             logger.error(f"PCA DBクエリ失敗: {e}")
+            fetch_errors.append(f"PCA DB取得失敗: {str(e)}")
+
+    # エラーがあった場合、呼び出し元に伝達するための特殊レコードを先頭に追加
+    if fetch_errors:
+        records.insert(0, {
+            "_fetch_errors": fetch_errors,
+            "_is_error_marker": True,
+        })
 
     return records
 

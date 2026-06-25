@@ -1835,11 +1835,50 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
 def api_payment_preview():
     """
     振込対象・アラート対象の仕訳一覧をプレビューする（FBファイル生成前の確認用）
+    フロントエンドが期待する形式:
+    {
+        "groups": [{"due_date": "2025-07-31", "deals": [{"id": ..., "partner_name": ..., "amount": ..., "description": ...}]}],
+        "alerts": [{"partner_name": ..., "due_date": ..., "amount": ..., "reason": ...}]
+    }
     """
     try:
         from freee_client import get_payment_deals
+        from collections import defaultdict
         result = get_payment_deals(months_back=3, alert_days=10)
-        return jsonify(result)
+
+        # transfer_targets を due_date ごとにグループ化
+        groups_dict = defaultdict(list)
+        for t in result.get("transfer_targets", []):
+            due = t.get("due_date") or "unknown"
+            groups_dict[due].append({
+                "id": t.get("deal_id"),
+                "partner_name": t.get("partner_name", ""),
+                "amount": t.get("amount", 0),
+                "description": ", ".join(t.get("section_names", [])) or "",
+            })
+
+        groups = []
+        for due_date in sorted(groups_dict.keys()):
+            groups.append({
+                "due_date": due_date,
+                "deals": groups_dict[due_date],
+            })
+
+        # alert_targets を alerts 形式に変換
+        alerts = []
+        for a in result.get("alert_targets", []):
+            reason_map = {
+                "no_receipt": "証憑未添付",
+                "bank_missing": "銀行口座未登録",
+            }
+            alerts.append({
+                "partner_name": a.get("partner_name", ""),
+                "due_date": a.get("due_date", ""),
+                "amount": a.get("amount", 0),
+                "reason": reason_map.get(a.get("alert_reason", ""), a.get("alert_reason", "")),
+            })
+
+        return jsonify({"groups": groups, "alerts": alerts})
     except Exception as e:
         logger.exception("支払管理プレビューエラー")
         return jsonify({"error": str(e)}), 500

@@ -16,7 +16,7 @@
 | ホスティング | Railway（Hobbyプラン）|
 | リポジトリ | GitHub `main` ブランチ → Railway自動デプロイ |
 | フレームワーク | Python / Flask |
-| データ永続化 | Railway Volume（`/data`）にfreeeトークン・チャット履歴を保存 |
+| データ永続化 | Railway Volume（`/data`）にfreeeトークン・チャット履歴・実行ログを保存 |
 
 ---
 
@@ -57,7 +57,55 @@
 | `NOTIFY_TO` | r.kosa@bearsnavi.com |
 | `RAILWAY_VOLUME_MOUNT_PATH` | /data |
 
-**Railway環境変数の変更方法：** `set_env_vars2.py` を参考に `variableCollectionUpsert` GraphQL APIで行う。APIトークン・PROJECT_ID・SERVICE_ID・ENV_IDは同ファイルに記載済み。コードにハードコードしない。
+---
+
+## 3-b. 実行ログ永続保存機能
+
+### テーブル定義（SQLite: `/data/app.db`）
+
+```sql
+CREATE TABLE execution_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    log_type    TEXT NOT NULL,
+    executed_at TEXT NOT NULL,
+    trigger     TEXT NOT NULL DEFAULT 'manual',
+    summary     TEXT NOT NULL,
+    detail      TEXT NOT NULL DEFAULT '{}',
+    has_error   INTEGER NOT NULL DEFAULT 0
+)
+```
+
+### ログ種別
+
+| log_type | 対応機能 | 保存タイミング |
+|----------|----------|-------------|
+| `auto_transfer` | 自動転記 | 手動実行完了時・自動実行完了時 |
+| `invoice_match` | 請求書照合 | 手動実行完了時・自動実行完了時 |
+| `payment_fb` | 総合振込データ作成 | FBファイル生成時 |
+
+### summaryフィールドのスキーマ
+
+| log_type | キー | 内容 |
+|----------|-----|------|
+| `auto_transfer` | `total`, `success`, `errors`, `reviews`, `skips`, `db_type` | 処理件数・結果内訳 |
+| `invoice_match` | `total_receipts`, `matched_count`, `unmatched_count`, `ai_ocr_count` | 照合結果 |
+| `payment_fb` | `transfer_date`, `valid_count`, `total_amount`, `skipped_count`, `tagged_count` | 振込データ生成結果 |
+
+### 主要関数
+
+- `_save_execution_log(log_type, summary, detail, trigger, has_error)` — SQLiteにログを保存
+- `_get_execution_logs(log_type, limit=50)` — SQLiteからログを取得
+
+### APIエンドポイント
+
+- `GET /api/execution_logs?log_type=auto_transfer&limit=50` — 実行ログをJSONで返す
+
+### フロントエンド表示
+
+- 各タブ（自動転記・請求書照合・総合振込データ作成）のルール表示の上に「📋 実行ログ」プルダウンを表示
+- 各ログエントリに：実行日時・トリガー（手動/自動）・サマリー・エラー有無（赤/緑バッジ）・詳細（さらに展開可能）を表示
+- ログがない場合は「実行履歴なし」と表示
+- 実行完了後に自動でログを更新（`loadExecLog(tabName, true)`）
 
 ---
 

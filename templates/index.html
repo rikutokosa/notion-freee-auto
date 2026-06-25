@@ -163,6 +163,53 @@
   .badge-ok2   { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#f0fdf4; color:#15803d; }
   .badge-warn2 { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#fff7ed; color:#c2410c; }
   .badge-exc2  { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#ede9fe; color:#7c3aed; }
+
+  /* ===== 実行ログ（永続） ===== */
+  .exec-log-section {
+    margin-top: 24px;
+    border-top: 2px solid #e2e8f0;
+    padding-top: 20px;
+  }
+  .exec-log-toggle {
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+    background: none; border: none; padding: 0;
+    font-size: 13px; font-weight: 700; color: #475569;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .exec-log-toggle:hover { color: #1e293b; }
+  .exec-log-toggle .toggle-arrow { font-size: 11px; transition: transform 0.2s; }
+  .exec-log-toggle.open .toggle-arrow { transform: rotate(90deg); }
+  .exec-log-body { display: none; margin-top: 12px; }
+  .exec-log-body.open { display: block; }
+  .exec-log-entry {
+    border: 1px solid #e2e8f0; border-radius: 8px;
+    margin-bottom: 8px; overflow: hidden;
+  }
+  .exec-log-entry-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; background: #f8fafc;
+    cursor: pointer; font-size: 12px;
+  }
+  .exec-log-entry-header:hover { background: #f1f5f9; }
+  .exec-log-entry-body {
+    display: none; padding: 10px 14px;
+    font-size: 12px; background: #fff;
+    border-top: 1px solid #e2e8f0;
+  }
+  .exec-log-entry-body.open { display: block; }
+  .exec-log-badge-ok  { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; background:#dcfce7; color:#15803d; }
+  .exec-log-badge-err { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; background:#fee2e2; color:#b91c1c; }
+  .exec-log-badge-auto   { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; background:#e0f2fe; color:#0369a1; }
+  .exec-log-badge-manual { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; background:#f3e8ff; color:#7e22ce; }
+  .exec-log-detail-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:11px; }
+  .exec-log-detail-table th { background:#f1f5f9; padding:5px 8px; text-align:left; border-bottom:1px solid #e2e8f0; color:#475569; }
+  .exec-log-detail-table td { padding:5px 8px; border-bottom:1px solid #f1f5f9; }
+  .exec-log-reload-btn {
+    font-size:11px; color:#64748b; background:none; border:1px solid #e2e8f0;
+    border-radius:4px; padding:2px 8px; cursor:pointer; margin-left:auto;
+  }
+  .exec-log-reload-btn:hover { background:#f1f5f9; }
 </style>
 
 <div class="card">
@@ -183,6 +230,7 @@
     <p style="font-size:13px; color:#666; margin-bottom:16px;">
       Notionの成約管理DBから対象レコードを取得し、freeeに仕訳・請求書を登録します。
     </p>
+    <p style="font-size:12px; color:#888; margin-bottom:8px;">以下のボタンは手動実行用です。自動実行は毎日昼12時（JST）に行われます。</p>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
       <button class="btn btn-success" onclick="runProcess('all')" id="btn-all">▶ 全件処理（本店CA+PCA）</button>
       <button class="btn btn-primary" onclick="runProcess('honten')" id="btn-honten">本店CAのみ</button>
@@ -192,6 +240,19 @@
     <div id="process-log" style="display:none;">
       <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ</h3>
       <div id="log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
+    </div>
+
+    <!-- 自動転記：実行ログ（永続） -->
+    <div class="exec-log-section" id="exec-log-section-jidou">
+      <button class="exec-log-toggle" id="exec-log-toggle-jidou" onclick="toggleExecLog('jidou')">
+        <span class="toggle-arrow">▶</span>
+        📋 実行ログ
+        <span id="exec-log-count-jidou" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
+        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('jidou', true)" title="最新に更新">🔄 更新</button>
+      </button>
+      <div class="exec-log-body" id="exec-log-body-jidou">
+        <div id="exec-log-list-jidou"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+      </div>
     </div>
 
     <!-- 自動転記ルール -->
@@ -204,7 +265,7 @@
         </div>
         <div class="inline-rule-card-body">
           <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-            Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<strong>実行方法：手動</strong>（下記ボタン）<strong>および毎日昼12時（JST）の自動実行</strong>。自動実行結果は r.kosa@bearsnavi.com にメール通知される。
+            Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<strong>実行方法：手動（上記ボタン）および毎日昼12時（JST）の自動実行</strong>。自動実行結果は r.kosa@bearsnavi.com にメール通知される。
           </p>
           <table class="inline-rules-table">
             <thead><tr><th>Notionの請求ステータス</th><th>実行される処理</th><th>処理完了後のステータス</th></tr></thead>
@@ -490,12 +551,25 @@
     </div>
     <div id="match-result"></div>
 
+    <!-- 請求書照合：実行ログ（永続） -->
+    <div class="exec-log-section" id="exec-log-section-shocho">
+      <button class="exec-log-toggle" id="exec-log-toggle-shocho" onclick="toggleExecLog('shocho')">
+        <span class="toggle-arrow">▶</span>
+        📋 実行ログ
+        <span id="exec-log-count-shocho" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
+        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shocho', true)" title="最新に更新">🔄 更新</button>
+      </button>
+      <div class="exec-log-body" id="exec-log-body-shocho">
+        <div id="exec-log-list-shocho"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+      </div>
+    </div>
+
     <!-- 請求書照合ルール -->
     <div class="inline-rule-section">
       <h4>📚 この機能のルール</h4>
       <div class="inline-rule-card">
         <div class="inline-rule-card-header">
-          <span style="font-size:20px;">🧾</span>
+          <span style="font-size:20px;">🧧</span>
           <h3>請求書照合の仕様</h3>
         </div>
         <div class="inline-rule-card-body">
@@ -535,6 +609,19 @@
       <button class="btn btn-secondary" id="btnPayReset" style="display:none;" onclick="resetPayment()">↩ リセット</button>
     </div>
     <div id="payment-result"></div>
+
+    <!-- 総合振込：実行ログ（永続） -->
+    <div class="exec-log-section" id="exec-log-section-shiharai">
+      <button class="exec-log-toggle" id="exec-log-toggle-shiharai" onclick="toggleExecLog('shiharai')">
+        <span class="toggle-arrow">▶</span>
+        📋 実行ログ
+        <span id="exec-log-count-shiharai" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
+        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shiharai', true)" title="最新に更新">🔄 更新</button>
+      </button>
+      <div class="exec-log-body" id="exec-log-body-shiharai">
+        <div id="exec-log-list-shiharai"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+      </div>
+    </div>
 
     <!-- 総合振込データ作成ルール -->
     <div class="inline-rule-section">
@@ -678,6 +765,10 @@ document.addEventListener('DOMContentLoaded', () => {
   loadMaster();
   loadChatHistory();
   loadSystemStatus();
+  // 実行ログ初期ロード（各タブのログをバックグラウンドで取得）
+  loadExecLog('jidou');
+  loadExecLog('shocho');
+  loadExecLog('shiharai');
 });
 
 // ===== 自動転記 =====
@@ -707,9 +798,11 @@ async function runProcess(dbType) {
     document.getElementById('system-state').textContent = '待機中';
     document.getElementById('system-state').style.color = '#17a2b8';
     loadStatusLog();
+    loadExecLog('jidou', true);
   } catch(e) {
     statusDiv.style.color = '#dc3545';
     statusDiv.textContent = '❌ エラー: ' + e.message;
+    loadExecLog('jidou', true);
   } finally {
     btn.disabled = false;
   }
@@ -950,9 +1043,11 @@ async function executeMatch() {
     const data = await r.json();
     document.getElementById('match-result').innerHTML = `<div style="color:#28a745;font-size:13px;padding:12px;">✅ 完了: ${data.matched || 0}件紐づけました。</div>`;
     resetMatch();
+    loadExecLog('shocho', true);
   } catch(e) {
     btn.disabled = false;
     btn.textContent = '✅ 紐づけを実行';
+    loadExecLog('shocho', true);
   }
 }
 
@@ -1075,9 +1170,11 @@ async function downloadFBForDate(dueDate, dealIds) {
     document.getElementById('payment-result').insertAdjacentHTML('afterbegin',
       `<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:10px 14px;font-size:12px;color:#155724;margin-bottom:10px;">✅ ${dueDate}分の振込データをダウンロードしました（${count}件 / ¥${Number(amount).toLocaleString()}）。freeeの${tagged}件の仕訳に「振込依頼済」タグを付与しました。</div>`
     );
+    loadExecLog('shiharai', true);
   } catch(e) {
     alert('エラー: ' + e.message);
     btns.forEach(b => b.disabled = false);
+    loadExecLog('shiharai', true);
   }
 }
 
@@ -1640,6 +1737,143 @@ async function executePendingDeletes(pd) {
     if ((data.failed_invoices||[]).length > 0) msg += `<br>⚠️ 請求書取消失敗: ${data.failed_invoices.map(f=>f.id).join(', ')}`;
     addAiMessage('assistant', msg);
   } catch(e) { loadingDiv.remove(); addAiMessage('error', `❌ 通信エラー: ${e.message}`); }
+}
+
+// ===== 実行ログ（永続） =====
+// tabName: 'jidou' | 'shocho' | 'shiharai'
+const LOG_TYPE_MAP = { jidou: 'auto_transfer', shocho: 'invoice_match', shiharai: 'payment_fb' };
+const _execLogLoaded = { jidou: false, shocho: false, shiharai: false };
+
+async function loadExecLog(tabName, forceReload = false) {
+  const logType = LOG_TYPE_MAP[tabName];
+  if (!logType) return;
+  const listEl = document.getElementById('exec-log-list-' + tabName);
+  const countEl = document.getElementById('exec-log-count-' + tabName);
+  if (!listEl) return;
+  if (!forceReload && _execLogLoaded[tabName]) return;
+  try {
+    const r = await fetch(`/api/execution_logs?log_type=${logType}&limit=50`);
+    const data = await r.json();
+    const logs = data.logs || [];
+    _execLogLoaded[tabName] = true;
+    if (countEl) countEl.textContent = logs.length > 0 ? `（${logs.length}件）` : '';
+    if (logs.length === 0) {
+      listEl.innerHTML = '<div style="color:#94a3b8; font-size:12px; padding:8px 0;">実行履歴なし</div>';
+      return;
+    }
+    listEl.innerHTML = logs.map((log, idx) => buildExecLogEntry(log, tabName, idx)).join('');
+  } catch(e) {
+    if (listEl) listEl.innerHTML = `<div style="color:#dc3545; font-size:12px; padding:8px 0;">ログ取得エラー: ${e.message}</div>`;
+  }
+}
+
+function toggleExecLog(tabName) {
+  const toggle = document.getElementById('exec-log-toggle-' + tabName);
+  const body = document.getElementById('exec-log-body-' + tabName);
+  if (!toggle || !body) return;
+  const isOpen = body.classList.contains('open');
+  if (isOpen) {
+    body.classList.remove('open');
+    toggle.classList.remove('open');
+  } else {
+    body.classList.add('open');
+    toggle.classList.add('open');
+    // 初回開展時にログをロード
+    loadExecLog(tabName);
+  }
+}
+
+function toggleExecLogEntry(tabName, idx) {
+  const body = document.getElementById(`exec-log-entry-body-${tabName}-${idx}`);
+  if (!body) return;
+  body.classList.toggle('open');
+}
+
+function buildExecLogEntry(log, tabName, idx) {
+  const hasErr = log.has_error;
+  const statusBadge = hasErr
+    ? '<span class="exec-log-badge-err">❌ エラーあり</span>'
+    : '<span class="exec-log-badge-ok">✅ 成功</span>';
+  const triggerBadge = log.trigger === 'auto'
+    ? '<span class="exec-log-badge-auto">自動</span>'
+    : '<span class="exec-log-badge-manual">手動</span>';
+  const summary = log.summary || {};
+  const summaryText = buildSummaryText(tabName, summary);
+  const detailHtml = buildDetailHtml(tabName, log.detail || {});
+  return `
+    <div class="exec-log-entry">
+      <div class="exec-log-entry-header" onclick="toggleExecLogEntry('${tabName}', ${idx})">
+        ${statusBadge}
+        ${triggerBadge}
+        <span style="color:#64748b;">${log.executed_at}</span>
+        <span style="flex:1; color:#334155;">${summaryText}</span>
+        <span style="color:#94a3b8; font-size:10px;">▼ 詳細</span>
+      </div>
+      <div class="exec-log-entry-body" id="exec-log-entry-body-${tabName}-${idx}">
+        ${detailHtml}
+      </div>
+    </div>`;
+}
+
+function buildSummaryText(tabName, summary) {
+  if (tabName === 'jidou') {
+    if (summary.error_message) return `エラー: ${summary.error_message.substring(0, 60)}`;
+    const db = summary.db_type === 'all' ? '全件' : summary.db_type === 'honten' ? '本店CA' : 'PCA';
+    return `${db} / 合計${summary.total || 0}件（成功${summary.success || 0} / 要確認${summary.reviews || 0} / エラー${summary.errors || 0}）`;
+  } else if (tabName === 'shocho') {
+    if (summary.error_message) return `エラー: ${summary.error_message.substring(0, 60)}`;
+    return `対象${summary.total_receipts || 0}件 / 照合成功${summary.matched_count || 0}件 / 未照合${summary.unmatched_count || 0}件${summary.ai_ocr_count ? ` / AI-OCR${summary.ai_ocr_count}件` : ''}`;
+  } else if (tabName === 'shiharai') {
+    if (summary.error_message) return `エラー: ${summary.error_message.substring(0, 60)}`;
+    const dateStr = summary.transfer_date ? `${summary.transfer_date.substring(0,4)}-${summary.transfer_date.substring(4,6)}-${summary.transfer_date.substring(6,8)}` : '-';
+    return `振込日${dateStr} / ${summary.valid_count || 0}件 / ¥${(summary.total_amount || 0).toLocaleString()}`;
+  }
+  return JSON.stringify(summary).substring(0, 80);
+}
+
+function buildDetailHtml(tabName, detail) {
+  if (!detail || Object.keys(detail).length === 0) return '<div style="color:#94a3b8;font-size:11px;">詳細なし</div>';
+  if (tabName === 'jidou') {
+    const results = detail.results || [];
+    if (results.length === 0) return '<div style="color:#94a3b8;font-size:11px;">処理結果なし</div>';
+    const rows = results.slice(0, 20).map(r => {
+      const sc = r.status === 'success' ? '#15803d' : r.status === 'error' ? '#b91c1c' : r.status === 'review' ? '#b45309' : '#64748b';
+      return `<tr><td style="color:${sc};font-weight:700;">${r.status}</td><td>${r.name || '-'}</td><td>${r.action || '-'}</td><td>${(r.message || '').substring(0, 60)}</td></tr>`;
+    }).join('');
+    const more = results.length > 20 ? `<tr><td colspan="4" style="color:#94a3b8;">... 他${results.length - 20}件</td></tr>` : '';
+    return `<table class="exec-log-detail-table"><thead><tr><th>ステータス</th><th>名前</th><th>処理</th><th>メッセージ</th></tr></thead><tbody>${rows}${more}</tbody></table>`;
+  } else if (tabName === 'shocho') {
+    const matched = detail.matched || [];
+    const unmatched = detail.unmatched || [];
+    const errors = detail.errors || [];
+    let html = '';
+    if (matched.length > 0) {
+      const rows = matched.slice(0, 10).map(m => `<tr><td>✅ 照合成功</td><td>${(m.receipt_name || m.name || '-').substring(0, 40)}</td><td>${m.deal_partner || '-'}</td></tr>`).join('');
+      const more = matched.length > 10 ? `<tr><td colspan="3" style="color:#94a3b8;">... 他${matched.length - 10}件</td></tr>` : '';
+      html += `<table class="exec-log-detail-table"><thead><tr><th>結果</th><th>書類名</th><th>照合先</th></tr></thead><tbody>${rows}${more}</tbody></table>`;
+    }
+    if (unmatched.length > 0) {
+      html += `<div style="margin-top:6px;color:#b45309;font-size:11px;">未照合: ${unmatched.length}件</div>`;
+    }
+    if (errors.length > 0) {
+      html += `<div style="margin-top:4px;color:#b91c1c;font-size:11px;">エラー: ${errors.slice(0,3).join(', ')}</div>`;
+    }
+    return html || '<div style="color:#94a3b8;font-size:11px;">詳細なし</div>';
+  } else if (tabName === 'shiharai') {
+    const targets = detail.targets || [];
+    const skipped = detail.skipped || [];
+    let html = '';
+    if (targets.length > 0) {
+      const rows = targets.slice(0, 10).map(t => `<tr><td>${t.partner_name || '-'}</td><td style="text-align:right;">¥${(t.amount || 0).toLocaleString()}</td><td>${t.due_date || '-'}</td></tr>`).join('');
+      const more = targets.length > 10 ? `<tr><td colspan="3" style="color:#94a3b8;">... 他${targets.length - 10}件</td></tr>` : '';
+      html += `<table class="exec-log-detail-table"><thead><tr><th>取引先</th><th>金額</th><th>決済期日</th></tr></thead><tbody>${rows}${more}</tbody></table>`;
+    }
+    if (skipped.length > 0) {
+      html += `<div style="margin-top:6px;color:#64748b;font-size:11px;">除外: ${skipped.length}件</div>`;
+    }
+    return html || '<div style="color:#94a3b8;font-size:11px;">詳細なし</div>';
+  }
+  return `<pre style="font-size:10px;overflow-x:auto;">${JSON.stringify(detail, null, 2).substring(0, 500)}</pre>`;
 }
 
 async function registerAiEntries(entries, withFiles = true) {

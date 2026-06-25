@@ -59,8 +59,58 @@ def _get_db():
             updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
+    # 実行ログ永続保存テーブル（自動転記・請求書照合・総合振込）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS execution_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            log_type    TEXT NOT NULL,
+            executed_at TEXT NOT NULL,
+            trigger     TEXT NOT NULL DEFAULT 'manual',
+            summary     TEXT NOT NULL,
+            detail      TEXT NOT NULL DEFAULT '{}',
+            has_error   INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     conn.commit()
     return conn
+
+
+def _save_execution_log(log_type: str, summary: dict, detail: dict = None, trigger: str = 'manual', has_error: bool = False):
+    """実行ログをSQLiteに永続保存する"""
+    from datetime import datetime, timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+    executed_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    conn = _get_db()
+    try:
+        conn.execute(
+            "INSERT INTO execution_logs (log_type, executed_at, trigger, summary, detail, has_error) VALUES (?, ?, ?, ?, ?, ?)",
+            (log_type, executed_at, trigger, json.dumps(summary, ensure_ascii=False), json.dumps(detail or {}, ensure_ascii=False), 1 if has_error else 0)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_execution_logs(log_type: str, limit: int = 50):
+    """実行ログをSQLiteから取得する"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, log_type, executed_at, trigger, summary, detail, has_error FROM execution_logs WHERE log_type=? ORDER BY id DESC LIMIT ?",
+            (log_type, limit)
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "log_type": r[1], "executed_at": r[2],
+                "trigger": r[3],
+                "summary": json.loads(r[4]),
+                "detail": json.loads(r[5]),
+                "has_error": bool(r[6])
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
 
 
 from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file
@@ -287,6 +337,15 @@ def run_manual():
         success = sum(1 for r in results if r.get("status") == "success")
         errors = sum(1 for r in results if r.get("status") == "error")
         reviews = sum(1 for r in results if r.get("status") == "review")
+        skips = sum(1 for r in results if r.get("status") == "skip")
+        if not dry_run:
+            _save_execution_log(
+                log_type="auto_transfer",
+                summary={"total": len(results), "success": success, "errors": errors, "reviews": reviews, "skips": skips, "db_type": db_type},
+                detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action","")} for r in results]},
+                trigger="manual",
+                has_error=errors > 0
+            )
         return jsonify({
             "status": "ok",
             "total": len(results),
@@ -298,6 +357,7 @@ def run_manual():
         })
     except Exception as e:
         logger.exception("手動実行エラー")
+        _save_execution_log(log_type="auto_transfer", summary={"total": 0, "success": 0, "errors": 1, "error_message": str(e)}, trigger="manual", has_error=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -453,6 +513,15 @@ def api_logs():
     return jsonify({"logs": processing_log[:limit]})
 
 
+@app.route("/api/execution_logs")
+def api_execution_logs():
+    """実行ログを取得する。log_typeパラメータで種別を指定。"""
+    log_type = request.args.get("log_type", "auto_transfer")
+    limit = int(request.args.get("limit", 50))
+    logs = _get_execution_logs(log_type, limit)
+    return jsonify({"logs": logs, "log_type": log_type})
+
+
 @app.route("/api/status")
 def api_status():
     token_ok = False
@@ -533,9 +602,26 @@ def api_match_execute():
     """書類照合実行（dry_run=False）"""
     try:
         result = run_matching(dry_run=False)
+        _save_execution_log(
+            log_type="invoice_match",
+            summary={
+                "total_receipts": result.get("total_receipts", 0),
+                "matched_count": result.get("matched_count", 0),
+                "unmatched_count": result.get("unmatched_count", 0),
+                "ai_ocr_count": result.get("ai_ocr_count", 0),
+            },
+            detail={
+                "matched": result.get("matched", []),
+                "unmatched": result.get("unmatched", []),
+                "errors": result.get("errors", []),
+            },
+            trigger="manual",
+            has_error=len(result.get("errors", [])) > 0
+        )
         return jsonify(result)
     except Exception as e:
         logger.exception("書類照合実行エラー")
+        _save_execution_log(log_type="invoice_match", summary={"total_receipts": 0, "matched_count": 0, "unmatched_count": 0, "error_message": str(e)}, trigger="manual", has_error=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -2026,6 +2112,23 @@ def api_payment_generate_fb():
         tagged_count = sum(1 for v in tag_results.values() if v)
         logger.info(f"振込依頼済タグ付与: {tagged_count}/{len(targets)}件")
 
+        _save_execution_log(
+            log_type="payment_fb",
+            summary={
+                "transfer_date": transfer_date,
+                "valid_count": summary["valid_count"],
+                "total_amount": summary["total_amount"],
+                "skipped_count": len(summary["skipped"]),
+                "tagged_count": tagged_count,
+            },
+            detail={
+                "targets": [{"partner_name": t.get("partner_name",""), "amount": t.get("amount",0), "due_date": t.get("due_date","")} for t in targets],
+                "skipped": summary["skipped"],
+            },
+            trigger="manual",
+            has_error=False
+        )
+
         return send_file(
             io.BytesIO(fb_bytes),
             mimetype="text/plain; charset=shift_jis",
@@ -2039,6 +2142,7 @@ def api_payment_generate_fb():
         }
     except Exception as e:
         logger.exception("FBファイル生成エラー")
+        _save_execution_log(log_type="payment_fb", summary={"valid_count": 0, "total_amount": 0, "error_message": str(e)}, trigger="manual", has_error=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -2427,9 +2531,17 @@ def scheduled_run():
                     name = r.get("name") or r.get("page_id", "")
                     msg  = r.get("message", "")
                     lines.append(f"    - {name}: {msg}")
+        _save_execution_log(
+            log_type="auto_transfer",
+            summary={"total": total, "success": success, "errors": errors, "reviews": reviews, "skips": skips, "db_type": "all"},
+            detail={"results": [{"name": r.get("name",""), "status": r.get("status",""), "message": r.get("message",""), "action": r.get("action","")} for r in results]},
+            trigger="auto",
+            has_error=errors > 0
+        )
     except Exception as e:
         has_error = True
         lines.append(f"  実行エラー: {e}")
+        _save_execution_log(log_type="auto_transfer", summary={"total": 0, "success": 0, "errors": 1, "error_message": str(e)}, trigger="auto", has_error=True)
         logger.exception("スケジュール自動転記エラー")
 
     # --- 2. 請求書照合 ---
@@ -2454,9 +2566,17 @@ def scheduled_run():
             lines.append(f"  [エラー {len(errs)}件]")
             for e in errs[:5]:
                 lines.append(f"    - {e}")
+        _save_execution_log(
+            log_type="invoice_match",
+            summary={"total_receipts": total_r, "matched_count": matched, "unmatched_count": unmatched, "ai_ocr_count": ai_ocr},
+            detail={"matched": match_result.get("matched", []), "unmatched": match_result.get("unmatched", []), "errors": errs},
+            trigger="auto",
+            has_error=len(errs) > 0
+        )
     except Exception as e:
         has_error = True
         lines.append(f"  実行エラー: {e}")
+        _save_execution_log(log_type="invoice_match", summary={"total_receipts": 0, "matched_count": 0, "unmatched_count": 0, "error_message": str(e)}, trigger="auto", has_error=True)
         logger.exception("スケジュール請求書照合エラー")
 
     lines.append("")

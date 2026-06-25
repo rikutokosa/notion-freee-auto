@@ -723,7 +723,7 @@
             <tr><td><strong>GitHubリポジトリ</strong></td><td><a href="https://github.com/rikutokosa/notion-freee-auto" target="_blank">rikutokosa/notion-freee-auto</a></td></tr>
             <tr><td><strong>起動コマンド</strong></td><td><code>gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120</code></td></tr>
             <tr><td><strong>ヘルスチェック</strong></td><td><code>/api/status</code></td></tr>
-            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にトークンを保存</td></tr>
+            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にfreeeトークン・チャット履歴・実行ログをSQLite（<code>/data/app.db</code>）に保存</td></tr>
           </tbody>
         </table>
       </div>
@@ -817,6 +817,14 @@
             <tr>
               <td><strong>メール送信設定</strong></td>
               <td>SMTP設定はRailway環境変数に保存済み（<code>SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / NOTIFY_TO</code>）。送信元: bearsnavi.sidesales@gmail.com、送信先: r.kosa@bearsnavi.com</td>
+            </tr>
+            <tr>
+              <td><strong>実行ログ永続保存</strong></td>
+              <td>SQLite（<code>/data/app.db</code>）の <code>execution_logs</code> テーブルに実行ログを永続保存する。ログ種別：<code>auto_transfer</code>（自動転記）/ <code>invoice_match</code>（請求書照合）/ <code>payment_fb</code>（総合振込データ作成）。手動・自動どちらの実行でも保存される。</td>
+            </tr>
+            <tr>
+              <td><strong>実行ログ表示</strong></td>
+              <td>各タブ（自動転記・請求書照合・総合振込データ作成）のルール表示の上に「📋 実行ログ」プルダウンを表示。各ログに実行日時・トリガー（手動/自動）・サマリー・エラー有無バッジ・詳細を表示。API: <code>GET /api/execution_logs?log_type=XXX&amp;limit=50</code></td>
             </tr>
           </tbody>
         </table>

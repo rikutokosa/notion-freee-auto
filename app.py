@@ -779,7 +779,15 @@ def api_assistant_ai():
             server_master = master
 
         def _names(lst): return ", ".join([x["name"] for x in lst if x.get("name")])
-        sections_list = _names(server_master.get("sections", []))
+        # 部門は「親部門名：子部門名」形式で表示し、子部門のみ使用可能であることを明示する
+        raw_sections = server_master.get("sections", [])
+        section_id_map = {s["id"]: s["name"] for s in raw_sections}
+        sections_display = []
+        for s in raw_sections:
+            if s.get("parent_id"):
+                parent_name = section_id_map.get(s["parent_id"], "")
+                sections_display.append(f"{parent_name}：{s['name']}" if parent_name else s["name"])
+        sections_list = ", ".join(sections_display) if sections_display else _names(raw_sections)
         tags_list = _names(server_master.get("tags", []))
         account_items_list = _names(server_master.get("account_items", []))
         partners_list = _names(server_master.get("partners", []))
@@ -794,7 +802,7 @@ def api_assistant_ai():
 
 # freeeマスタデータ
 取引先: {partners_list}
-部門: {sections_list}
+部門（「親部門：子部門」形式。section_nameには「子部門名」のみを指定すること）: {sections_list}
 メモタグ: {tags_list}
 勘定科目: {account_items_list}
 
@@ -832,9 +840,9 @@ def api_assistant_ai():
 4. **ユーザーが承認した後にupdate_dealを呼び出す**
 
 更新時の重要ルール:
-- **部門名は必ずマスタ一覧から正確な名前を使用する**：上記「部門」マスタの値をそのまま使用すること。不完全な名前や推測で補完しない。
+- **部門名は子部門名のみ指定する**：マスタの「親部門：子部門」のうち「子部門」部分のみをsection_nameに指定する。親部門名（CSS、本店等）は指定不可。例: 「CSS：その他」の場合は「その他」を指定する。
 - **取引先名は必ずマスタ一覧から正確な名前を使用する**：上記「取引先」マスタの値をそのまま使用する。誤った取引先名を使わない。
-- **明細行の部門は現在の値を必ず引き継ぐ**：明細行の内容を変更する場合、変更しない行の部門名・勘定科目・金額は現在値をそのまま維持する。
+- **明細行の部門は現在の値を必ず引き継ぐ**：明細行の内容を変更する場合、変更しない行の部門名・勘定科目・金額は現在値をそのまま維持する。部門を変更しない場合はsection_nameを省略する（システムが自動で現在値を引き継ぐ）。
 - **変更内容を具体的に提示**：「仕訳ID XXXXXの金額を○○円→○○円に変更、部門は「本店：その他」のまま」のように明示する。
 
 ## 3. 削除処理
@@ -1208,6 +1216,8 @@ def api_assistant_ai():
                     cache = get_master_cache()
                     account_items = cache.get("account_items", [])
                     sections = cache.get("sections", [])
+                    # 親部門を除外（取引に設定できない）: parent_idがNone/0のものは親部門
+                    child_sections = [s for s in sections if s.get("parent_id")]
                     current_details = current.get("details", [])
                     new_details = []
                     for idx, d in enumerate(args["details"]):
@@ -1221,14 +1231,34 @@ def api_assistant_ai():
                             "amount": d.get("amount", 0),
                             "description": d.get("description", ""),
                         }
+                        # 既存明細行のidを引き継ぐ（更新時に必要）
+                        if idx < len(current_details) and current_details[idx].get("id"):
+                            detail["id"] = current_details[idx]["id"]
+                        # 既存明細行の品目・メモタグ・セグメントタグを引き継ぐ
+                        if idx < len(current_details):
+                            cur = current_details[idx]
+                            if cur.get("item_id"):
+                                detail["item_id"] = cur["item_id"]
+                            if cur.get("segment_1_tag_id"):
+                                detail["segment_1_tag_id"] = cur["segment_1_tag_id"]
+                            if cur.get("segment_2_tag_id"):
+                                detail["segment_2_tag_id"] = cur["segment_2_tag_id"]
+                            if cur.get("segment_3_tag_id"):
+                                detail["segment_3_tag_id"] = cur["segment_3_tag_id"]
+                            # メモタグ（tags配列からtag_idsへ変換）
+                            if cur.get("tags"):
+                                detail["tag_ids"] = [t["id"] for t in cur["tags"] if t.get("id")]
                         if d.get("section_name"):
-                            # 指定された部門名で完全一致を試み、失敗したら部分一致
+                            # 指定された部門名で子部門のみから検索（親部門は取引に設定不可）
                             sec_name = d["section_name"]
-                            sec_id = next((s["id"] for s in sections if s["name"] == sec_name), None)
+                            sec_id = next((s["id"] for s in child_sections if s["name"] == sec_name), None)
                             if not sec_id:
-                                sec_id = next((s["id"] for s in sections if sec_name in s["name"]), None)
+                                sec_id = next((s["id"] for s in child_sections if sec_name in s["name"]), None)
                             if sec_id:
                                 detail["section_id"] = sec_id
+                            elif idx < len(current_details) and current_details[idx].get("section_id"):
+                                # 部門名が解決できない場合は現在値を維持
+                                detail["section_id"] = current_details[idx]["section_id"]
                         else:
                             # section_nameが指定されていない場合は現在の明細行の部門を引き継ぐ
                             if idx < len(current_details) and current_details[idx].get("section_id"):
@@ -1236,14 +1266,20 @@ def api_assistant_ai():
                         new_details.append(detail)
                     update_fields["details"] = new_details
                 else:
-                    # 明細を指定しない場合は現在の明細をそのまま保持
+                    # 明細を指定しない場合は現在の明細をそのまま保持（全フィールド引き継ぎ）
                     update_fields["details"] = [
                         {
+                            "id": d.get("id"),
                             "account_item_id": d["account_item_id"],
                             "tax_code": d.get("tax_code", 0),
                             "amount": d.get("amount", 0),
                             "description": d.get("description", ""),
                             **({"section_id": d["section_id"]} if d.get("section_id") else {}),
+                            **({"item_id": d["item_id"]} if d.get("item_id") else {}),
+                            **({"segment_1_tag_id": d["segment_1_tag_id"]} if d.get("segment_1_tag_id") else {}),
+                            **({"segment_2_tag_id": d["segment_2_tag_id"]} if d.get("segment_2_tag_id") else {}),
+                            **({"segment_3_tag_id": d["segment_3_tag_id"]} if d.get("segment_3_tag_id") else {}),
+                            **({"tag_ids": [t["id"] for t in d["tags"] if t.get("id")]} if d.get("tags") else {}),
                         }
                         for d in current.get("details", [])
                     ]

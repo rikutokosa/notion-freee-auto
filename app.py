@@ -1876,6 +1876,7 @@ def api_payment_preview():
                 "due_date": a.get("due_date", ""),
                 "amount": a.get("amount", 0),
                 "reason": reason_map.get(a.get("alert_reason", ""), a.get("alert_reason", "")),
+                "deal_id": a.get("deal_id"),
             })
 
         return jsonify({"groups": groups, "alerts": alerts})

@@ -926,22 +926,32 @@ async function loadPaymentPreview() {
 
 function _buildPaymentHTML(data) {
   const groups = data.groups || [];
-  if (groups.length === 0) {
-    const alerts = data.alerts || [];
-    let html = '<div style="color:#888;font-size:13px;padding:12px;">支払対象の仕訳はありません。</div>';
-    if (alerts.length > 0) {
-      html += `<div style="margin-top:12px;"><h4 style="font-size:13px;font-weight:bold;color:#856404;">⚠️ 要確認（${alerts.length}件）</h4>`;
-      alerts.forEach(a => {
-        html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;">
-          ${a.partner_name || '—'} / ${a.due_date || '—'} / ${(a.amount || 0).toLocaleString()}円 — ${a.reason || ''}
-        </div>`;
-      });
-      html += '</div>';
-    }
-    return html;
+  const alerts = data.alerts || [];
+
+  // アラートブロック（常に一番上）
+  let alertHtml = '';
+  if (alerts.length > 0) {
+    alertHtml += `<div style="margin-bottom:16px;"><h4 style="font-size:13px;font-weight:bold;color:#856404;margin-bottom:8px;">⚠️ 要確認（${alerts.length}件）</h4>`;
+    alerts.forEach(a => {
+      const dealUrl = a.deal_id
+        ? `https://secure.freee.co.jp/deals#deal_id=${a.deal_id}`
+        : null;
+      const linkHtml = dealUrl
+        ? ` <a href="${dealUrl}" target="_blank" style="font-size:11px;color:#0d6efd;text-decoration:none;margin-left:6px;">🔗 freeeで確認</a>`
+        : '';
+      alertHtml += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;">
+        ${a.partner_name || '—'} / ${a.due_date || '—'} / ${(a.amount || 0).toLocaleString()}円 — ${a.reason || ''}${linkHtml}
+      </div>`;
+    });
+    alertHtml += '</div>';
   }
 
-  let html = '';
+  if (groups.length === 0) {
+    const noDeals = '<div style="color:#888;font-size:13px;padding:12px;">支払対象の仕訳はありません。</div>';
+    return alertHtml + (alerts.length === 0 ? noDeals : '');
+  }
+
+  let html = alertHtml;
   groups.forEach(group => {
     const total = (group.deals || []).reduce((s, d) => s + (d.amount || 0), 0);
     html += `<div style="border:1px solid #dee2e6;border-radius:8px;padding:14px;margin-bottom:16px;background:#fff;">
@@ -967,16 +977,6 @@ function _buildPaymentHTML(data) {
     </div>`;
   });
 
-  const alerts = data.alerts || [];
-  if (alerts.length > 0) {
-    html += `<div style="margin-top:12px;"><h4 style="font-size:13px;font-weight:bold;color:#856404;">⚠️ 要確認（${alerts.length}件）</h4>`;
-    alerts.forEach(a => {
-      html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;">
-        ${a.partner_name || '—'} / ${a.due_date || '—'} / ${(a.amount || 0).toLocaleString()}円 — ${a.reason || ''}
-      </div>`;
-    });
-    html += '</div>';
-  }
   return html;
 }
 

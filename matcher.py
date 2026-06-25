@@ -73,17 +73,24 @@ AMOUNT_TOLERANCE = 0
 
 def get_unmatched_receipts() -> list:
     """
-    未登録（取引未紐づけ）の書類一覧を全件取得する（ページング対応、日付フィルターなし）
+    未登録（取引未紐づけ）の書類一覧を全件取得する（ページング対応）
+    freee APIの仕様上、start_date/end_dateが必須のため過去1年分を対象とする。
 
     Returns:
         list of receipt dicts with OCR metadata
     """
+    # freee receipts APIはstart_date/end_dateが必須
+    end_date = datetime.today().strftime("%Y-%m-%d")
+    start_date = (datetime.today() - timedelta(days=365)).strftime("%Y-%m-%d")
+
     all_receipts = []
     offset = 0
     while True:
         params = {
             "company_id": FREEE_COMPANY_ID,
             "category": "without_deal",
+            "start_date": start_date,
+            "end_date": end_date,
             "limit": 100,
             "offset": offset,
         }

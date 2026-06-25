@@ -2501,6 +2501,115 @@ def scheduled_payment_alert():
 
 
 # ============================================================
+# ヘルスチェック（外部サービスマスタとコードの整合性検証）
+# ============================================================
+
+@app.route("/api/healthcheck", methods=["GET"])
+def api_healthcheck():
+    """
+    freee・ Notionのマスタ情報とコード内のハードコード値の整合性を検証する。
+    不整合がある場合は warnings に詳細を返す。
+    """
+    warnings = []
+    checks = {"freee_sections": "unchecked", "freee_tags": "unchecked", "notion_statuses": "unchecked"}
+
+    # --- freee部門IDの検証 ---
+    try:
+        from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID, CSS_SECTION_IDS
+        import requests as req
+        token = get_valid_token()
+        resp = req.get(
+            f"{FREEE_API_BASE}/sections",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            sections = resp.json().get("sections", [])
+            section_ids_in_freee = {s["id"] for s in sections}
+            for sid in CSS_SECTION_IDS:
+                if sid not in section_ids_in_freee:
+                    warnings.append(f"CSS部門ID {sid} がfreeeに存在しません")
+            checks["freee_sections"] = "ok" if not any("CSS部門ID" in w for w in warnings) else "warning"
+        else:
+            checks["freee_sections"] = "error"
+            warnings.append(f"freee部門APIエラー: {resp.status_code}")
+    except Exception as e:
+        checks["freee_sections"] = "error"
+        warnings.append(f"freee部門検証失敗: {str(e)}")
+
+    # --- freee振込依頼済タグIDの検証 ---
+    try:
+        from freee_client import FURIKOMI_TAG_ID
+        resp = req.get(
+            f"{FREEE_API_BASE}/tags",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"company_id": FREEE_COMPANY_ID},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            tags = resp.json().get("tags", [])
+            tag_ids_in_freee = {t["id"] for t in tags}
+            if FURIKOMI_TAG_ID not in tag_ids_in_freee:
+                warnings.append(f"振込依頼済タグID {FURIKOMI_TAG_ID} がfreeeに存在しません")
+            checks["freee_tags"] = "ok" if FURIKOMI_TAG_ID in tag_ids_in_freee else "warning"
+        else:
+            checks["freee_tags"] = "error"
+            warnings.append(f"freeeタグAPIエラー: {resp.status_code}")
+    except Exception as e:
+        checks["freee_tags"] = "error"
+        warnings.append(f"freeeタグ検証失敗: {str(e)}")
+
+    # --- Notionステータス検証 ---
+    try:
+        from notion_client import PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
+        import requests as req
+        notion_token = os.environ.get("NOTION_TOKEN", "")
+        notion_db_honten = os.environ.get("NOTION_DB_ID_HONTEN", "")
+        notion_db_pca = os.environ.get("NOTION_DB_ID_PCA", "")
+
+        notion_warnings = []
+        for db_name, db_id, expected_statuses in [
+            ("本店CA", notion_db_honten, PENDING_STATUSES_HONTEN),
+            ("PCA", notion_db_pca, PENDING_STATUSES_PCA),
+        ]:
+            if not db_id or not notion_token:
+                continue
+            resp = req.post(
+                f"https://api.notion.com/v1/databases/{db_id}",
+                headers={
+                    "Authorization": f"Bearer {notion_token}",
+                    "Notion-Version": "2022-06-28",
+                },
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                props = resp.json().get("properties", {})
+                # 請求ステータスプロパティの選択肢を取得
+                status_prop = props.get("請求ステータス") or props.get("ステータス")
+                if status_prop and status_prop.get("type") == "select":
+                    options = [o["name"] for o in status_prop.get("select", {}).get("options", [])]
+                    for st in expected_statuses:
+                        if st not in options:
+                            notion_warnings.append(
+                                f"{db_name}DB: ステータス「{st}」がNotionの選択肢に存在しません"
+                            )
+
+        warnings.extend(notion_warnings)
+        checks["notion_statuses"] = "ok" if not notion_warnings else "warning"
+    except Exception as e:
+        checks["notion_statuses"] = "error"
+        warnings.append(f"Notionステータス検証失敗: {str(e)}")
+
+    status = "healthy" if not warnings else "degraded"
+    return jsonify({
+        "status": status,
+        "checks": checks,
+        "warnings": warnings,
+    }), 200 if status == "healthy" else 200
+
+
+# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

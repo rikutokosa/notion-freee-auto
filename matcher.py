@@ -356,15 +356,20 @@ def _calc_deal_amount(deal: dict) -> int:
     return total
 
 
-def _score_deal(deal: dict, receipt_meta: dict) -> float:
+def _score_deal(deal: dict, receipt_meta: dict) -> dict:
     """
     取引と書類のマッチングスコアを計算する（高いほど一致度が高い）
 
     スコア基準:
     - 日付の近さ: 最大50点（同日=50点、1日ずれ=49点...）
-    - 取引先名の一致: 30点
+    - 取引先名の一致: 完全一致30点 / 部分一致15点
+
+    Returns:
+        dict: {"total": float, "breakdown": [...], "warnings": [...]}
     """
     score = 0.0
+    breakdown = []  # 一致した項目
+    warnings = []   # 不安点
 
     # 日付スコア
     receipt_date_str = receipt_meta.get("issue_date")
@@ -377,25 +382,47 @@ def _score_deal(deal: dict, receipt_meta: dict) -> float:
             diff_days = abs((receipt_date - deal_date).days)
             date_score = max(0, 50 - diff_days)
             score += date_score
+            if diff_days == 0:
+                breakdown.append(f"日付完全一致 (+50点)")
+            elif diff_days <= 7:
+                breakdown.append(f"日付近い（{diff_days}日差） (+{date_score}点)")
+            else:
+                warnings.append(f"日付{diff_days}日差 (+{date_score}点)")
         except ValueError:
-            pass
+            warnings.append("日付比較不可")
+    else:
+        if not receipt_date_str:
+            warnings.append("書類の発行日が不明")
+        if not deal_date_str:
+            warnings.append("仕訳の発生日が不明")
 
     # 取引先名スコア
     receipt_partner = (receipt_meta.get("partner_name") or "").strip()
-    # partnerオブジェクトがない場合はpartner_idから取引先名を取得
     deal_partner_obj = deal.get("partner") or {}
     deal_partner = (deal_partner_obj.get("name") or "").strip()
     if not deal_partner and deal.get("partner_id"):
         deal_partner = get_partner_name(deal["partner_id"]).strip()
 
     if receipt_partner and deal_partner:
-        # 部分一致でもスコアを付与
         if receipt_partner == deal_partner:
             score += 30
+            breakdown.append(f"取引先完全一致: {deal_partner} (+30点)")
         elif receipt_partner in deal_partner or deal_partner in receipt_partner:
             score += 15
+            breakdown.append(f"取引先部分一致: {receipt_partner} ≒ {deal_partner} (+15点)")
+        else:
+            warnings.append(f"取引先不一致: 書類={receipt_partner} / 仕訳={deal_partner}")
+    elif not receipt_partner:
+        warnings.append("書類の取引先名が不明")
+    elif not deal_partner:
+        warnings.append("仕訳の取引先が未設定")
 
-    return score
+    # 金額は候補検索時に完全一致で絞り込み済みなので常に一致
+    amount = receipt_meta.get("amount")
+    if amount:
+        breakdown.append(f"金額一致: {int(amount):,}円")
+
+    return {"total": score, "breakdown": breakdown, "warnings": warnings}
 
 
 # ============================================================
@@ -604,10 +631,11 @@ def run_matching(dry_run: bool = False) -> dict:
         # スコアリングして最良候補を選択
         scored = sorted(
             [(deal, _score_deal(deal, receipt_meta)) for deal in candidates],
-            key=lambda x: x[1],
+            key=lambda x: x[1]["total"],
             reverse=True,
         )
-        best_deal, best_score = scored[0]
+        best_deal, best_score_info = scored[0]
+        best_score = best_score_info["total"]
         deal_id = best_deal.get("id")
 
         # 紐づけ実行
@@ -615,6 +643,8 @@ def run_matching(dry_run: bool = False) -> dict:
             "receipt_id": receipt_id,
             "deal_id": deal_id,
             "score": best_score,
+            "score_breakdown": best_score_info["breakdown"],
+            "score_warnings": best_score_info["warnings"],
             "receipt_amount": amount,
             "receipt_date": issue_date,
             "receipt_partner": partner_name,

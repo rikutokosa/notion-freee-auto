@@ -1070,6 +1070,17 @@ document.addEventListener('click', function(e) {
 
 // ===== 仕訳アシスタント（マスタ・フォーム・AI） =====
 let masterData = { sections: [], tags: [], account_items: [], partners: [] };
+
+// 部門名を「親部門：子部門」形式で表示するヘルパー
+function displaySectionName(sectionName) {
+  if (!sectionName || !masterData.sections.length) return sectionName || '-';
+  const sec = masterData.sections.find(s => s.name === sectionName);
+  if (sec && sec.parent_id) {
+    const parent = masterData.sections.find(p => p.id === sec.parent_id);
+    if (parent) return `${parent.name}：${sec.name}`;
+  }
+  return sectionName;
+}
 let aiHistory = [];
 let aiFiles = [];
 let formFiles = [];
@@ -1385,10 +1396,12 @@ async function sendAiMessage() {
       saveChatHistory();
       let replyHtml = data.reply.replace(/\n/g, '<br>');
       if (data.entries && data.entries.length > 0) {
-        replyHtml += `<br><br><div class="preview-table"><table><tr><th>発生日</th><th>種別</th><th>取引先</th><th>勘定科目</th><th>金額</th><th>部門</th><th>備考</th></tr>`;
+        replyHtml += `<br><br><div class="preview-table"><table><tr><th>発生日</th><th>期日</th><th>種別</th><th>取引先</th><th>勘定科目</th><th>金額</th><th>部門</th><th>備考</th></tr>`;
         data.entries.forEach(e => {
           e.details.forEach(d => {
-            replyHtml += `<tr><td>${e.issue_date}</td><td>${e.deal_type==='income'?'収入':'支出'}</td><td>${e.partner_name||'-'}</td><td>${d.account_item_name}</td><td>${d.amount.toLocaleString()}円</td><td>${d.section_name||'-'}</td><td>${d.description||'-'}</td></tr>`;
+            const rawSec = d.section_name || e.section_name || '';
+            const secDisplay = displaySectionName(rawSec);
+            replyHtml += `<tr><td>${e.issue_date}</td><td>${e.due_date||'-'}</td><td>${e.deal_type==='income'?'収入':'支出'}</td><td>${e.partner_name||'-'}</td><td>${d.account_item_name}</td><td>${d.amount.toLocaleString()}円</td><td>${secDisplay}</td><td>${d.description||'-'}</td></tr>`;
           });
         });
         replyHtml += `</table></div><br>`;
@@ -1442,11 +1455,17 @@ async function sendAiMessage() {
         pr.forEach((item, idx) => {
           const args = item.deal_args || {};
           const typeLabel = item.deal_type === 'income' ? '収入' : '支出';
-          replyHtml += `<div style="font-size:13px;margin-bottom:6px;"><b>${idx+1}.</b> ${args.issue_date||'-'} / ${typeLabel} / ${args.partner_name||'-'}`;
+          const dueDateStr = args.due_date ? ` / 期日: ${args.due_date}` : '';
+          replyHtml += `<div style="font-size:13px;margin-bottom:6px;"><b>${idx+1}.</b> ${args.issue_date||'-'} / ${typeLabel} / ${args.partner_name||'-'}${dueDateStr}`;
           if (args.details && args.details.length > 0) {
             replyHtml += `<table style="font-size:12px;border-collapse:collapse;width:100%;margin-top:4px;">
               <tr style="background:#dbeafe;"><th style="padding:3px 8px;text-align:left;">勘定科目</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">部門</th><th style="padding:3px 8px;text-align:left;">備考</th></tr>`;
-            args.details.forEach(d => { replyHtml += `<tr><td style="padding:3px 8px;">${d.account_item_name||'-'}</td><td style="padding:3px 8px;text-align:right;">${(d.amount||0).toLocaleString()}円</td><td style="padding:3px 8px;">${d.section_name||'-'}</td><td style="padding:3px 8px;">${d.description||'-'}</td></tr>`; });
+            args.details.forEach(d => {
+              // 部門名: 親部門：子部門形式で表示
+              const rawSection = d.section_name || args.section_name || '';
+              const sectionDisplay = displaySectionName(rawSection);
+              replyHtml += `<tr><td style="padding:3px 8px;">${d.account_item_name||'-'}</td><td style="padding:3px 8px;text-align:right;">${(d.amount||0).toLocaleString()}円</td><td style="padding:3px 8px;">${sectionDisplay}</td><td style="padding:3px 8px;">${d.description||'-'}</td></tr>`;
+            });
             replyHtml += `</table>`;
           }
           replyHtml += `</div>`;

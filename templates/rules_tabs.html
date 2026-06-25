@@ -1,0 +1,773 @@
+  <div id="tab-jidou" class="rules-section active">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔄</span>
+        <h3>自動転記の基本フロー</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<br>
+          <strong>実行方法：手動</strong>（ダッシュボードの「今すぐ実行」ボタンまたは仕訳プレビューから登録）<strong>および毎日昼12時（JST）の自動実行</strong>。自動実行結果はメール（r.kosa@bearsnavi.com）に通知される。<br>
+          監視対象ステータス：本店CA＝<code>本部確認済 / ●入社済 / ●入社前辞退 / ●返金（短期離職）</code>、
+          PCA＝<code>本部確認済 / 入社前辞退 / ●返金（短期離職）</code>。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>Notionの請求ステータス</th>
+              <th>実行される処理</th>
+              <th>処理完了後のステータス</th>
+              <th>freee処理状態</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>本部確認済</strong></td>
+              <td>
+                「請求有無=要請求」→ 請求書登録 + 仕入仕訳登録<br>
+                「請求有無=請求不要」→ 売上仕訳 + 仕入仕訳を登録
+              </td>
+              <td>□承諾→freee登録済</td>
+              <td>仕訳成功 / 請求登録成功（要仕訳転記）</td>
+            </tr>
+            <tr>
+              <td><strong>●入社済</strong>（要請求のみ）</td>
+              <td>freee請求書IDを取得して請求書を送付</td>
+              <td>入社→請求済</td>
+              <td>請求成功</td>
+            </tr>
+            <tr>
+              <td><strong>●入社前辞退</strong></td>
+              <td>freee売上取引ID・freee仕入取引IDの仕訳を削除</td>
+              <td>□入社前辞退→freee更新済</td>
+              <td>仕訳成功</td>
+            </tr>
+            <tr>
+              <td><strong>●返金（短期離職）</strong></td>
+              <td>返金率に応じたマイナス仕訳を追加登録</td>
+              <td>□返金→freee・請求書更新済</td>
+              <td>仕訳成功</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">⚠️ CSS求人（スカウト手数料のみ）の特例処理</strong>
+          <p style="color:#92400e;">
+            集客経路の <code>css_scout_only</code> フラグが True の場合（CSS求人・スカウト手数料）は、<strong>仕入仕訳（スカウト手数料）のみ登録し、売上仕訳は登録しません</strong>。
+            処理完了後の freee処理状態は「仕訳成功」。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 請求有無セレクトの自動セット（移行対応）</strong>
+          <p style="color:#1e40af;">
+            各レコード処理時に、Notionの「請求有無」セレクトフィールドを集客経路ルールに基づいて自動セットします。
+            これはフォーミュラ型→セレクト型移行の後方互換処理です。セット失敗しても処理は続行されます。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ PCA（本店PCA）の場合の追加処理</strong>
+          <p style="color:#92400e;">
+            PCA成約管理DBのレコードは、売上仕訳・仕入仕訳に加えて
+            <strong>パートナー（外注業者）への支払仕訳（PCA仕入高）</strong>も同時に登録します。
+            部門は「本店：PCA」固定。担当パートナーはNotionの「担当パートナー」フィールドから取得します。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 Notionフィールドとfreeeの対応</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>Notionフィールド</th><th>freeeへの反映先</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>税込売上</td><td>売上仕訳の金額（income）</td></tr>
+              <tr><td>税込集客手数料</td><td>仕入仕訳の金額（expense）</td></tr>
+              <tr><td>売上決済期日</td><td>売上仕訳の due_date</td></tr>
+              <tr><td>仕入決済期日</td><td>仕入仕訳の due_date（未設定時は入社日＋支払ルールで自動計算）</td></tr>
+              <tr><td>freee売上取引先ID</td><td>売上仕訳の partner_id</td></tr>
+              <tr><td>freee集客取引先ID</td><td>仕入仕訳の partner_id</td></tr>
+              <tr><td>担当CA（rollup）</td><td>仕訳のメモタグ</td></tr>
+              <tr><td>求職者名 + 決定企業名</td><td>仕訳の備考（description）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="info-box green" style="margin-top:12px;">
+          <strong style="color:#15803d;">💡 金額処理の基本ルール（絶対厳守）</strong>
+          <p style="color:#166534;">
+            このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
+            Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
+            freee請求書登録時は <code>tax_entry_method="in"</code> 固定。
+            <strong>税抜変換（×1.1や÷1.1）は行いません。</strong>
+            「out」に変更すると二重課税になるため絶対に変更しないこと。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">🏢 部門設定ルール</strong>
+          <p style="color:#1e40af;">
+            売上・仕入仕訳の部門は <strong>本店CA</strong> または <strong>本店PCA</strong> のいずれかを自動設定します。
+            Notionの <code>_db_type</code>（honten / pca）で判定し、pca の場合は「本店：PCA」、それ以外は「本店：CA」を使用します。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 返金処理の計算ルール</strong>
+          <p style="color:#92400e;">
+            返金額の計算は以下の優先順位で行います。<br>
+            ① Notionに「返金後入金売上」「返金後集客手数料」が入力されている場合 → その値と元の値の差額<br>
+            ② 未入力の場合 → 元の税抜金額 × 返金率 ÷ 100 × 1.1（税込換算）<br>
+            売上返金の決済期日：退職日の翌月末。仕入返金の決済期日：退職日 + 30日。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 日次スケジュール実行時の動作</strong>
+          <p style="color:#1e40af;">
+            毎日昼12時（JST）に自動転記が実行されます。実行時は「全件処理（本店CA+PCA）」と同じ処理を行います。
+            処理結果はメールで通知されます。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔁</span>
+        <h3>転記実行の停止・再開ルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead>
+            <tr><th>操作</th><th>挙動</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>「転記停止」ボタン</td>
+              <td>メモリ内フラグ（<code>FREEE_AUTO_STOPPED=1</code>）を立てて停止。<strong>プロセス再起動後は環境変数の初期値に戻る。</strong></td>
+            </tr>
+            <tr>
+              <td>「転記開始」ボタン</td>
+              <td>停止フラグを解除して強制開始（<code>force=True</code>）。</td>
+            </tr>
+            <tr>
+              <td>freeeトークン期限切れ</td>
+              <td>転記をスキップしてログに警告を記録。認証後に自動再開。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ② 請求書登録 -->
+  <div id="tab-seikyu" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📄</span>
+        <h3>請求書登録の仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          「請求有無=要請求」のレコードは仕訳登録ではなく<strong>freee請求書API</strong>で請求書を登録します。
+          売上仕訳はfreee管理画面の「取引登録」ボタンで手動転記が必要です。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>請求書フィールド</th><th>設定値・ルール</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>件名（subject）</td><td><strong>「人材紹介手数料」固定</strong></td></tr>
+            <tr><td>明細1（品目行）</td><td>品目名 = 求職者名（例：山田太郎様）、単価 = 税込売上、税率 = 10%</td></tr>
+            <tr><td>明細2（テキスト行）</td><td>「入社企業：{入社企業名}様」</td></tr>
+            <tr><td>備考（invoice_note）</td><td><strong>「振込手数料は貴社負担でお願いいたします。」固定</strong></td></tr>
+            <tr><td>社内メモ（memo）</td><td>「本店：CA」または「本店：PCA」</td></tr>
+            <tr><td>税入力方式（tax_entry_method）</td><td><strong>「in」（税込入力）固定</strong></td></tr>
+            <tr><td>請求日（billing_date）</td><td>Notionの入社日</td></tr>
+            <tr><td>支払期日（payment_date）</td><td>Notionの売上決済期日</td></tr>
+            <tr><td>取引先（partner_id）</td><td>Notionの「freee売上取引先ID」優先、なければ取引先名で検索</td></tr>
+          </tbody>
+        </table>
+
+        <div class="info-box red" style="margin-top:16px;">
+          <strong style="color:#be123c;">🚨 請求書登録後の必須作業</strong>
+          <p style="color:#9f1239;">
+            請求書登録が完了すると Notion の freee処理状態が <strong>「請求登録成功（要仕訳転記）」</strong> になります。
+            この状態では<strong>売上仕訳がfreeeに登録されていません</strong>。
+            freee管理画面で該当請求書を開き、「取引登録」ボタンを押して売上仕訳を手動で作成してください。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 請求有無の判定ルール</strong>
+          <p style="color:#1e40af;">
+            Notionの「請求有無」フォーミュラフィールドを優先参照します（「要請求」または「請求不要」）。
+            フィールドが存在しない場合は集客経路ルール（RULES辞書）の <code>needs_invoice</code> で判定します（後方互換）。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 請求書送付（●入社済）の条件</strong>
+          <p style="color:#92400e;">
+            「●入社済」ステータスで処理が走ると、Notionの「freee請求書ID」フィールドを参照して請求書を送付します。
+            <strong>freee請求書IDが未入力の場合はエラーになります。</strong>
+            「本部確認済」の処理で請求書が登録されているか先に確認してください。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ③ 請求書照合 -->
+  <div id="tab-shocho" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;"></span>
+        <h3>請求書照合の仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          freeeファイルボックスの未紐づけ書類を既存仕訳と自動照合・紐づけします。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>ステップ</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>① 未紐づけ書類取得</td>
+              <td>freeeファイルボックスから <code>category=without_deal</code> の書類を全件取得（ページング対応）</td>
+            </tr>
+            <tr>
+              <td>② OCR確認</td>
+              <td>freee OCRの解析結果（金額・発行日）を確認</td>
+            </tr>
+            <tr>
+              <td>③ AI-OCRフォールバック</td>
+              <td>
+                freee OCRで金額または発行日が取れない場合、PDFをダウンロードして
+                OpenAI Vision API（gpt-5-mini）で再解析。最大3ページを画像化して処理。
+                <strong>AI-OCRでも取得できない場合は「未照合」として記録。</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>④ 仕訳検索</td>
+              <td>
+                金額完全一致（許容誤差0円）・発行日 <strong>±90日</strong> の仕訳を検索。
+                売上（income）・支出（expense）の両方を対象。
+                発生日（issue_date）と支払期日（due_date）の両方で検索してマージ。
+              </td>
+            </tr>
+            <tr>
+              <td>⑤ スコアリング</td>
+              <td>
+                日付の近さ（最大50点：同日=50点、1日ずれ=49点…）＋
+                取引先名の一致（完全一致=30点、部分一致=15点）でスコア計算。
+                最高スコアの仕訳1件に自動紐づけ。
+              </td>
+            </tr>
+            <tr>
+              <td>⑥ 紐づけ実行</td>
+              <td>
+                既存の紐づけ済み書類を保持したまま追加紐づけ（上書きしない）。
+                紐づけAPIが失敗した場合は「未照合」として記録。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box blue" style="margin-top:16px;">
+          <strong style="color:#1d4ed8;">📌 実行方法・スケジュール</strong>
+          <p style="color:#1e40af;">
+            <strong>手動実行：</strong>ダッシュボードの「証憑照合」タブから「照合プレビュー」→「紐づけを実行」で実行できます。<br>
+            <strong>自動実行：</strong>毎日昼12時（JST）に自動転記と合わせて自動実行されます。実行結果は <code>r.kosa@bearsnavi.com</code> にメール通知されます。<br>
+            <strong>対象期間：</strong>実行日から過去365日以内にfreeeファイルボックスにアップロードされた未紐づけ書類が対象です。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">⚠️ 未照合になるケース</strong>
+          <p style="color:#92400e;">
+            ① freee OCR・AI-OCRともに金額または発行日が取得できない<br>
+            ② 金額完全一致・発行日±90日の仕訳が1件も見つからない<br>
+            ③ 紐づけAPIが失敗した<br>
+            これらのケースは手動でfreee管理画面から紐づけを行ってください。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ④ 総合振込データ作成 -->
+  <div id="tab-shiharai" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🏦</span>
+        <h3>総合振込データ作成の仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          freeeの未決済支出仕訳から振込対象を抽出し、全銀フォーマット（FB形式）ファイルを生成します。
+          生成後は SBIネット銀行の総合振込画面にアップロードして使用します。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>分類</th><th>条件</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge-type badge-ok">振込対象</span></td>
+              <td>
+                本店部門（本店：CA / 本店：PCA / 本店：PRA / 本店：AIスカウト / 本店：その他）の未決済支出仕訳で、
+                <strong>証憑（添付ファイル）あり</strong>かつ<strong>銀行口座登録済み</strong>かつ
+                <strong>除外条件に該当しない</strong>もの
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge-type badge-warn">アラート対象</span></td>
+              <td>
+                ① 証憑あり・銀行口座未登録 → 「口座未登録」アラート<br>
+                ② 証憑なし・支払期日まで <strong>10日以内</strong> → 「証憑未添付」アラート
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge-type badge-journal">除外対象</span></td>
+              <td>
+                CSS部門が1つでも含まれる仕訳、または以下の取引先・勘定科目に該当するもの
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box yellow" style="margin-top:16px;">
+          <strong style="color:#b45309;">🚫 振込除外対象（取引先名・部分一致）</strong>
+          <p style="color:#92400e;font-size:13px;">
+            給与 / シンクバンク / 日本政策金融公庫 / 横浜銀行 / さわやか信用金庫 / 西武信用金庫 /
+            WANTEDLY / wantedly / ウォンテッドリー / L MESSAGE / Lメッセージ / オリコフォレント / フォンデスク / MJE /
+            年金事務所 / 労働局 / 税務署 / 都税 / 市税 / 区役所
+          </p>
+          <strong style="color:#b45309;display:block;margin-top:8px;">🚫 振込除外対象（勘定科目名・部分一致）</strong>
+          <p style="color:#92400e;font-size:13px;">
+            給与 / 賞与 / 役員報酬 / 法定福利費 / 長期借入金 / 短期借入金 /
+            所得税 / 住民税 / 消費税 / 法人税 / 印紙税 / 社宅
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📋 FBファイル生成ルール</strong>
+          <p style="color:#1e40af;">
+            ・形式：全国銀行協会 総合振込フォーマット（固定長120バイト、Shift-JIS）<br>
+            ・振込指定日：対象仕訳の中で最も早い due_date を使用<br>
+            ・各明細の振込日：各仕訳の due_date（未設定の場合はヘッダーの日付で代用）<br>
+            ・FBファイル生成確定後：対象仕訳に「振込依頼済」メモタグ（ID=35285961）を自動付与<br>
+            ・「振込依頼済」タグが付いている仕訳は次回以降の振込対象から除外される<br>
+            ・検索範囲：過去90日〜未来60日の未決済支出仕訳
+          </p>
+        </div>
+
+        <div class="info-box green" style="margin-top:12px;">
+          <strong style="color:#15803d;">🏦 依頼人情報（住信SBIネット銀行）</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>項目</th><th>値</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>銀行コード</td><td>0038（住信SBIネット銀行）</td></tr>
+              <tr><td>支店番号</td><td>106</td></tr>
+              <tr><td>口座種別</td><td>普通（1）</td></tr>
+              <tr><td>口座番号</td><td>1356501</td></tr>
+              <tr><td>依頼人名（カナ）</td><td>ﾍﾞｱｰｽﾞﾅﾋﾞ</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ⑤ 仕訳アシスタント -->
+  <div id="tab-assistant" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🤖</span>
+        <h3>仕訳アシスタントの仕様</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          自然言語でfreeeを操作できるAIエージェントです。OpenAI Function Callingを使用します。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr><th>機能</th><th>ルール・制約</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>仕訳登録</strong></td>
+              <td>
+                AIが登録内容を提示し、ユーザーが「この内容でfreeeに登録する」ボタンを押した後に実行。
+                取引先がマスタに存在しない場合は自動作成してから登録。
+                繰り返し登録（repeat）に対応：指定月数分を連続登録。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>登録必須項目</strong></td>
+              <td>
+                以下4項目がすべて揃っていることが登録の条件です。<br>
+                <ol style="margin:6px 0 0 16px;padding:0;">
+                  <li><strong>発生日</strong>: YYYY-MM-DD形式の日付</li>
+                  <li><strong>取引先</strong>: freeeマスタに登録されている取引先名</li>
+                  <li><strong>決済期日</strong>: YYYY-MM-DD形式の日付</li>
+                  <li><strong>対応部門</strong>: freeeマスタに登録されている部門名</li>
+                </ol>
+                1つでも欠けている場合は登録を実行せず、不足項目を列挙してユーザーに聞き返す。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>削除処理</strong></td>
+              <td>
+                必ず search_deals / search_invoices で対象を検索してIDを取得してから実行。
+                フロントエンドが削除確認ボタンを表示し、ユーザーがボタンを押した後に実際の削除が実行される。
+                AIはテキストで「削除しますか？」と聞かない。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>照会・集計</strong></td>
+              <td>
+                list_deals / list_invoices / get_deal で仕訳・請求書を取得して集計・報告。
+                「先月の売上合計」「今月の支出一覧」などの自然言語に対応。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>添付ファイル（OCR）</strong></td>
+              <td>
+                PDF・画像をアップロードすると OpenAI Vision API（gpt-4o）でテキスト抽出。
+                最大20MB。抽出テキストをAIに渡して仕訳登録に活用。
+                「画像は読めない」とは言わない。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>日付の解釈</strong></td>
+              <td>
+                「先月」→ 前月の年月、「今月」→ 当月の年月、「7月」→ 当年度の7月として解釈。
+                今年度 = 4月〜翌3月。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>取引先・勘定科目の推測</strong></td>
+              <td>
+                マスタ一覧から最も近いものを推測して使用。
+                例：「ステリファイ」→「stellify」、「売上」→「売上高」、「広告費」→「広告宣伝費」
+              </td>
+            </tr>
+            <tr>
+              <td><strong>会話履歴</strong></td>
+              <td>
+                SQLiteに保存（Railway ボリューム <code>/data/chat_history.db</code>）。
+                セッションIDで管理。最大200件の仕訳登録ログをメモリ内に保持。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-box red" style="margin-top:16px;">
+          <strong style="color:#be123c;">🚨 登録・削除・更新の確認ルール</strong>
+          <p style="color:#9f1239;">
+            登録・削除・更新はすべて必ずユーザー確認を得てから実行します。<br>
+            『登録』: AIが register_deal を呼び出すと登録内容を表示。「この内容でfreeeに登録する」ボタンを押した後に実行。<br>
+            『削除』: AIが delete_deals を呼び出すと削除対象を表示。「削除する」ボタンを押した後に実行。<br>
+            AIは「登録しました」「削除しました」と自分から言わない。ボタン操作後に実行される。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ⑥ 集客経路ルール -->
+  <div id="tab-keiro" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📋</span>
+        <h3>集客経路・求人DBごとの仕訳ルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <p style="font-size:13px;color:#475569;margin:0 0 16px;">
+          Notionの「求人データベース」selectの値に対応するルールです。rules.py の RULES 辞書から自動取得しています。
+        </p>
+
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th style="width:48px;">NO.</th>
+              <th>キー（Notion値）</th>
+              <th>種別</th>
+              <th>取引先</th>
+              <th>支払ルール</th>
+              <th>登録方式</th>
+              <th>請求書</th>
+              <th>追加日</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for key, rule in rules.items() %}
+            {% set rtype = rule.get('type','') %}
+            {% set rno = rule.get('no') %}
+            <tr>
+              <td style="text-align:center;">
+                {% if rno %}
+                  <span class="rule-no">{{ rno }}</span>
+                {% else %}
+                  <span class="rule-no-legacy">旧</span>
+                {% endif %}
+              </td>
+              <td>
+                <strong>{{ key }}</strong>
+                {% if not rno %}
+                  <div style="font-size:11px;color:#94a3b8;margin-top:2px;">後方互換キー</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge-type badge-{{ rtype }}">{{ rtype }}</span>
+              </td>
+              <td style="color:#475569;">{{ rule.get('supplier') or '—' }}</td>
+              <td>{{ rule.get('payment_rule','—') }}</td>
+              <td>
+                {% if rule.get('needs_invoice') %}
+                  <span class="badge-type badge-invoice">請求書登録</span>
+                {% else %}
+                  <span class="badge-type badge-journal">仕訳登録のみ</span>
+                {% endif %}
+              </td>
+              <td style="text-align:center;">
+                {% if rule.get('needs_invoice') %}✅{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if rule.get('added_date') %}
+                  <span class="added-date">{{ rule.get('added_date')[5:] | replace('-', '/') }}</span>
+                {% else %}
+                  <span class="added-date">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="info-box blue" style="margin-top:16px;">
+          <strong style="color:#1d4ed8;">📌 支払ルールの計算方法</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>支払ルール</th><th>計算方法</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>入社翌々月10日</td><td>入社日 + 2ヶ月後の10日</td></tr>
+              <tr><td>入社翌々月4日</td><td>入社日 + 2ヶ月後の4日</td></tr>
+              <tr><td>入社翌々月末日</td><td>入社日 + 2ヶ月後の月末</td></tr>
+              <tr><td>入社翌月末</td><td>入社日 + 1ヶ月後の月末</td></tr>
+              <tr><td>入社翌月10日</td><td>入社日 + 1ヶ月後の10日</td></tr>
+              <tr><td>登録不要</td><td>仕入仕訳を登録しない（CSS求人など）</td></tr>
+              <tr><td>都度確認</td><td>自動処理せず「要確認」として手動対応</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ CSS求人の特例</strong>
+          <p style="color:#92400e;">
+            CSS求人は<strong>スカウト手数料（売上原価/仕入）のみ登録</strong>します。売上仕訳は登録しません。
+          </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 本店自社求人の特例</strong>
+          <p style="color:#92400e;">
+            本店自社求人は決済期日が「都度確認」のため、自動処理されません。
+            「要確認」として記録され、手動でfreeeに登録する必要があります。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ☆ システム概要 -->
+  <div id="tab-system" class="rules-section">
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">💻</span>
+        <h3>システム構成</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>システム名</strong></td><td>Notion→freee 自動転記システム</td></tr>
+            <tr><td><strong>言語 / FW</strong></td><td>Python 3 / Flask（gunicorn起動）</td></tr>
+            <tr><td><strong>ホスティング</strong></td><td>Railway（Hobbyプラン）</td></tr>
+            <tr><td><strong>GitHubリポジトリ</strong></td><td><a href="https://github.com/rikutokosa/notion-freee-auto" target="_blank">rikutokosa/notion-freee-auto</a></td></tr>
+            <tr><td><strong>起動コマンド</strong></td><td><code>gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120</code></td></tr>
+            <tr><td><strong>ヘルスチェック</strong></td><td><code>/api/status</code></td></tr>
+            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にfreeeトークン・チャット履歴・実行ログをSQLite（<code>/data/app.db</code>）に保存</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🔗</span>
+        <h3>Notion 接続情報</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>APIバージョン</strong></td><td>2022-06-28</td></tr>
+            <tr><td><strong>本店CA DB ID</strong></td><td><code>320a7a34-dbe2-8082-8055-c57f9b8a04bb</code></td></tr>
+            <tr><td><strong>PCA DB ID</strong></td><td><code>32fa7a34-dbe2-8005-ab91-ff33d64506e0</code></td></tr>
+            <tr><td><strong>認証方式</strong></td><td>Integration Token（<code>NOTION_TOKEN</code>環境変数）</td></tr>
+            <tr><td><strong>主要フィールド</strong></td><td>求人データベース・請求ステータス・請求有無（選択）・入社日・税込集客手数料・ freee処理状態など</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">💰</span>
+        <h3>freee 接続情報</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>APIベースURL</strong></td><td><code>https://api.freee.co.jp/api/1</code></td></tr>
+            <tr><td><strong>会社 ID</strong></td><td><code>1856949</code></td></tr>
+            <tr><td><strong>認証方式</strong></td><td>OAuth2（アクセストークンは自動リフレッシュ、<code>FREEE_REFRESH_TOKEN</code>環境変数に保存）</td></tr>
+            <tr><td><strong>課税区分</strong></td><td>課税声10%（売上・仕入共通）</td></tr>
+            <tr><td><strong>本店部門ID</strong></td><td>CA: 3423934 / PCA: 3423935 / PRA: 3423936 / AIScout: 3428069 / その他: 2925134</td></tr>
+            <tr><td><strong>CSS部門ID（除外）</strong></td><td>3423929 / 3423932 / 3425277 / 3423930 / 3403442 / 3428068</td></tr>
+            <tr><td><strong>振込依頼人情報</strong></td><td><code>freee_client.py</code>内の<code>FB_REQUESTER_*</code>定数参照</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">🚀</span>
+        <h3>開発・デプロイルール</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>ルール</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>修正フロー</strong></td>
+              <td>コード修正 → 構文チェック（<code>python3 -c "import app"</code>）→ GitHubにプッシュ → Railway自動デプロイ</td>
+            </tr>
+            <tr>
+              <td><strong>デプロイ方式</strong></td>
+              <td>GitHubの<code>main</code>ブランチにプッシュするとRailwayが自動検知して自動デプロイ</td>
+            </tr>
+            <tr>
+              <td><strong>テストポリシー</strong></td>
+              <td>プッシュ前に必ず<code>python3 -c "import app; import processor; import notion_client; import freee_client"</code>で構文エラーがないことを確認してから報告する</td>
+            </tr>
+            <tr>
+              <td><strong>ルールブック更新</strong></td>
+              <td>機能・ルールに変更があった場合は必ずルールブック（<code>rules.html</code>）も同時に更新する</td>
+            </tr>
+            <tr>
+              <td><strong>SYSTEM_SPEC.md</strong></td>
+              <td>リポジトリルートの <code>SYSTEM_SPEC.md</code> がシステム全体の単一の真実の源（Single Source of Truth）。他のAIが引き継ぐ際はこのファイルを最初に読むこと。コード変更時は <code>SYSTEM_SPEC.md</code> ・ <code>rules.html</code> を必ず同じコミットで更新する</td>
+            </tr>
+            <tr>
+              <td><strong>環境変数管理</strong></td>
+              <td>Railway環境変数の追加・変更は、<code>set_env_vars2.py</code> を参考に <code>variableCollectionUpsert</code> GraphQL APIで行う。APIトークン・PROJECT_ID・SERVICE_ID・ENV_IDは同ファイルに記載済み。コードにハードコードしない</td>
+            </tr>
+            <tr>
+              <td><strong>トークン期限切れ</strong></td>
+              <td>freeeアクセストークンは自動リフレッシュ。リフレッシュトークン切れの場合は<code>/freee/auth</code>から再認証</td>
+            </tr>
+            <tr>
+              <td><strong>日次スケジュール</strong></td>
+              <td>毎日昼12時（JST）に自動転記・請求書照合を自動実行。実行結果（処理件数・エラー詳細）は<code>r.kosa@bearsnavi.com</code>にメール通知。エラー時は件名に『⚠️ [要確認]』が付く。処理がない場合も『処理対象レコードなし』と通知する</td>
+            </tr>
+            <tr>
+              <td><strong>スケジュール実行エンドポイント</strong></td>
+              <td><code>POST /api/scheduled_run</code> — 自動転記→請求書照合の順に実行し、結果をメール送信</td>
+            </tr>
+            <tr>
+              <td><strong>メール送信設定</strong></td>
+              <td>SMTP設定はRailway環境変数に保存済み（<code>SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / NOTIFY_TO</code>）。送信元: bearsnavi.sidesales@gmail.com、送信先: r.kosa@bearsnavi.com</td>
+            </tr>
+            <tr>
+              <td><strong>実行ログ永続保存</strong></td>
+              <td>SQLite（<code>/data/app.db</code>）の <code>execution_logs</code> テーブルに実行ログを永続保存する。ログ種別：<code>auto_transfer</code>（自動転記）/ <code>invoice_match</code>（請求書照合）/ <code>payment_fb</code>（総合振込データ作成）。手動・自動どちらの実行でも保存される。</td>
+            </tr>
+            <tr>
+              <td><strong>実行ログ表示</strong></td>
+              <td>各タブ（自動転記・請求書照合・総合振込データ作成）のルール表示の上に「📋 実行ログ」プルダウンを表示。各ログに実行日時・トリガー（手動/自動）・サマリー・エラー有無バッジ・詳細を表示。API: <code>GET /api/execution_logs?log_type=XXX&amp;limit=50</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="func-rule-card">
+      <div class="func-rule-card-header">
+        <span style="font-size:22px;">📐</span>
+        <h3>環境変数一覧</h3>
+      </div>
+      <div class="func-rule-card-body">
+        <table class="rules-table">
+          <thead><tr><th>変数名</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>NOTION_TOKEN</code></td><td>Notion Integration Token</td></tr>
+            <tr><td><code>NOTION_DB_ID_HONTEN</code></td><td>本店CA成約管理DBのID</td></tr>
+            <tr><td><code>NOTION_DB_ID_PCA</code></td><td>PCA成約管理DBのID</td></tr>
+            <tr><td><code>FREEE_CLIENT_ID</code></td><td>freee OAuth2 クライアントID</td></tr>
+            <tr><td><code>FREEE_CLIENT_SECRET</code></td><td>freee OAuth2 クライアントシークレット</td></tr>
+            <tr><td><code>FREEE_COMPANY_ID</code></td><td>freee 会社ID（デフォルト: 1856949）</td></tr>
+            <tr><td><code>FREEE_REFRESH_TOKEN</code></td><td>freee OAuth2 リフレッシュトークン（認証後に自動保存）</td></tr>
+            <tr><td><code>FREEE_TOKEN_JSON</code></td><td>freee アクセストークンJSON（自動更新）</td></tr>
+            <tr><td><code>APP_BASE_URL</code></td><td>アプリの公開 URL（freee OAuth リダイレクト用）</td></tr>
+            <tr><td><code>OPENAI_API_KEY</code></td><td>仕訳アシスタント・OCR用 OpenAI APIキー</td></tr>
+            <tr><td><code>GITHUB_TOKEN</code></td><td>変更履歴取得用 GitHubトークン（パブリックリポのため不要）</td></tr>
+            <tr><td><code>GITHUB_REPO</code></td><td>GitHubリポジトリ名（デフォルト: rikutokosa/notion-freee-auto）</td></tr>
+            <tr><td><code>SECRET_KEY</code></td><td>Flaskセッション用秘密鍵</td></tr>
+            <tr><td><code>RAILWAY_VOLUME_MOUNT_PATH</code></td><td>トークンファイル保存先パス（デフォルト: /data）</td></tr>
+            <tr><td><code>FREEE_AUTO_STOPPED</code></td><td>転記停止フラグ（1=停止、デフォルト: 0）</td></tr>
+            <tr><td><code>SMTP_HOST</code></td><td>メール送信SMTPサーバー（設定済み: smtp.gmail.com）</td></tr>
+            <tr><td><code>SMTP_PORT</code></td><td>SMTPポート（設定済み: 587）</td></tr>
+            <tr><td><code>SMTP_USER</code></td><td>送信元Gmailアドレス（設定済み: bearsnavi.sidesales@gmail.com）</td></tr>
+            <tr><td><code>SMTP_PASS</code></td><td>Gmailアプリパスワード（設定済み）</td></tr>
+            <tr><td><code>NOTIFY_TO</code></td><td>通知先メールアドレス（設定済み: r.kosa@bearsnavi.com）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+
+</div>

@@ -66,6 +66,11 @@ DATE_RANGE_DAYS = 90
 # 0: 完全一致のみ
 AMOUNT_TOLERANCE = 0
 
+# 自動紐づけの最低スコア閾値（これ未満の候補は自動紐づけしない）
+# スコア基準: 日付最大50点 + 取引先名最大30点 = 最大80点
+# 40点以上: 日付が10日以内、または取引先名が一致している場合に相当
+MIN_SCORE_THRESHOLD = 40
+
 
 # ============================================================
 # 書類一覧取得
@@ -362,7 +367,9 @@ def _score_deal(deal: dict, receipt_meta: dict) -> dict:
 
     スコア基準:
     - 日付の近さ: 最大50点（同日=50点、1日ずれ=49点...）
+      ※ issue_dateとdue_dateのうち、書類の発行日により近い方を採用
     - 取引先名の一致: 完全一致30点 / 部分一致15点
+    - 最低閾値: MIN_SCORE_THRESHOLD点未満の候補は自動紐づけしない
 
     Returns:
         dict: {"total": float, "breakdown": [...], "warnings": [...]}
@@ -371,30 +378,34 @@ def _score_deal(deal: dict, receipt_meta: dict) -> dict:
     breakdown = []  # 一致した項目
     warnings = []   # 不安点
 
-    # 日付スコア
+    # 日付スコア（issue_dateとdue_dateのうち、書類の発行日により近い方を採用）
     receipt_date_str = receipt_meta.get("issue_date")
-    deal_date_str = deal.get("issue_date")
+    deal_issue_str = deal.get("issue_date")
+    deal_due_str = deal.get("due_date")
 
-    if receipt_date_str and deal_date_str:
+    if receipt_date_str and (deal_issue_str or deal_due_str):
         try:
             receipt_date = datetime.strptime(receipt_date_str, "%Y-%m-%d")
-            deal_date = datetime.strptime(deal_date_str, "%Y-%m-%d")
-            diff_days = abs((receipt_date - deal_date).days)
+            # issue_dateとdue_dateの両方を評価し、より近い方を採用
+            diff_issue = abs((receipt_date - datetime.strptime(deal_issue_str, "%Y-%m-%d")).days) if deal_issue_str else 999
+            diff_due = abs((receipt_date - datetime.strptime(deal_due_str, "%Y-%m-%d")).days) if deal_due_str else 999
+            diff_days = min(diff_issue, diff_due)
+            used_date_type = "発生日" if diff_issue <= diff_due else "支払期日"
             date_score = max(0, 50 - diff_days)
             score += date_score
             if diff_days == 0:
-                breakdown.append(f"日付完全一致 (+50点)")
+                breakdown.append(f"日付完全一致（{used_date_type}） (+50点)")
             elif diff_days <= 7:
-                breakdown.append(f"日付近い（{diff_days}日差） (+{date_score}点)")
+                breakdown.append(f"日付近い（{used_date_type}{diff_days}日差） (+{date_score}点)")
             else:
-                warnings.append(f"日付{diff_days}日差 (+{date_score}点)")
+                warnings.append(f"日付{diff_days}日差（{used_date_type}） (+{date_score}点)")
         except ValueError:
             warnings.append("日付比較不可")
     else:
         if not receipt_date_str:
             warnings.append("書類の発行日が不明")
-        if not deal_date_str:
-            warnings.append("仕訳の発生日が不明")
+        if not deal_issue_str and not deal_due_str:
+            warnings.append("仕訳の日付が不明")
 
     # 取引先名スコア
     receipt_partner = (receipt_meta.get("partner_name") or "").strip()
@@ -637,6 +648,23 @@ def run_matching(dry_run: bool = False) -> dict:
         best_deal, best_score_info = scored[0]
         best_score = best_score_info["total"]
         deal_id = best_deal.get("id")
+
+        # 最低スコア閾値チェック: スコアが低すぎる候補は自動紐づけしない
+        if best_score < MIN_SCORE_THRESHOLD:
+            logger.info(f"書類ID={receipt_id}: 最高スコア{best_score}点 < 閾値{MIN_SCORE_THRESHOLD}点のため自動紐づけスキップ")
+            result["unmatched"].append({
+                "receipt_id": receipt_id,
+                "description": description,
+                "reason": f"スコア不足（{best_score:.0f}点 < 閾値{MIN_SCORE_THRESHOLD}点）",
+                "amount": amount,
+                "issue_date": issue_date,
+                "partner_name": partner_name,
+                "best_score": best_score,
+                "best_deal_id": deal_id,
+                "used_ai_ocr": used_ai_ocr,
+            })
+            result["unmatched_count"] += 1
+            continue
 
         # 紐づけ実行
         matched_info = {

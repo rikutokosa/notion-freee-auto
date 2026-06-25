@@ -15,8 +15,7 @@ from typing import Optional
 # 設定
 # ============================================================
 FREEE_CLIENT_ID = os.environ.get("FREEE_CLIENT_ID", "740864584696172")
-FREEE_CLIENT_SECRET = os.environ.get("FREEE_CLIENT_SECRET",
-    "IIj_jZ1tTpacblsP9hmBAvWfx7f84bfA6OlDTE57eaecLldYTWjCIUs8rb7X627F9nKE4To5C5ByvJgWehTytg")
+FREEE_CLIENT_SECRET = os.environ.get("FREEE_CLIENT_SECRET", "")
 FREEE_COMPANY_ID = int(os.environ.get("FREEE_COMPANY_ID", "1856949"))
 
 FREEE_AUTH_URL = "https://accounts.secure.freee.co.jp/public_api/authorize"
@@ -1261,7 +1260,7 @@ def get_payment_deals(
     """
     from datetime import timedelta
     today = datetime.now()
-    start = (today - timedelta(days=90)).strftime("%Y-%m-%d")  # 90日前まで適用（過去の未払いも対象）
+    start = (today - timedelta(days=months_back * 30)).strftime("%Y-%m-%d")  # months_backヶ月前まで過去の未払いも対象
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 
     # 未決済の支出仕訳を全件取得（ページング対応）

@@ -118,7 +118,6 @@ from flask import Flask, render_template, request, redirect, jsonify, url_for, s
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
     load_token, is_token_expired, clear_master_cache, get_master_cache,
-    get_sections, get_tags, get_account_items, get_partners,
     create_deal, upload_receipt, create_partner,
     search_deals, search_invoices, delete_deal, delete_invoice,
     # エージェント拡張ツール
@@ -550,11 +549,11 @@ def api_refresh_cache():
 
 
 # ============================================================
-# 仕訳プレビューAPI（新ホーム用）
+# 自動転記プレビューAPI
 # ============================================================
 @app.route("/api/preview")
 def api_preview():
-    """仕訳プレビューをJSON形式で返す（新ホームのタブ用）"""
+    """経理対応待ちレコードの仕訳プレビューをJSONで返す（自動転記タブ用）"""
     db_type = request.args.get("db", "all")
     try:
         records = fetch_pending_records(db_type)
@@ -625,237 +624,17 @@ def api_match_execute():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/match_receipts", methods=["POST"])
-def api_match_receipts():
-    """
-    freeeファイルボックスの未登録書類を既存仕訳と自動照合・紐づけする
-    """
-    data = request.get_json() or {}
-    dry_run = data.get("dry_run", False)
-    try:
-        result = run_matching(dry_run=dry_run)
-        return jsonify(result)
-    except Exception as e:
-        logger.exception("書類照合エラー")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/debug_partners")
-def api_debug_partners():
-    """デバッグ用: freee取引先一覧とdeals検索結果を返す"""
-    try:
-        import requests as req
-        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers, get_partners
-        # 取引先一覧
-        partners = get_partners()
-        stelify_partners = [p for p in partners if 'stel' in p.get('name','').lower() or 'ステリ' in p.get('name','')]
-        all_partner_names = [p.get('name') for p in partners]
-        # deals検索（Stellify partner_id=110745827, 2026-07-01以降）
-        stellify_partner_ids = [p.get('id') for p in stelify_partners]
-        deals_stellify = []
-        for pid in stellify_partner_ids:
-            params = {"company_id": FREEE_COMPANY_ID, "start_issue_date": "2026-07-01", "limit": 100, "partner_id": pid}
-            resp = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
-            deals_stellify.extend(resp.json().get("deals", []))
-        return jsonify({
-            "total_partners": len(partners),
-            "all_partner_names": all_partner_names,
-            "stelify_partners": stelify_partners,
-            "stellify_deals_count": len(deals_stellify),
-            "stellify_deals": [{"id": d.get("id"), "issue_date": d.get("issue_date"), "amount": d.get("amount"), "partner_id": d.get("partner_id")} for d in deals_stellify[:10]],
-            "deals_sample_fields": list(deals_stellify[0].keys()) if deals_stellify else []
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
-
-
-@app.route("/api/debug_invoices")
-def api_debug_invoices():
-    """デバッグ用: freee請求書APIの生レスポンスを返す"""
-    try:
-        import requests as req
-        from freee_client import FREEE_COMPANY_ID, _api_headers
-        # partner_idなしで全件
-        params_all = {"company_id": FREEE_COMPANY_ID, "limit": 5}
-        resp_all = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_all, timeout=30)
-        invs_all = resp_all.json().get("invoices", [])
-        # partner_ids=110745827（株式会社Stellify）※請求書APIはpartner_ids（複数形）
-        partner_id_param = request.args.get("partner_id", "110745827")
-        start_date = request.args.get("start_date", "")
-        params_s = {"company_id": FREEE_COMPANY_ID, "limit": 100, "partner_ids": partner_id_param}
-        if start_date:
-            params_s["start_billing_date"] = start_date
-        resp_s = req.get("https://api.freee.co.jp/iv/invoices", headers=_api_headers(), params=params_s, timeout=30)
-        invs_s = resp_s.json().get("invoices", [])
-        return jsonify({
-            "all_count": len(invs_all),
-            "all_sample": [{"id": i.get("id"), "partner": i.get("partner_name"), "date": i.get("issue_date")} for i in invs_all[:3]],
-            "stellify_count": len(invs_s),
-            "stellify_invoices": [{"id": i.get("id"), "partner": i.get("partner_name"), "billing_date": i.get("billing_date"), "issue_date": i.get("issue_date"), "total_amount": i.get("total_amount")} for i in invs_s],
-            "stellify_raw_keys": list(invs_s[0].keys()) if invs_s else [],
-            "all_raw_keys": list(invs_all[0].keys()) if invs_all else [],
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
-
-
-@app.route("/api/debug_receipts")
-def api_debug_receipts():
-    """デバッグ用: freee receipts APIの生レスポンスを返す"""
-    try:
-        import requests as req
-        from datetime import datetime, timedelta
-        token = get_valid_token()
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
-        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
-        # 一覧
-        params = {"company_id": FREEE_COMPANY_ID, "category": "without_deal",
-                  "start_date": start_date, "end_date": end_date, "limit": 2}
-        resp = req.get(f"{FREEE_API_BASE}/receipts", headers=_api_headers(), params=params, timeout=30)
-        list_data = resp.json()
-        # 個別
-        detail_data = None
-        receipts = list_data.get("receipts", [])
-        if receipts:
-            rid = receipts[0]["id"]
-            resp2 = req.get(f"{FREEE_API_BASE}/receipts/{rid}",
-                           headers=_api_headers(), params={"company_id": FREEE_COMPANY_ID}, timeout=30)
-            detail_data = resp2.json()
-        return jsonify({"list_response": list_data, "detail_response": detail_data})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/debug_ocr")
-def api_debug_ocr():
-    """デバッグ用: OCRの動作確認"""
-    import base64
-    import requests as req
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    openai_base = os.environ.get("OPENAI_API_BASE", "")
-    key_preview = openai_key[:20] + "..." if openai_key else "(not set)"
-    # 1x1 PNGでOCRテスト
-    test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    try:
-        resp = req.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
-            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": [{"type": "text", "text": "test"}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{test_b64}"}}]}], "max_tokens": 10},
-            timeout=15,
-        )
-        api_result = {"status": resp.status_code, "body": resp.json()}
-    except Exception as e:
-        api_result = {"error": str(e)}
-    return jsonify({"openai_key_preview": key_preview, "openai_base_env": openai_base or "(not set)", "api_test": api_result})
-
-
-@app.route("/api/iv_companies")
-def api_iv_companies():
-    """デバッグ用: freee請求書APIのcompany_id一覧を返す"""
-    try:
-        import requests as req
-        token = get_valid_token()
-        resp = req.get(
-            "https://api.freee.co.jp/iv/companies",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        return jsonify({"status": resp.status_code, "body": resp.json()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/api/freee_master")
 def api_freee_master():
-    """デバッグ用: freeeのマスタデータ（部門・メモタグ・動定科目・取引先）を返す"""
+    """freeeマスタデータ（部門・メモタグ・勘定科目・取引先）を返す（仕訳アシスタント用）"""
     try:
-        sections = get_sections()
-        tags = get_tags()
-        account_items = get_account_items()
-        partners = get_partners()
+        cache = get_master_cache()
         return jsonify({
-            "sections": [{"id": s.get("id"), "name": s.get("name")} for s in sections],
-            "tags": [{"id": t.get("id"), "name": t.get("name")} for t in tags],
-            "account_items": [{"id": a.get("id"), "name": a.get("name")} for a in account_items],
-            "partners": [{"id": p.get("id"), "name": p.get("name")} for p in partners],
+            "sections": [{"id": s.get("id"), "name": s.get("name")} for s in cache.get("sections", [])],
+            "tags": [{"id": t.get("id"), "name": t.get("name")} for t in cache.get("tags", [])],
+            "account_items": [{"id": a.get("id"), "name": a.get("name")} for a in cache.get("account_items", [])],
+            "partners": [{"id": p.get("id"), "name": p.get("name")} for p in cache.get("partners", [])],
         })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/test_deal", methods=["POST"])
-def api_test_deal():
-    """デバッグ用: freeeに取引を直接登録してエラー詳細を返す"""
-    try:
-        token = get_valid_token()
-        import requests as req
-        payload = request.get_json()
-        # freeeのAPIはフラットなJSONを直接送る（dealラップ不要）
-        company_id = int(os.environ.get("FREEE_COMPANY_ID", "1856949"))
-        deal_payload = {
-            "company_id": company_id,
-            "issue_date": payload["issue_date"],
-            "type": payload.get("type", "income"),
-            "details": payload.get("details", []),
-        }
-        if payload.get("due_date"):
-            deal_payload["due_date"] = payload["due_date"]
-        if payload.get("partner_name"):
-            deal_payload["partner_name"] = payload["partner_name"]
-        import logging
-        logging.getLogger(__name__).info(f"test_deal送信ペイロード: {deal_payload}")
-        resp = req.post(
-            "https://api.freee.co.jp/api/1/deals",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=deal_payload,
-            timeout=30,
-        )
-        return jsonify({"status": resp.status_code, "body": resp.json()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/test_invoice", methods=["POST"])
-def api_test_invoice():
-    """デバッグ用: freeeに請求書を直接登録してエラー詳細を返す"""
-    try:
-        token = get_valid_token()
-        import requests as req
-        payload = request.get_json()
-        # freee請求書APIはフラットなJSONを直接送る（invoiceラップ不要）
-        import logging
-        logging.getLogger(__name__).info(f"test_invoice送信ペイロード: {payload}")
-        resp = req.post(
-            "https://api.freee.co.jp/iv/invoices",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=30,
-        )
-        return jsonify({"status": resp.status_code, "body": resp.json()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/test_invoice_put", methods=["POST"])
-def api_test_invoice_put():
-    """デバッグ用: freee請求書APIのPUT /invoices/{id}をテスト"""
-    try:
-        token = get_valid_token()
-        import requests as req
-        data = request.get_json()
-        invoice_id = data.pop("invoice_id")
-        import logging
-        logging.getLogger(__name__).info(f"test_invoice_put送信: id={invoice_id}, payload={data}")
-        resp = req.put(
-            f"https://api.freee.co.jp/iv/invoices/{invoice_id}",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=data,
-            timeout=30,
-        )
-        return jsonify({"status": resp.status_code, "body": resp.json()})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1998,82 +1777,9 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
     return ''
 
 
-@app.route("/api/freee_token_debug", methods=["GET"])
-def api_freee_token_debug():
-    from freee_client import FREEE_COMPANY_ID as _CID
-    try:
-        token = get_valid_token()
-        return jsonify({"access_token": token, "company_id": _CID})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 # ============================================================
 # 支払管理・振込データ生成エンドポイント
 # ============================================================
-
-@app.route("/api/debug_payment_raw", methods=["GET"])
-def api_debug_payment_raw():
-    """支払管理デバッグ: freee APIから生の仕訳データを返す"""
-    import requests as _req
-    from datetime import timedelta as _td
-    from freee_client import FREEE_API_BASE as _BASE, FREEE_COMPANY_ID as _CID, _api_headers, HONTEN_SECTION_IDS
-    today = datetime.now()
-    # start_due_date付きで取得
-    r2 = _req.get(f"{_BASE}/deals", headers=_api_headers(), params={
-        "company_id": _CID, "type": "expense", "payment_status": "unsettled",
-        "start_due_date": today.strftime("%Y-%m-%d"),
-        "end_due_date": (today + _td(days=60)).strftime("%Y-%m-%d"),
-        "limit": 5, "offset": 0
-    }, timeout=30)
-    deals_with_filter = r2.json().get("deals", []) if r2.status_code == 200 else []
-
-    # 個別の仕訳詳細を取得（receiptsが含まれるか確認）
-    deal_details = []
-    for d in deals_with_filter[:3]:
-        r_detail = _req.get(f"{_BASE}/deals/{d['id']}", headers=_api_headers(), params={
-            "company_id": _CID
-        }, timeout=15)
-        if r_detail.status_code == 200:
-            dd = r_detail.json().get("deal", {})
-            section_ids = {det.get("section_id") for det in dd.get("details", [])}
-            deal_details.append({
-                "id": dd.get("id"),
-                "due_date": dd.get("due_date"),
-                "amount": dd.get("amount"),
-                "payment_status": dd.get("payment_status"),
-                "receipts_count_from_list": len(d.get("receipts", [])),
-                "receipts_count_from_detail": len(dd.get("receipts", [])),
-                "receipts_raw": dd.get("receipts", []),
-                "all_keys": list(dd.keys()),
-                "section_ids": list(section_ids),
-                "is_honten": bool(section_ids & HONTEN_SECTION_IDS),
-            })
-
-    def _summarize(deals):
-        result = []
-        for d in deals:
-            section_ids = {det.get("section_id") for det in d.get("details", [])}
-            result.append({
-                "id": d.get("id"),
-                "issue_date": d.get("issue_date"),
-                "due_date": d.get("due_date"),
-                "amount": d.get("amount"),
-                "payment_status": d.get("payment_status"),
-                "receipts_count": len(d.get("receipts", [])),
-                "all_keys": list(d.keys()),
-                "section_ids": list(section_ids),
-                "is_honten": bool(section_ids & HONTEN_SECTION_IDS),
-            })
-        return result
-    return jsonify({
-        "today": today.strftime("%Y-%m-%d"),
-        "with_date_filter_count": len(deals_with_filter),
-        "with_date_filter_status": r2.status_code,
-        "with_date_filter_deals": _summarize(deals_with_filter),
-        "deal_details_sample": deal_details,
-    })
-
 
 @app.route("/api/payment/preview", methods=["GET"])
 def api_payment_preview():
@@ -2166,128 +1872,6 @@ def api_payment_generate_fb():
         logger.exception("FBファイル生成エラー")
         _save_execution_log(log_type="payment_fb", summary={"valid_count": 0, "total_amount": 0, "error_message": str(e)}, trigger="manual", has_error=True)
         return jsonify({"error": str(e)}), 500
-
-
-# ============================================================
-# 照合デバッグ用エンドポイント（一時）
-# ============================================================
-@app.route("/api/debug_match")
-def api_debug_match():
-    """照合デバッグ: 指定金額・日付で仕訳を検索し結果を返す"""
-    import requests as req
-    from datetime import timedelta
-    amount = int(request.args.get("amount", 34650))
-    issue_date = request.args.get("date", "2026-06-02")
-    date_range = int(request.args.get("range", 90))
-
-    try:
-        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
-        base_date = datetime.strptime(issue_date, "%Y-%m-%d")
-        start_date = (base_date - timedelta(days=date_range)).strftime("%Y-%m-%d")
-        end_date = (base_date + timedelta(days=date_range)).strftime("%Y-%m-%d")
-
-        results = {"amount": amount, "issue_date": issue_date, "range": date_range,
-                   "start": start_date, "end": end_date, "searches": []}
-
-        date_filter_sets = [
-            ("issue_date", {"start_issue_date": start_date, "end_issue_date": end_date}),
-            ("due_date",   {"start_due_date": start_date,   "end_due_date": end_date}),
-        ]
-        for deal_type in ("income", "expense"):
-            for label, date_filters in date_filter_sets:
-                all_deals_debug = []
-                offset = 0
-                while True:
-                    params = {"company_id": FREEE_COMPANY_ID, "type": deal_type, "limit": 100, "offset": offset, **date_filters}
-                    r = req.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params=params, timeout=30)
-                    if r.status_code != 200:
-                        results["searches"].append({"type": deal_type, "filter": label, "error": r.status_code})
-                        break
-                    page_deals = r.json().get("deals", [])
-                    all_deals_debug.extend(page_deals)
-                    if len(page_deals) < 100:
-                        break
-                    offset += 100
-                hits = []
-                for d in all_deals_debug:
-                    partner = (d.get("partner") or {}).get("name", "")
-                    da = abs(int(d.get("amount", 0))) if d.get("amount") is not None else 0
-                    details_total = sum(abs(x.get("amount", 0)) for x in d.get("details", []))
-                    is_benesse = "ベネッセ" in partner
-                    is_match = da == amount or details_total == amount
-                    if is_benesse or is_match:
-                        hits.append({"id": d.get("id"), "partner": partner, "deal_amount": da,
-                                     "details_total": details_total, "issue_date": d.get("issue_date"),
-                                     "due_date": d.get("due_date"), "benesse": is_benesse, "amount_match": is_match,
-                                     "raw_partner": d.get("partner"),
-                                     "deal_origin_name": d.get("deal_origin_name"),
-                                     "partner_id": d.get("partner_id"),
-                                     "partner_code": d.get("partner_code"),
-                                     "raw_keys": list(d.keys())})
-                results["searches"].append({"type": deal_type, "filter": label, "total": len(all_deals_debug), "hits": hits})
-        return jsonify(results)
-    except Exception as e:
-        logger.exception("照合デバッグエラー")
-        return jsonify({"error": str(e)}), 500
-
-
-# ============================================================
-# 紐づけデバッグ
-# ============================================================
-@app.route("/api/debug_attach")
-def api_debug_attach():
-    """デバッグ用: 書類ID=472895840 を 仕訳ID=3563137775 に紐づけるAPIを直接テスト"""
-    import requests as req
-    try:
-        from freee_client import FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers
-        deal_id = int(request.args.get("deal_id", 3563137775))
-        receipt_id = int(request.args.get("receipt_id", 472895840))
-        # まず仕訳を取得
-        get_resp = req.get(
-            f"{FREEE_API_BASE}/deals/{deal_id}",
-            headers=_api_headers(),
-            params={"company_id": FREEE_COMPANY_ID},
-            timeout=30,
-        )
-        if get_resp.status_code != 200:
-            return jsonify({"error": f"仕訳取得失敗: {get_resp.status_code}", "body": get_resp.text[:500]}), 400
-        deal = get_resp.json().get("deal", {})
-        existing_ids = [r.get("id") for r in deal.get("receipts", []) if r.get("id")]
-        new_receipt_ids = list(set(existing_ids + [receipt_id]))
-        details = []
-        for d in deal.get("details", []):
-            detail = {"account_item_id": d.get("account_item_id"), "tax_code": d.get("tax_code"), "amount": d.get("amount")}
-            if d.get("section_id"): detail["section_id"] = d["section_id"]
-            if d.get("description"): detail["description"] = d["description"]
-            details.append(detail)
-        payload = {
-            "company_id": FREEE_COMPANY_ID,
-            "issue_date": deal.get("issue_date"),
-            "type": deal.get("type"),
-            "receipt_ids": new_receipt_ids,
-            "details": details,
-        }
-        if deal.get("due_date"): payload["due_date"] = deal["due_date"]
-        if deal.get("partner_id"): payload["partner_id"] = deal["partner_id"]
-        resp = req.put(
-            f"{FREEE_API_BASE}/deals/{deal_id}",
-            headers=_api_headers(),
-            json=payload,
-            timeout=30,
-        )
-        return jsonify({
-            "deal_id": deal_id,
-            "receipt_id": receipt_id,
-            "status_code": resp.status_code,
-            "response_body": resp.text[:1000],
-            "request_payload": payload,
-            "request_url": f"{FREEE_API_BASE}/deals/{deal_id}",
-            "existing_receipt_ids": existing_ids,
-            "new_receipt_ids": new_receipt_ids,
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
 
 # ============================================================
@@ -2410,13 +1994,18 @@ def api_list_chat_sessions():
         rows = conn.execute(
             """
             SELECT
-                session_id,
-                MIN(created_at) AS started_at,
-                MAX(created_at) AS last_at,
+                cs.session_id,
+                MIN(cs.created_at) AS started_at,
+                MAX(cs.created_at) AS last_at,
                 COUNT(*) AS msg_count,
-                MIN(CASE WHEN role='user' THEN content END) AS first_user_msg
-            FROM chat_sessions
-            GROUP BY session_id
+                (
+                    SELECT content FROM chat_sessions sub
+                    WHERE sub.session_id = cs.session_id AND sub.role = 'user'
+                    ORDER BY sub.seq ASC
+                    LIMIT 1
+                ) AS first_user_msg
+            FROM chat_sessions cs
+            GROUP BY cs.session_id
             ORDER BY started_at DESC
             LIMIT 50
             """
@@ -2685,7 +2274,7 @@ def scheduled_run():
 @app.route("/api/payment_alert", methods=["POST"])
 def scheduled_payment_alert():
     """
-    毎日是12時のスケジュール実行エンドポイント。
+    毎日昼12時のスケジュール実行エンドポイント。
     支払期日5日以内に振込データがダウンロードされていない取引を検出し、メール通知する。
     """
     from datetime import datetime, timezone, timedelta
@@ -2702,7 +2291,7 @@ def scheduled_payment_alert():
     transfer_targets = result.get("transfer_targets", [])
     alert_targets = result.get("alert_targets", [])
 
-    # 支払期日5日以内に迅る振込対象（証憑あり・口座登録済み）で振込データ未ダウンロードのもの
+    # 支払期日5日以内に迫る振込対象（証憑あり・口座登録済み）で振込データ未ダウンロードのもの
     # ※ 「振込データ未ダウンロード」の判定: 「振込依頼済」タグが付いていない = 未処理
     unprocessed_near_due = [
         t for t in transfer_targets
@@ -2726,7 +2315,7 @@ def scheduled_payment_alert():
     lines.append(f"実行日時: {now_str} JST")
     lines.append("=" * 50)
     lines.append("")
-    lines.append("支払期日5日以内に迅る取引のうち、振込データのダウンロードがまだ行われていないものがあります。")
+    lines.append("支払期日5日以内に迫る取引のうち、振込データのダウンロードがまだ行われていないものがあります。")
     lines.append("")
 
     if unprocessed_near_due:

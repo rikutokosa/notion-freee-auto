@@ -2620,6 +2620,124 @@ def scheduled_run():
 
 
 # ============================================================
+# 総合振込 支払期日5日前アラートメール
+# ============================================================
+@app.route("/api/payment_alert", methods=["POST"])
+def scheduled_payment_alert():
+    """
+    毎日是12時のスケジュール実行エンドポイント。
+    支払期日5日以内に振込データがダウンロードされていない取引を検出し、メール通知する。
+    """
+    from datetime import datetime, timezone, timedelta
+    from freee_client import get_payment_deals
+    JST = timezone(timedelta(hours=9))
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+
+    try:
+        result = get_payment_deals(months_back=3, alert_days=5)
+    except Exception as e:
+        logger.exception("総合振込アラート取得エラー")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    transfer_targets = result.get("transfer_targets", [])
+    alert_targets = result.get("alert_targets", [])
+
+    # 支払期日5日以内に迅る振込対象（証憑あり・口座登録済み）で振込データ未ダウンロードのもの
+    # ※ 「振込データ未ダウンロード」の判定: 「振込依頼済」タグが付いていない = 未処理
+    unprocessed_near_due = [
+        t for t in transfer_targets
+        if t.get("days_until_due") is not None and t["days_until_due"] <= 5
+    ]
+
+    # アラート対象（証憑なし or 口座未登録）で支払期日5日以内
+    alert_near_due = [
+        t for t in alert_targets
+        if t.get("days_until_due") is not None and t["days_until_due"] <= 5
+    ]
+
+    # アラートが不要な場合はメール送信しない
+    if not unprocessed_near_due and not alert_near_due:
+        logger.info("総合振込アラート: 対象なし")
+        return jsonify({"status": "ok", "message": "アラート対象なし", "alert_count": 0})
+
+    # メール本文作成
+    lines = []
+    lines.append("本店経理自動化システム 総合振込アラート")
+    lines.append(f"実行日時: {now_str} JST")
+    lines.append("=" * 50)
+    lines.append("")
+    lines.append("支払期日5日以内に迅る取引のうち、振込データのダウンロードがまだ行われていないものがあります。")
+    lines.append("")
+
+    if unprocessed_near_due:
+        lines.append(f"▶ 振込未処理（証憑あり・口座登録済み）: {len(unprocessed_near_due)}件")
+        lines.append("-" * 40)
+        for t in sorted(unprocessed_near_due, key=lambda x: x.get("days_until_due", 99)):
+            due = t.get("due_date", "-")
+            days = t.get("days_until_due", "-")
+            partner = t.get("partner_name", "-")
+            amount = t.get("amount", 0)
+            sections = ", ".join(t.get("section_names", [])) or "-"
+            deal_id = t.get("deal_id", "-")
+            lines.append(f"  ・取引先: {partner}")
+            if days == 0:
+                lines.append(f"    支払期日: {due}（本日期限）")
+            elif days < 0:
+                lines.append(f"    支払期日: {due}（{abs(days)}日過ぎ）")
+            else:
+                lines.append(f"    支払期日: {due}（あと{days}日）")
+            lines.append(f"    金額: {amount:,}円")
+            lines.append(f"    対応部門: {sections}")
+            lines.append(f"    仕訳ID: {deal_id}")
+            lines.append("")
+
+    if alert_near_due:
+        lines.append(f"▶ 要対応アラート: {len(alert_near_due)}件")
+        lines.append("-" * 40)
+        for t in sorted(alert_near_due, key=lambda x: x.get("days_until_due", 99)):
+            due = t.get("due_date", "-")
+            days = t.get("days_until_due", "-")
+            partner = t.get("partner_name", "-")
+            amount = t.get("amount", 0)
+            sections = ", ".join(t.get("section_names", [])) or "-"
+            deal_id = t.get("deal_id", "-")
+            alert_reason = t.get("alert_reason", "")
+            lines.append(f"  ・取引先: {partner}")
+            if days == 0:
+                lines.append(f"    支払期日: {due}（本日期限）")
+            elif days < 0:
+                lines.append(f"    支払期日: {due}（{abs(days)}日過ぎ）")
+            else:
+                lines.append(f"    支払期日: {due}（あと{days}日）")
+            lines.append(f"    金額: {amount:,}円")
+            lines.append(f"    対応部門: {sections}")
+            lines.append(f"    仕訳ID: {deal_id}")
+            if alert_reason == "no_receipt":
+                lines.append("    ⚠️ 証憑未添付")
+            elif alert_reason == "bank_missing":
+                lines.append("    ⚠️ 銀行口座未登録")
+            lines.append("")
+
+    lines.append("-" * 50)
+    lines.append("本店経理自動化システム")
+
+    body = "\n".join(lines)
+    total_alert = len(unprocessed_near_due) + len(alert_near_due)
+    subject = f"⚠️ [総合振込アラート] 支払期日5日以内の未処理取引が{total_alert}件あります {now_str}"
+
+    send_notification_email(subject, body)
+    logger.info(f"総合振込アラートメール送信完了: {total_alert}件")
+
+    return jsonify({
+        "status": "ok",
+        "alert_count": total_alert,
+        "unprocessed_near_due": len(unprocessed_near_due),
+        "alert_near_due": len(alert_near_due),
+        "executed_at": now_str,
+    })
+
+
+# ============================================================
 # 起動
 # ============================================================
 if __name__ == "__main__":

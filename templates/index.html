@@ -219,8 +219,7 @@
   <div class="main-tabs">
     <button class="main-tab-btn active" onclick="switchMainTab('jidou', this)">🔄 自動転記</button>
     <button class="main-tab-btn" onclick="switchMainTab('assistant', this)">🤖 仕訳アシスタント</button>
-    <button class="main-tab-btn" onclick="switchMainTab('preview', this)" id="previewTabBtn">📋 仕訳プレビュー</button>
-    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🧾 請求書照合</button>
+    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🧾 証憑照合</button>
     <button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">🏦 総合振込データ作成</button>
     <button class="main-tab-btn" onclick="switchMainTab('status', this)">🖥️ システム状態</button>
   </div>
@@ -525,21 +524,7 @@
     </div>
   </div>
 
-  <!-- ===== 仕訳プレビュータブ ===== -->
-  <div id="tab-preview" class="main-tab-content">
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
-      Notionの対象レコードをfreeeに登録する前に内容を確認できます。
-    </p>
-    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="loadPreview('all')" id="prev-btn-all">全て</button>
-      <button class="btn btn-secondary" onclick="loadPreview('honten')" id="prev-btn-honten">本店CA</button>
-      <button class="btn btn-secondary" onclick="loadPreview('pca')" id="prev-btn-pca">PCA</button>
-    </div>
-    <div id="preview-loading" style="display:none; color:#888; font-size:13px;">⏳ 読み込み中...</div>
-    <div id="preview-content"></div>
-  </div>
-
-  <!-- ===== 請求書照合タブ ===== -->
+  <!-- ===== 証憑照合タブ ===== -->
   <div id="tab-shocho" class="main-tab-content">
     <p style="font-size:13px; color:#666; margin-bottom:16px;">
       freeeのファイルボックスにある未紐づけ書類を、既存の仕訳と自動照合します。プレビューで内容を確認してから紐づけを実行できます。
@@ -551,7 +536,7 @@
     </div>
     <div id="match-result"></div>
 
-    <!-- 請求書照合：実行ログ（永続） -->
+    <!-- 証憑照合：実行ログ（永続） -->
     <div class="exec-log-section" id="exec-log-section-shocho">
       <button class="exec-log-toggle" id="exec-log-toggle-shocho" onclick="toggleExecLog('shocho')">
         <span class="toggle-arrow">▶</span>
@@ -564,13 +549,13 @@
       </div>
     </div>
 
-    <!-- 請求書照合ルール -->
+    <!-- 証憑照合ルール -->
     <div class="inline-rule-section">
       <h4>📚 この機能のルール</h4>
       <div class="inline-rule-card">
         <div class="inline-rule-card-header">
           <span style="font-size:20px;">🧧</span>
-          <h3>請求書照合の仕様</h3>
+          <h3>証憑照合の仕様</h3>
         </div>
         <div class="inline-rule-card-body">
           <p style="font-size:13px;color:#475569;margin:0 0 12px;">

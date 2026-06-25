@@ -773,7 +773,7 @@
             </tr>
             <tr>
               <td><strong>環境変数管理</strong></td>
-              <td>Railwayダッシュボードの「Variables」から設定。コードにハードコードしない</td>
+              <td>Railway環境変数の追加・変更は、<code>set_env_vars2.py</code> を参考に <code>variableCollectionUpsert</code> GraphQL APIで行う。APIトークン・PROJECT_ID・SERVICE_ID・ENV_IDは同ファイルに記載済み。コードにハードコードしない</td>
             </tr>
             <tr>
               <td><strong>トークン期限切れ</strong></td>
@@ -808,6 +808,11 @@
             <tr><td><code>SECRET_KEY</code></td><td>Flaskセッション用秘密鍵</td></tr>
             <tr><td><code>RAILWAY_VOLUME_MOUNT_PATH</code></td><td>トークンファイル保存先パス（デフォルト: /data）</td></tr>
             <tr><td><code>FREEE_AUTO_STOPPED</code></td><td>転記停止フラグ（1=停止、デフォルト: 0）</td></tr>
+            <tr><td><code>SMTP_HOST</code></td><td>メール送信SMTPサーバー（設定済み: smtp.gmail.com）</td></tr>
+            <tr><td><code>SMTP_PORT</code></td><td>SMTPポート（設定済み: 587）</td></tr>
+            <tr><td><code>SMTP_USER</code></td><td>送信元Gmailアドレス（設定済み: bearsnavi.sidesales@gmail.com）</td></tr>
+            <tr><td><code>SMTP_PASS</code></td><td>Gmailアプリパスワード（設定済み）</td></tr>
+            <tr><td><code>NOTIFY_TO</code></td><td>通知先メールアドレス（設定済み: r.kosa@bearsnavi.com）</td></tr>
           </tbody>
         </table>
       </div>

@@ -1343,13 +1343,22 @@ def api_assistant_ai():
         final_reply = ""
 
         for loop_count in range(15):  # 最大15回ループ
-            resp = req.post(
-                f"{openai_base}/chat/completions",
-                headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
-                json={"model": "gpt-4o", "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.1},
-                timeout=60,
-            )
-            resp.raise_for_status()
+            # リトライ付きAPI呼び出し（429エラー対策）
+            for _retry in range(4):
+                resp = req.post(
+                    f"{openai_base}/chat/completions",
+                    headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                    json={"model": "gpt-4o", "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.1},
+                    timeout=60,
+                )
+                if resp.status_code == 429 and _retry < 3:
+                    import time
+                    wait_sec = int(resp.headers.get("Retry-After", 2 ** (_retry + 1)))
+                    logger.warning(f"OpenAI 429 rate limit - {wait_sec}秒待機後リトライ ({_retry+1}/3)")
+                    time.sleep(wait_sec)
+                    continue
+                resp.raise_for_status()
+                break
             choice = resp.json()["choices"][0]
             msg = choice["message"]
             messages.append(msg)

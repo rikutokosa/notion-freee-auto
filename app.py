@@ -1846,22 +1846,43 @@ def api_payment_preview():
         from collections import defaultdict
         result = get_payment_deals(months_back=3, alert_days=10)
 
-        # transfer_targets を due_date ごとにグループ化
-        groups_dict = defaultdict(list)
+        # transfer_targets を due_date × partner_name でグループ化（同じ期日・同じ取引先はまとめる）
+        # 構造: {due_date: {partner_name: {amount, deal_ids, section_names}}}
+        from collections import OrderedDict
+        grouped: dict = OrderedDict()  # due_date -> {partner_name -> entry}
         for t in result.get("transfer_targets", []):
             due = t.get("due_date") or "unknown"
-            groups_dict[due].append({
-                "id": t.get("deal_id"),
-                "partner_name": t.get("partner_name", ""),
-                "amount": t.get("amount", 0),
-                "description": ", ".join(t.get("section_names", [])) or "",
-            })
+            partner = t.get("partner_name", "")
+            if due not in grouped:
+                grouped[due] = OrderedDict()
+            if partner not in grouped[due]:
+                grouped[due][partner] = {
+                    "partner_name": partner,
+                    "amount": 0,
+                    "deal_ids": [],
+                    "section_names": set(),
+                }
+            grouped[due][partner]["amount"] += t.get("amount", 0)
+            if t.get("deal_id"):
+                grouped[due][partner]["deal_ids"].append(t["deal_id"])
+            for sn in t.get("section_names", []):
+                grouped[due][partner]["section_names"].add(sn)
 
         groups = []
-        for due_date in sorted(groups_dict.keys()):
+        for due_date in sorted(grouped.keys()):
+            deals = []
+            for partner, entry in grouped[due_date].items():
+                deals.append({
+                    "id": entry["deal_ids"][0] if len(entry["deal_ids"]) == 1 else None,
+                    "deal_ids": entry["deal_ids"],
+                    "partner_name": entry["partner_name"],
+                    "amount": entry["amount"],
+                    "description": ", ".join(sorted(entry["section_names"])) or "",
+                    "count": len(entry["deal_ids"]),
+                })
             groups.append({
                 "due_date": due_date,
-                "deals": groups_dict[due_date],
+                "deals": deals,
             })
 
         # alert_targets を alerts 形式に変換

@@ -272,9 +272,10 @@
             <tr>
               <td>⑤ スコアリング</td>
               <td>
-                日付の近さ（最大50点：同日=50点、1日ずれ=49点…）＋
-                取引先名の一致（完全一致=30点、部分一致=15点）でスコア計算。
-                最高スコアの仕訳1件に自動紐づけ。
+                <strong>金額一致（50点）</strong>＋<strong>取引先名一致（完全一致30点/部分一致15点）</strong>＋<strong>日付の近さ（最大20点）</strong>でスコア計算。<br>
+                日付スコアは issue_date と due_date の両方を比較し、書類の発行日に近い方を採用。<br>
+                <strong>最低スコア閾値: 40点</strong> — 40点未満の候補は紐づけしない（誤照合防止）。<br>
+                40点以上の候補のうち最高スコアの仕訳1件に自動紐づけ。
               </td>
             </tr>
             <tr>
@@ -301,8 +302,17 @@
           <p style="color:#92400e;">
             ① freee OCR・AI-OCRともに金額または発行日が取得できない<br>
             ② 金額完全一致・発行日±90日の仕訳が1件も見つからない<br>
-            ③ 紐づけAPIが失敗した<br>
+            ③ 候補はあるがスコアが40点未満（閾値以下）<br>
+            ④ 紐づけAPIが失敗した<br>
             これらのケースは手動でfreee管理画面から紐づけを行ってください。
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 照合結果のfreeeリンク</strong>
+          <p style="color:#1e40af;">
+            照合結果（照合済み・未照合とも）に freee 仕訳への直リンクが表示されます。<br>
+            URL形式: <code>https://secure.freee.co.jp/deals#deal_id={id}</code>
           </p>
         </div>
       </div>
@@ -375,7 +385,7 @@
             ・各明細の振込日：各仕訳の due_date（未設定の場合はヘッダーの日付で代用）<br>
             ・FBファイル生成確定後：対象仕訳に「振込依頼済」メモタグ（ID=35285961）を自動付与<br>
             ・「振込依頼済」タグが付いている仕訳は次回以降の振込対象から除外される<br>
-            ・検索範囲：過去90日〜未来60日の未決済支出仕訳
+            ・検索範囲：過去 <code>months_back × 30</code> 日〜未来60日の未決済支出仕訳（デフォルト: months_back=3、つまり過去90日）
           </p>
         </div>
 
@@ -420,9 +430,20 @@
             <tr>
               <td><strong>仕訳登録</strong></td>
               <td>
-                AIが登録内容を提示し、ユーザーが「この内容でfreeeに登録する」ボタンを押した後に実行。
+                AIが register_deal を呼び出すとフロントが登録内容を表示。ユーザーが「この内容でfreeeに登録する」ボタンを押した後に実行。
                 取引先がマスタに存在しない場合は自動作成してから登録。
                 繰り返し登録（repeat）に対応：指定月数分を連続登録。
+              </td>
+            </tr>
+            <tr>
+              <td><strong>仕訳更新</strong></td>
+              <td>
+                AIが search_deals → get_deal → update_deal を呼び出して即座に更新。<br>
+                <strong>更新時のルール：</strong><br>
+                ・既存仕訳の勘定科目構成は、ユーザーが明示的に科目変更を指示しない限り維持する<br>
+                ・既存明細行の品目・メモタグ・セグメントタグを引き継ぐ<br>
+                ・部門名は子部門名のみ指定（解決できない場合は現在値を維持）<br>
+                ・画像や資料に別の科目名が書いてあっても、それは内訳・参考情報であり既存科目を書き換える根拠にしない
               </td>
             </tr>
             <tr>
@@ -486,12 +507,21 @@
         </table>
 
         <div class="info-box red" style="margin-top:16px;">
-          <strong style="color:#be123c;">🚨 登録・削除・更新の確認ルール</strong>
+          <strong style="color:#be123c;">🚨 確認フロー（重要）</strong>
           <p style="color:#9f1239;">
-            登録・削除・更新はすべて必ずユーザー確認を得てから実行します。<br>
+            <strong>AIはテキストで「よろしいですか？」と確認を求めない。</strong>即座にツールを呼び出し、フロントが確認UIを表示する。<br>
             『登録』: AIが register_deal を呼び出すと登録内容を表示。「この内容でfreeeに登録する」ボタンを押した後に実行。<br>
+            『更新』: AIが update_deal を呼び出すと即座に実行される。<br>
             『削除』: AIが delete_deals を呼び出すと削除対象を表示。「削除する」ボタンを押した後に実行。<br>
-            AIは「登録しました」「削除しました」と自分から言わない。ボタン操作後に実行される。
+            <strong>複数件ある場合はまとめて一度に処理する（一件ずつ聞かない）。</strong>
+          </p>
+        </div>
+
+        <div class="info-box blue" style="margin-top:12px;">
+          <strong style="color:#1d4ed8;">📌 429レート制限対策</strong>
+          <p style="color:#1e40af;">
+            OpenAI APIが429を返した場合、自動で最大3回リトライ（指数バックオフ: 2秒→4秒→8秒）。
+            Retry-Afterヘッダーがあればその秒数を待機。
           </p>
         </div>
       </div>
@@ -746,7 +776,7 @@
             <tr><td><code>NOTION_DB_ID_HONTEN</code></td><td>本店CA成約管理DBのID</td></tr>
             <tr><td><code>NOTION_DB_ID_PCA</code></td><td>PCA成約管理DBのID</td></tr>
             <tr><td><code>FREEE_CLIENT_ID</code></td><td>freee OAuth2 クライアントID</td></tr>
-            <tr><td><code>FREEE_CLIENT_SECRET</code></td><td>freee OAuth2 クライアントシークレット</td></tr>
+            <tr><td><code>FREEE_CLIENT_SECRET</code></td><td>freee OAuth2 クライアントシークレット（環境変数必須、コードにハードコード禁止）</td></tr>
             <tr><td><code>FREEE_COMPANY_ID</code></td><td>freee 会社ID（デフォルト: 1856949）</td></tr>
             <tr><td><code>FREEE_REFRESH_TOKEN</code></td><td>freee OAuth2 リフレッシュトークン（認証後に自動保存）</td></tr>
             <tr><td><code>FREEE_TOKEN_JSON</code></td><td>freee アクセストークンJSON（自動更新）</td></tr>

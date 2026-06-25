@@ -164,7 +164,7 @@ def _ocr_image_with_ai(image) -> str:
             f"{openai_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
-                "model": "gpt-5-mini",
+                "model": "gpt-4o-mini",
                 "messages": [{
                     "role": "user",
                     "content": [

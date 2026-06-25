@@ -211,566 +211,289 @@
   }
   .exec-log-reload-btn:hover { background:#f1f5f9; }
 </style>
-
 <div class="card">
-  <h2 style="margin:0 0 16px; font-size:20px;">⚙️ 本店経理自動化システム</h2>
-
-  <!-- メインタブ -->
-  <div class="main-tabs">
-    <button class="main-tab-btn active" onclick="switchMainTab('jidou', this)">🔄 自動転記</button>
-    <button class="main-tab-btn" onclick="switchMainTab('assistant', this)">🤖 仕訳アシスタント</button>
-    <button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🧾 証憑照合</button>
-    <button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">🏦 総合振込データ作成</button>
-    <button class="main-tab-btn" onclick="switchMainTab('status', this)">🖥️ システム状態</button>
-  </div>
-
-  <!-- ===== 自動転記タブ ===== -->
-  <div id="tab-jidou" class="main-tab-content active">
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+<h2 style="margin:0 0 16px; font-size:20px;">⚙️ 本店経理自動化システム</h2>
+<!-- メインタブ -->
+<div class="main-tabs">
+<button class="main-tab-btn active" onclick="switchMainTab('jidou', this)">🔄 自動転記</button>
+<button class="main-tab-btn" onclick="switchMainTab('assistant', this)">🤖 仕訳アシスタント</button>
+<button class="main-tab-btn" onclick="switchMainTab('shocho', this)">🧾 証憑照合</button>
+<button class="main-tab-btn" onclick="switchMainTab('shiharai', this)">🏦 総合振込データ作成</button>
+<button class="main-tab-btn" onclick="switchMainTab('status', this)">🖥️ システム状態</button>
+</div>
+<!-- ===== 自動転記タブ ===== -->
+<div class="main-tab-content active" id="tab-jidou">
+<p style="font-size:13px; color:#666; margin-bottom:16px;">
       Notionの成約管理DBから対象レコードを取得し、freeeに仕訳・請求書を登録します。
     </p>
-    <p style="font-size:12px; color:#888; margin-bottom:8px;">以下のボタンは手動実行用です。自動実行は毎日昼12時（JST）に行われます。</p>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
-      <button class="btn btn-success" onclick="runProcess('all')" id="btn-all">▶ 全件処理（本店CA+PCA）</button>
-      <button class="btn btn-primary" onclick="runProcess('honten')" id="btn-honten">本店CAのみ</button>
-      <button class="btn btn-primary" onclick="runProcess('pca')" id="btn-pca" style="background:#6f42c1; border-color:#6f42c1;">PCAのみ</button>
-    </div>
-    <div id="process-status" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
-    <div id="process-log" style="display:none;">
-      <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ</h3>
-      <div id="log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
-    </div>
-
-    <!-- 自動転記：実行ログ（永続） -->
-    <div class="exec-log-section" id="exec-log-section-jidou">
-      <button class="exec-log-toggle" id="exec-log-toggle-jidou" onclick="toggleExecLog('jidou')">
-        <span class="toggle-arrow">▶</span>
+<p style="font-size:12px; color:#888; margin-bottom:8px;">以下のボタンは手動実行用です。自動実行は毎日昼12時（JST）に行われます。</p>
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+<button class="btn btn-success" id="btn-all" onclick="runProcess('all')">▶ 全件処理（本店CA+PCA）</button>
+<button class="btn btn-primary" id="btn-honten" onclick="runProcess('honten')">本店CAのみ</button>
+<button class="btn btn-primary" id="btn-pca" onclick="runProcess('pca')" style="background:#6f42c1; border-color:#6f42c1;">PCAのみ</button>
+</div>
+<div id="process-status" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
+<div id="process-log" style="display:none;">
+<h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ</h3>
+<div id="log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
+</div>
+<!-- 自動転記：実行ログ（永続） -->
+<div class="exec-log-section" id="exec-log-section-jidou">
+<button class="exec-log-toggle" id="exec-log-toggle-jidou" onclick="toggleExecLog('jidou')">
+<span class="toggle-arrow">▶</span>
         📋 実行ログ
         <span id="exec-log-count-jidou" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
-        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('jidou', true)" title="最新に更新">🔄 更新</button>
-      </button>
-      <div class="exec-log-body" id="exec-log-body-jidou">
-        <div id="exec-log-list-jidou"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
-      </div>
-    </div>
+<button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('jidou', true)" title="最新に更新">🔄 更新</button>
+</button>
+<div class="exec-log-body" id="exec-log-body-jidou">
+<div id="exec-log-list-jidou"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+</div>
+</div>
+<!-- 自動転記ルール -->
 
-    <!-- 自動転記ルール -->
-    <div class="inline-rule-section">
-      <h4>📚 この機能のルール</h4>
-      <div class="inline-rule-card">
-        <div class="inline-rule-card-header">
-          <span style="font-size:20px;">🔄</span>
-          <h3>自動転記の基本フロー</h3>
-        </div>
-        <div class="inline-rule-card-body">
-          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-            Notionの本店CA・PCA成約管理DBを対象に、以下の請求ステータスのレコードを検知し、freeeに仕訳・請求書を登録します。<br>
-            <strong>実行方法：手動（上記ボタン）および毎日昼12時（JST）の自動実行</strong>。自動実行結果はメール（r.kosa@bearsnavi.com）に通知される。<br>
-            監視対象ステータス：本店CA＝<code>本部確認済 / ●入社済 / ●入社前辞退 / ●返金（短期離職）</code>、PCA＝<code>本部確認済 / 入社前辞退 / ●返金（短期離職）</code>。
-          </p>
-          <table class="inline-rules-table">
-            <thead><tr><th>Notionの請求ステータス</th><th>実行される処理</th><th>処理完了後のステータス</th><th>freee処理状態</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><strong>本部確認済</strong></td>
-                <td>「請求有無=要請求」→ 請求書登録 + 仕入仕訳登録<br>「請求有無=請求不要」→ 売上仕訳 + 仕入仕訳を登録</td>
-                <td>□承諾→freee登録済</td>
-                <td>仕訳成功 / 請求登録成功（要仕訳転記）</td>
-              </tr>
-              <tr>
-                <td><strong>●入社済</strong>（要請求のみ）</td>
-                <td>freee請求書IDを取得して請求書を送付</td>
-                <td>入社→請求済</td>
-                <td>請求成功</td>
-              </tr>
-              <tr>
-                <td><strong>●入社前辞退</strong></td>
-                <td>freee売上取引ID・freee仕入取引IDの仕訳を削除</td>
-                <td>□入社前辞退→freee更新済</td>
-                <td>仕訳成功</td>
-              </tr>
-              <tr>
-                <td><strong>●返金（短期離職）</strong></td>
-                <td>返金率に応じたマイナス仕訳を追加登録</td>
-                <td>□返金→freee・請求書更新済</td>
-                <td>仕訳成功</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="ibox yellow">
-            <strong style="color:#b45309;">⚠️ CSS求人（スカウト手数料のみ）の特例処理</strong>
-            <p style="color:#92400e;">
-              集客経路の <code>css_scout_only</code> フラグが True の場合（CSS求人・スカウト手数料）は、<strong>仕入仕訳（スカウト手数料）のみ登録し、売上仕訳は登録しません</strong>。
-              処理完了後の freee処理状態は「仕訳成功」。
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">📌 請求有無セレクトの自動セット（移行対応）</strong>
-            <p style="color:#1e40af;">
-              各レコード処理時に、Notionの「請求有無」セレクトフィールドを集客経路ルールに基づいて自動セットします。
-              これはフォーミュラ型→セレクト型移行の後方互換処理です。セット失敗しても処理は続行されます。
-            </p>
-          </div>
-          <div class="ibox yellow">
-            <strong style="color:#b45309;">⚠️ PCA（本店PCA）の場合の追加処理</strong>
-            <p style="color:#92400e;">
-              PCA成約管理DBのレコードは、売上仕訳・仕入仕訳に加えて
-              <strong>パートナー（外注業者）への支払仕訳（PCA仕入高）</strong>も同時に登録します。
-              部門は「本店：PCA」固定。担当パートナーはNotionの「担当パートナー」フィールドから取得します。
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">📌 Notionフィールドとfreeeの対応</strong>
-            <table class="inline-rules-table" style="margin-top:10px;">
-              <thead><tr><th>Notionフィールド</th><th>freeeへの反映先</th></tr></thead>
-              <tbody>
-                <tr><td>税込売上</td><td>売上仕訳の金額（income）</td></tr>
-                <tr><td>税込集客手数料</td><td>仕入仕訳の金額（expense）</td></tr>
-                <tr><td>売上決済期日</td><td>売上仕訳の due_date</td></tr>
-                <tr><td>仕入決済期日</td><td>仕入仕訳の due_date（未設定時は入社日＋支払ルールで自動計算）</td></tr>
-                <tr><td>freee売上取引先ID</td><td>売上仕訳の partner_id</td></tr>
-                <tr><td>freee集客取引先ID</td><td>仕入仕訳の partner_id</td></tr>
-                <tr><td>担当CA（rollup）</td><td>仕訳のメモタグ</td></tr>
-                <tr><td>求職者名 + 決定企業名</td><td>仕訳の備考（description）</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="ibox green">
-            <strong style="color:#15803d;">💡 金額処理の基本ルール（絶対厳守）</strong>
-            <p style="color:#166534;">
-              このシステムで扱う金額はすべて<strong>税込</strong>で処理します。
-              Notionの「税込売上」「税込集客手数料」はすでに消費税込みの値です。
-              freee請求書登録時は <code>tax_entry_method="in"</code> 固定。
-              <strong>税抜変換（×1.1や÷1.1）は行いません。</strong>
-              「out」に変更すると二重課税になるため絶対に変更しないこと。
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">🏢 部門設定ルール</strong>
-            <p style="color:#1e40af;">
-              売上・仕入仕訳の部門は <strong>本店CA</strong> または <strong>本店PCA</strong> のいずれかを自動設定します。
-              Notionの <code>_db_type</code>（honten / pca）で判定し、pca の場合は「本店：PCA」、それ以外は「本店：CA」を使用します。
-            </p>
-          </div>
-          <div class="ibox yellow">
-            <strong style="color:#b45309;">⚠️ 返金処理の計算ルール</strong>
-            <p style="color:#92400e;">
-              返金額の計算は以下の優先順位で行います。<br>
-              ① Notionに「返金後入金売上」「返金後集客手数料」が入力されている場合 → その値と元の値の差額<br>
-              ② 未入力の場合 → 元の税抜金額 × 返金率 ÷ 100 × 1.1（税込換算）<br>
-              売上返金の決済期日：退職日の翌月末。仕入返金の決済期日：退職日 + 30日。
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">📌 日次スケジュール実行時の動作</strong>
-            <p style="color:#1e40af;">
-              毎日昼12時（JST）に自動転記が実行されます。実行時は「全件処理（本店CA+PCA）」と同じ処理を行います。
-              処理結果はメールで通知されます。
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="inline-rule-section" id="inline-rule-jidou">
+<h4>📚 この機能のルール</h4>
+<div id="inline-rule-content-jidou" style="color:#94a3b8; font-size:12px; padding:8px;">ルール読み込み中...</div>
+</div>
 
-  <!-- ===== 仕訳アシスタントタブ ===== -->
-  <div id="tab-assistant" class="main-tab-content">
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+<!-- 以下は後方互換性のための非表示バックアップ -->
+
+</div>
+</div>
+<!-- ===== 仕訳アシスタントタブ ===== -->
+<div class="main-tab-content" id="tab-assistant">
+<p style="font-size:13px; color:#666; margin-bottom:16px;">
       Notionとは独立して、freeeに直接仕訳を登録できます。自然言語で指示するか、フォームで直接入力してください。
     </p>
-    <div class="sub-tab-bar">
-      <button class="sub-tab-btn active" onclick="switchSubTab('ai', this)">🤖 AI指示（自然言語）</button>
-      <button class="sub-tab-btn" onclick="switchSubTab('form', this)">📝 フォーム入力</button>
-    </div>
-
-    <!-- AI指示タブ -->
-    <div id="sub-tab-ai" class="sub-tab-content active" style="padding-top:16px;">
-      <div class="ai-chat">
-        <div class="ai-messages" id="aiMessages">
-          <div class="ai-msg assistant">
-            こんにちは！freeeへの仕訳登録をお手伝いします。<br>
-            例えば以下のように指示してください：<br><br>
-            ・「長期借入金の返済 元金100,000円・利息3,000円を毎月1日で12ヶ月分登録して」<br>
-            ・「2026年7月1日 本店：CA部門 売掛金 500,000円 備考：テスト」<br>
-            ・「マイナビへの広告費 税抜50,000円を今月末で登録」<br><br>
+<div class="sub-tab-bar">
+<button class="sub-tab-btn active" onclick="switchSubTab('ai', this)">🤖 AI指示（自然言語）</button>
+<button class="sub-tab-btn" onclick="switchSubTab('form', this)">📝 フォーム入力</button>
+</div>
+<!-- AI指示タブ -->
+<div class="sub-tab-content active" id="sub-tab-ai" style="padding-top:16px;">
+<div class="ai-chat">
+<div class="ai-messages" id="aiMessages">
+<div class="ai-msg assistant">
+            こんにちは！freeeへの仕訳登録をお手伝いします。<br/>
+            例えば以下のように指示してください：<br/><br/>
+            ・「長期借入金の返済 元金100,000円・利息3,000円を毎月1日で12ヶ月分登録して」<br/>
+            ・「2026年7月1日 本店：CA部門 売掛金 500,000円 備考：テスト」<br/>
+            ・「マイナビへの広告費 税抜50,000円を今月末で登録」<br/><br/>
             📎 <strong>ファイルを添付</strong>すると、返済スケジュール表・請求書・領収書などを読み取って自動で仕訳を提案します。
           </div>
-        </div>
-        <div class="ai-file-zone" id="aiFileZone"
-             onclick="document.getElementById('aiFileInput').click()"
-             ondragover="handleAiDragOver(event)"
-             ondragleave="handleAiDragLeave(event)"
-             ondrop="handleAiDrop(event)">
-          <input type="file" id="aiFileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv"
-                 onchange="handleAiFileSelect(this)">
-          <div style="font-size:24px;">📂</div>
-          <div style="font-weight:bold;">クリックまたはドラッグ＆ドロップでファイルを添付</div>
-          <div style="font-size:11px;color:#888;">PDF・画像（PNG/JPG/WEBP）・Excel・CSV（複数可）</div>
-          <span id="aiFileBadge" style="display:none;" class="ai-file-badge"></span>
-        </div>
-        <div id="aiFileList" class="file-list" style="display:none;"></div>
-        <div class="ai-input-area">
-          <textarea id="aiInput" placeholder="仕訳の内容を自然言語で入力してください...（Ctrl+Enterで送信）" onkeydown="handleAiKey(event)"></textarea>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="btn btn-primary" onclick="sendAiMessage()" id="aiSendBtn">送信</button>
-            <button class="btn btn-secondary" onclick="clearAiChat()" style="font-size:12px;">クリア</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- フォーム入力タブ -->
-    <div id="sub-tab-form" class="sub-tab-content" style="padding-top:16px;">
-      <form id="journalForm">
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label>仕訳種別 *</label>
-            <select id="dealType" name="deal_type">
-              <option value="income">収入（売上）</option>
-              <option value="expense">支出（費用）</option>
-            </select>
-          </div>
-          <div class="form-group flex-1">
-            <label>発生日 *</label>
-            <input type="date" id="issueDate" name="issue_date" required onchange="updateRepeatPreview()">
-          </div>
-          <div class="form-group flex-1">
-            <label>決済期日</label>
-            <input type="date" id="dueDate" name="due_date" onchange="updateRepeatPreview()">
-          </div>
-          <div class="form-group flex-2">
-            <label>取引先</label>
-            <input type="text" id="partnerName" name="partner_name" list="partnerList" placeholder="取引先名を入力">
-            <datalist id="partnerList"></datalist>
-          </div>
-        </div>
-        <div class="repeat-section">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
-            <input type="checkbox" id="repeatEnabled" onchange="toggleRepeat()">
-            <label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">
+</div>
+<div class="ai-file-zone" id="aiFileZone" onclick="document.getElementById('aiFileInput').click()" ondragleave="handleAiDragLeave(event)" ondragover="handleAiDragOver(event)" ondrop="handleAiDrop(event)">
+<input accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv" id="aiFileInput" multiple="" onchange="handleAiFileSelect(this)" type="file"/>
+<div style="font-size:24px;">📂</div>
+<div style="font-weight:bold;">クリックまたはドラッグ＆ドロップでファイルを添付</div>
+<div style="font-size:11px;color:#888;">PDF・画像（PNG/JPG/WEBP）・Excel・CSV（複数可）</div>
+<span class="ai-file-badge" id="aiFileBadge" style="display:none;"></span>
+</div>
+<div class="file-list" id="aiFileList" style="display:none;"></div>
+<div class="ai-input-area">
+<textarea id="aiInput" onkeydown="handleAiKey(event)" placeholder="仕訳の内容を自然言語で入力してください...（Ctrl+Enterで送信）"></textarea>
+<div style="display:flex;flex-direction:column;gap:8px;">
+<button class="btn btn-primary" id="aiSendBtn" onclick="sendAiMessage()">送信</button>
+<button class="btn btn-secondary" onclick="clearAiChat()" style="font-size:12px;">クリア</button>
+</div>
+</div>
+</div>
+</div>
+<!-- フォーム入力タブ -->
+<div class="sub-tab-content" id="sub-tab-form" style="padding-top:16px;">
+<form id="journalForm">
+<div class="form-row">
+<div class="form-group flex-1">
+<label>仕訳種別 *</label>
+<select id="dealType" name="deal_type">
+<option value="income">収入（売上）</option>
+<option value="expense">支出（費用）</option>
+</select>
+</div>
+<div class="form-group flex-1">
+<label>発生日 *</label>
+<input id="issueDate" name="issue_date" onchange="updateRepeatPreview()" required="" type="date"/>
+</div>
+<div class="form-group flex-1">
+<label>決済期日</label>
+<input id="dueDate" name="due_date" onchange="updateRepeatPreview()" type="date"/>
+</div>
+<div class="form-group flex-2">
+<label>取引先</label>
+<input id="partnerName" list="partnerList" name="partner_name" placeholder="取引先名を入力" type="text"/>
+<datalist id="partnerList"></datalist>
+</div>
+</div>
+<div class="repeat-section">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
+<input id="repeatEnabled" onchange="toggleRepeat()" type="checkbox"/>
+<label for="repeatEnabled" style="font-size:13px;font-weight:bold;color:#856404;cursor:pointer;">
               🔁 繰り返し登録（毎月同じ仕訳を複数回登録）
             </label>
-          </div>
-          <div class="repeat-info">
-            <strong>繰り返し登録のルール：</strong>
-            <ul>
-              <li>発生日は毎月<strong>同じ日付</strong>で登録されます</li>
-              <li>決済期日も毎月<strong>同じ日付</strong>でずれて登録されます</li>
-              <li>月末日を指定した場合は各月の末日に自動調整されます</li>
-            </ul>
-          </div>
-          <div id="repeatOptions" style="display:none;margin-top:10px;">
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label>繰り返し回数</label>
-                <input type="number" id="repeatCount" value="12" min="1" max="60" style="width:80px;" onchange="updateRepeatPreview()">
-                <span style="font-size:12px;color:#666;margin-top:4px;">回</span>
-              </div>
-            </div>
-            <div class="repeat-preview" id="repeatPreview" style="display:none;">
-              <strong style="font-size:12px;">📅 登録予定日一覧：</strong>
-              <div id="repeatPreviewList" style="margin-top:6px;"></div>
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label style="font-size:13px;font-weight:bold;">明細行</label>
-            <button type="button" class="btn btn-secondary" onclick="addDetailRow()" style="font-size:12px;padding:4px 12px;">+ 明細追加</button>
-          </div>
-          <div id="detailRows"></div>
-        </div>
-        <div class="attachment-section" style="margin-top:16px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-            <span>📎</span>
-            <label style="font-size:13px;font-weight:bold;color:#1a5276;">証憑ファイルを添付（freeeにアップロード）</label>
-            <span style="font-size:11px;color:#666;">任意 ・ PDF / 画像 / Excel</span>
-          </div>
-          <div class="file-drop-zone" id="formDropZone"
-               onclick="document.getElementById('formFileInput').click()"
-               ondragover="handleDragOver(event, 'formDropZone')"
-               ondragleave="handleDragLeave('formDropZone')"
-               ondrop="handleDrop(event, 'formFileInput')">
-            <input type="file" id="formFileInput" multiple
-                   accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv"
-                   onchange="handleFormFileSelect(this)">
-            <div>📂 クリックまたはドラッグ＆ドロップでファイルを選択</div>
-            <div style="font-size:11px;color:#888;margin-top:4px;">PDF・PNG・JPG・WEBP・Excel・CSV（複数可）</div>
-          </div>
-          <div id="formFileList" class="file-list"></div>
-        </div>
-        <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
-          <button type="button" class="btn btn-success" onclick="submitForm()" id="formSubmitBtn">▶ freeeに登録</button>
-          <span class="spinner" id="formSpinner">⏳ 登録中...</span>
-        </div>
-        <div class="result-box" id="formResult"></div>
-      </form>
-    </div>
+</div>
+<div class="repeat-info">
+<strong>繰り返し登録のルール：</strong>
+<ul>
+<li>発生日は毎月<strong>同じ日付</strong>で登録されます</li>
+<li>決済期日も毎月<strong>同じ日付</strong>でずれて登録されます</li>
+<li>月末日を指定した場合は各月の末日に自動調整されます</li>
+</ul>
+</div>
+<div id="repeatOptions" style="display:none;margin-top:10px;">
+<div class="form-row">
+<div class="form-group flex-1">
+<label>繰り返し回数</label>
+<input id="repeatCount" max="60" min="1" onchange="updateRepeatPreview()" style="width:80px;" type="number" value="12"/>
+<span style="font-size:12px;color:#666;margin-top:4px;">回</span>
+</div>
+</div>
+<div class="repeat-preview" id="repeatPreview" style="display:none;">
+<strong style="font-size:12px;">📅 登録予定日一覧：</strong>
+<div id="repeatPreviewList" style="margin-top:6px;"></div>
+</div>
+</div>
+</div>
+<div style="margin-top:16px;">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+<label style="font-size:13px;font-weight:bold;">明細行</label>
+<button class="btn btn-secondary" onclick="addDetailRow()" style="font-size:12px;padding:4px 12px;" type="button">+ 明細追加</button>
+</div>
+<div id="detailRows"></div>
+</div>
+<div class="attachment-section" style="margin-top:16px;">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+<span>📎</span>
+<label style="font-size:13px;font-weight:bold;color:#1a5276;">証憑ファイルを添付（freeeにアップロード）</label>
+<span style="font-size:11px;color:#666;">任意 ・ PDF / 画像 / Excel</span>
+</div>
+<div class="file-drop-zone" id="formDropZone" onclick="document.getElementById('formFileInput').click()" ondragleave="handleDragLeave('formDropZone')" ondragover="handleDragOver(event, 'formDropZone')" ondrop="handleDrop(event, 'formFileInput')">
+<input accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.xlsx,.xls,.csv" id="formFileInput" multiple="" onchange="handleFormFileSelect(this)" type="file"/>
+<div>📂 クリックまたはドラッグ＆ドロップでファイルを選択</div>
+<div style="font-size:11px;color:#888;margin-top:4px;">PDF・PNG・JPG・WEBP・Excel・CSV（複数可）</div>
+</div>
+<div class="file-list" id="formFileList"></div>
+</div>
+<div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
+<button class="btn btn-success" id="formSubmitBtn" onclick="submitForm()" type="button">▶ freeeに登録</button>
+<span class="spinner" id="formSpinner">⏳ 登録中...</span>
+</div>
+<div class="result-box" id="formResult"></div>
+</form>
+</div>
+<!-- 仕訳アシスタント：実行ログ（永続） -->
+<div class="exec-log-section" id="exec-log-section-assistant">
+<button class="exec-log-toggle" id="exec-log-toggle-assistant" onclick="toggleExecLog('assistant')">
+<span class="toggle-arrow">▶</span>
+        📋 実行ログ（会話履歴）
+        <span id="exec-log-count-assistant" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
+<button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadChatSessionLog(true)" title="最新に更新">🔄 更新</button>
+</button>
+<div class="exec-log-body" id="exec-log-body-assistant">
+<div id="exec-log-content-assistant"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+</div>
+</div>
+<!-- 仕訳アシスタントルール -->
 
-    <!-- 仕訳アシスタントルール -->
-    <div class="inline-rule-section">
-      <h4>📚 この機能のルール</h4>
-      <div class="inline-rule-card">
-        <div class="inline-rule-card-header">
-          <span style="font-size:20px;">🤖</span>
-          <h3>仕訳アシスタントの仕様</h3>
-        </div>
-        <div class="inline-rule-card-body">
-          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-            自然言語でfreeeを操作できるAIエージェントです。OpenAI Function Callingを使用します。
-          </p>
-          <table class="inline-rules-table">
-            <thead><tr><th>機能</th><th>ルール・制約</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><strong>仕訳登録</strong></td>
-                <td>AIが登録内容を提示し、ユーザーが「この内容でfreeeに登録する」ボタンを押した後に実行。取引先がマスタに存在しない場合は自動作成してから登録。繰り返し登録（repeat）に対応。</td>
-              </tr>
-              <tr>
-                <td><strong>登録必須項目</strong></td>
-                <td>以下4項目がすべて揃っていることが登録の条件。欠けている場合は登録を実行せず、不足項目を列挙して聞き返す。<br>
-                <ol style="margin:6px 0 0 16px;padding:0;">
-                  <li><strong>発生日</strong>（YYYY-MM-DD）</li>
-                  <li><strong>取引先</strong>（freeeマスタ登録済み）</li>
-                  <li><strong>決済期日</strong>（YYYY-MM-DD）</li>
-                  <li><strong>対応部門</strong>（freeeマスタ登録済み）</li>
-                </ol></td>
-              </tr>
-              <tr>
-                <td><strong>削除処理</strong></td>
-                <td>必ず search_deals / search_invoices で対象を検索してIDを取得してから実行。フロントエンドが削除確認ボタンを表示し、ユーザーがボタンを押した後に実際の削除が実行される。</td>
-              </tr>
-              <tr>
-                <td><strong>照会・集計</strong></td>
-                <td>list_deals / list_invoices / get_deal で仕訳・請求書を取得して集計・報告。「先月の売上合計」「今月の支出一覧」などの自然言語に対応。</td>
-              </tr>
-              <tr>
-                <td><strong>添付ファイル（OCR）</strong></td>
-                <td>PDF・画像をアップロードすると OpenAI Vision API（gpt-4o）でテキスト抽出。最大20MB。抽出テキストをAIに渡して仕訳登録に活用。</td>
-              </tr>
-              <tr>
-                <td><strong>日付の解釈</strong></td>
-                <td>「先月」→ 前月の年月、「今月」→ 当月の年月、「7月」→ 当年度の7月として解釈。今年度 = 4月～翌年3月。</td>
-              </tr>
-              <tr>
-                <td><strong>取引先・勘定科目の推測</strong></td>
-                <td>マスタ一覧から最も近いものを推測して使用。例：「ステリファイ」→「stellify」、「広告費」→「広告宣伝費」</td>
-              </tr>
-              <tr>
-                <td><strong>会話履歴</strong></td>
-                <td>SQLiteに保存（Railway ボリューム <code>/data/chat_history.db</code>）。セッションIDで管理。最大200件の仕訳登録ログをメモリ内に保持。</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="ibox red">
-            <strong style="color:#be123c;">🚨 登録・削除・更新の確認ルール</strong>
-            <p style="color:#9f1239;">
-              登録・削除・更新はすべて必ずユーザー確認を得てから実行します。<br>
-              『登録』: AIが register_deal を呼び出すと登録内容を表示。「この内容でfreeeに登録する」ボタンを押した後に実行。<br>
-              『削除』: AIが delete_deals を呼び出すと削除対象を表示。「削除する」ボタンを押した後に実行。<br>
-              AIは「登録しました」「削除しました」と自分から言わない。ボタン操作後に実行される。
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="inline-rule-section" id="inline-rule-assistant">
+<h4>📚 この機能のルール</h4>
+<div id="inline-rule-content-assistant" style="color:#94a3b8; font-size:12px; padding:8px;">ルール読み込み中...</div>
+</div>
 
-  <!-- ===== 証憑照合タブ ===== -->
-  <div id="tab-shocho" class="main-tab-content">
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+</div>
+<!-- ===== 証憑照合タブ ===== -->
+<div class="main-tab-content" id="tab-shocho">
+<p style="font-size:13px; color:#666; margin-bottom:16px;">
       freeeのファイルボックスにある未紐づけ書類を、既存の仕訳と自動照合します。プレビューで内容を確認してから紐づけを実行できます。
     </p>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
-      <button class="btn btn-primary" id="btnMatchPreview" onclick="loadMatchPreview()">🔍 照合プレビュー</button>
-      <button class="btn btn-success" id="btnMatchExecute" style="display:none;" onclick="executeMatch()">✅ 紐づけを実行</button>
-      <button class="btn btn-secondary" id="btnMatchReset" style="display:none;" onclick="resetMatch()">↩ リセット</button>
-    </div>
-    <div id="match-result"></div>
-
-    <!-- 証憑照合：実行ログ（永続） -->
-    <div class="exec-log-section" id="exec-log-section-shocho">
-      <button class="exec-log-toggle" id="exec-log-toggle-shocho" onclick="toggleExecLog('shocho')">
-        <span class="toggle-arrow">▶</span>
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+<button class="btn btn-primary" id="btnMatchPreview" onclick="loadMatchPreview()">🔍 照合プレビュー</button>
+<button class="btn btn-success" id="btnMatchExecute" onclick="executeMatch()" style="display:none;">✅ 紐づけを実行</button>
+<button class="btn btn-secondary" id="btnMatchReset" onclick="resetMatch()" style="display:none;">↩ リセット</button>
+</div>
+<div id="match-result"></div>
+<!-- 証憑照合：実行ログ（永続） -->
+<div class="exec-log-section" id="exec-log-section-shocho">
+<button class="exec-log-toggle" id="exec-log-toggle-shocho" onclick="toggleExecLog('shocho')">
+<span class="toggle-arrow">▶</span>
         📋 実行ログ
         <span id="exec-log-count-shocho" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
-        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shocho', true)" title="最新に更新">🔄 更新</button>
-      </button>
-      <div class="exec-log-body" id="exec-log-body-shocho">
-        <div id="exec-log-list-shocho"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
-      </div>
-    </div>
+<button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shocho', true)" title="最新に更新">🔄 更新</button>
+</button>
+<div class="exec-log-body" id="exec-log-body-shocho">
+<div id="exec-log-list-shocho"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+</div>
+</div>
+<!-- 証憑照合ルール -->
 
-    <!-- 証憑照合ルール -->
-    <div class="inline-rule-section">
-      <h4>📚 この機能のルール</h4>
-      <div class="inline-rule-card">
-        <div class="inline-rule-card-header">
-          <span style="font-size:20px;">🧧</span>
-          <h3>証憑照合の仕様</h3>
-        </div>
-        <div class="inline-rule-card-body">
-          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-            freeeファイルボックスの未紐づけ書類を既存仕訳と自動照合・紐づけします。
-          </p>
-          <table class="inline-rules-table">
-            <thead><tr><th>ステップ</th><th>内容</th></tr></thead>
-            <tbody>
-              <tr><td>① 未紐づけ書類取得</td><td>freeeファイルボックスから <code>category=without_deal</code> の書類を全件取得（ページング対応）</td></tr>
-              <tr><td>② OCR確認</td><td>freee OCRの解析結果（金額・発行日）を確認</td></tr>
-              <tr><td>③ AI-OCRフォールバック</td><td>freee OCRで金額または発行日が取れない場合、PDFをダウンロードして OpenAI Vision API（gpt-4o）で再解析。最大3ページを画像化して処理。<strong>AI-OCRでも取得できない場合は「未照合」として記録。</strong></td></tr>
-              <tr><td>④ 仕訳検索</td><td>金額完全一致（許容誤差0円）・発行日 <strong>±90日</strong> の仕訳を検索。売上・支出の両方を対象。</td></tr>
-              <tr><td>⑤ スコアリング</td><td>日付の近さ（最大50点）＋取引先名の一致（完全一致=30点、部分一致=15点）でスコア計算。最高スコアの仕訳1件に自動紐づけ。</td></tr>
-              <tr><td>⑥ 紐づけ実行</td><td>既存の紐づけ済み書類を保持したまま追加紐づけ（上書きしない）。</td></tr>
-            </tbody>
-          </table>
-          <div class="ibox yellow">
-            <strong style="color:#b45309;">⚠️ 未照合になるケース</strong>
-            <p style="color:#92400e;">
-              ① freee OCR・AI-OCRともに金額または発行日が取得できない　② 金額完全一致・発行日±90日の仕訳が0件　③ 紐づけAPIが失敗<br>
-              → 手動でfreee管理画面から紐づけを行ってください。
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">📌 実行方法・スケジュール</strong>
-            <p style="color:#1e40af;">
-              <strong>手動実行：</strong>上記「🔍 照合プレビュー」ボタンを押して内容を確認し、「✅ 紐づけを実行」で実行。<br>
-              <strong>自動実行：毎日昼12時（JST）</strong>に自動実行されます。実行結果はメール（r.kosa@bearsnavi.com）に通知されます。<br>
-              <strong>対象期間：</strong>実行日から過去365日以内の未紐づけ書類。
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="inline-rule-section" id="inline-rule-shocho">
+<h4>📚 この機能のルール</h4>
+<div id="inline-rule-content-shocho" style="color:#94a3b8; font-size:12px; padding:8px;">ルール読み込み中...</div>
+</div>
 
-  <!-- ===== 総合振込データ作成タブ ===== -->
-  <div id="tab-shiharai" class="main-tab-content">
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
+</div>
+<!-- ===== 総合振込データ作成タブ ===== -->
+<div class="main-tab-content" id="tab-shiharai">
+<p style="font-size:13px; color:#666; margin-bottom:16px;">
       freeeの未決済仕訳から振込データ（全銀フォーマット）を生成します。
     </p>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
-      <button class="btn btn-primary" id="btnPayPreview" onclick="loadPaymentPreview()">💳 支払プレビュー</button>
-      <button class="btn btn-secondary" id="btnPayReset" style="display:none;" onclick="resetPayment()">↩ リセット</button>
-    </div>
-    <div id="payment-result"></div>
-
-    <!-- 総合振込：実行ログ（永続） -->
-    <div class="exec-log-section" id="exec-log-section-shiharai">
-      <button class="exec-log-toggle" id="exec-log-toggle-shiharai" onclick="toggleExecLog('shiharai')">
-        <span class="toggle-arrow">▶</span>
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+<button class="btn btn-primary" id="btnPayPreview" onclick="loadPaymentPreview()">💳 支払プレビュー</button>
+<button class="btn btn-secondary" id="btnPayReset" onclick="resetPayment()" style="display:none;">↩ リセット</button>
+</div>
+<div id="payment-result"></div>
+<!-- 総合振込：実行ログ（永続） -->
+<div class="exec-log-section" id="exec-log-section-shiharai">
+<button class="exec-log-toggle" id="exec-log-toggle-shiharai" onclick="toggleExecLog('shiharai')">
+<span class="toggle-arrow">▶</span>
         📋 実行ログ
         <span id="exec-log-count-shiharai" style="font-size:11px; color:#94a3b8; font-weight:400;"></span>
-        <button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shiharai', true)" title="最新に更新">🔄 更新</button>
-      </button>
-      <div class="exec-log-body" id="exec-log-body-shiharai">
-        <div id="exec-log-list-shiharai"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
-      </div>
-    </div>
+<button class="exec-log-reload-btn" onclick="event.stopPropagation(); loadExecLog('shiharai', true)" title="最新に更新">🔄 更新</button>
+</button>
+<div class="exec-log-body" id="exec-log-body-shiharai">
+<div id="exec-log-list-shiharai"><div style="color:#94a3b8; font-size:12px; padding:8px 0;">読み込み中...</div></div>
+</div>
+</div>
+<!-- 総合振込データ作成ルール -->
 
-    <!-- 総合振込データ作成ルール -->
-    <div class="inline-rule-section">
-      <h4>📚 この機能のルール</h4>
-      <div class="inline-rule-card">
-        <div class="inline-rule-card-header">
-          <span style="font-size:20px;">🏦</span>
-          <h3>総合振込データ作成の仕様</h3>
-        </div>
-        <div class="inline-rule-card-body">
-          <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-            freeeの未決済支出仕訳から振込対象を抽出し、全銀フォーマット（FB形式）ファイルを生成します。生成後は住信SBIネット銀行の総合振込画面にアップロードして使用します。
-          </p>
-          <table class="inline-rules-table">
-            <thead><tr><th>分類</th><th>条件</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><span class="badge-ok2">振込対象</span></td>
-                <td>本店部門（本店：CA / 本店：PCA / 本店：PRA / 本店：AIスカウト / 本店：その他）の未決済支出仕訳で、<strong>証憑（添付ファイル）あり</strong>かつ<strong>銀行口座登録済み</strong>かつ<strong>除外条件に該当しない</strong>もの</td>
-              </tr>
-              <tr>
-                <td><span class="badge-warn2">アラート対象</span></td>
-                <td>① 証憑あり・銀行口座未登録 → 「口座未登録」アラート　② 証憑なし・支払期日まで <strong>10日以内</strong> → 「証憑未添付」アラート</td>
-              </tr>
-              <tr>
-                <td><span class="badge-exc2">除外対象</span></td>
-                <td>CSS部門が1つでも含まれる仕訳、または以下の取引先・勘定科目に該当するもの</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="ibox yellow">
-            <strong style="color:#b45309;">🚫 振込除外対象（取引先名・部分一致）</strong>
-            <p style="color:#92400e;font-size:13px;">
-              給与 / シンクバンク / 日本政策金融公庫 / 横浜銀行 / さわやか信用金庫 / 西武信用金庫 /<br>
-              WANTEDLY / wantedly / ウォンテッドリー / L MESSAGE / Lメッセージ / オリコフォレント / フォンデスク / MJE /<br>
-              年金事務所 / 労働局 / 税務署 / 都税 / 市税 / 区役所
-            </p>
-            <strong style="color:#b45309;display:block;margin-top:8px;">🚫 振込除外対象（勘定科目名・部分一致）</strong>
-            <p style="color:#92400e;font-size:13px;">
-              給与 / 賞与 / 役員報酬 / 法定福利費 / 長期借入金 / 短期借入金 / 所得税 / 住民税 / 消費税 / 法人税 / 印紙税 / 社宅
-            </p>
-          </div>
-          <div class="ibox blue">
-            <strong style="color:#1d4ed8;">📋 FBファイル生成ルール</strong>
-            <p style="color:#1e40af;">
-              ・形式：全国銀行協会 総合振込フォーマット（固定長120バイト、Shift-JIS）<br>
-              ・振込指定日：対象仕訳の中で最も早い due_date を使用<br>
-              ・各明細の振込日：各仕訳の due_date（未設定の場合はヘッダーの日付で代用）<br>
-              ・FBファイル生成確定後：対象仕訳に「振込依頼済」メモタグ（ID=35285961）を自動付与。「振込依頼済」タグが付いている仕訳は次回以降の振込対象から除外される<br>
-              ・検索範囲：過去90日～未来 60日の未決済支出仕訳
-            </p>
-          </div>
-          <div class="ibox green">
-            <strong style="color:#15803d;">🏦 依頼人情報（住信SBIネット銀行）</strong>
-            <table class="inline-rules-table" style="margin-top:10px;">
-              <thead><tr><th>項目</th><th>値</th></tr></thead>
-              <tbody>
-                <tr><td>銀行コード</td><td>0038（住信SBIネット銀行）</td></tr>
-                <tr><td>支店番号</td><td>106</td></tr>
-                <tr><td>口座種別</td><td>普通（1）</td></tr>
-                <tr><td>口座番号</td><td>1356501</td></tr>
-                <tr><td>依頼人名（カナ）</td><td>ﾍﾞｱｰｽﾞﾅﾋﾞ</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="inline-rule-section" id="inline-rule-shiharai">
+<h4>📚 この機能のルール</h4>
+<div id="inline-rule-content-shiharai" style="color:#94a3b8; font-size:12px; padding:8px;">ルール読み込み中...</div>
+</div>
 
-  <!-- ===== システム状態タブ ===== -->
-  <div id="tab-status" class="main-tab-content">
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:20px;">
-      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
-        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">FREEE認証</div>
-        <div id="freee-status" style="font-size:16px; font-weight:bold; color:#28a745;">● 確認中...</div>
-      </div>
-      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
-        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">処理件数（今セッション）</div>
-        <div id="process-count" style="font-size:28px; font-weight:bold; color:#1a1a2e;">0</div>
-      </div>
-      <div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
-        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">システム状態</div>
-        <div id="system-state" style="font-size:16px; font-weight:bold; color:#17a2b8;">待機中</div>
-        <div style="font-size:11px; color:#888; margin-top:4px;">ボタンを押したときだけ処理を実行します</div>
-      </div>
-    </div>
-    <div id="status-log-section" style="display:none;">
-      <h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ（直近50件）</h3>
-      <div id="status-log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
-    </div>
-    <button class="btn btn-secondary" onclick="loadStatusLog()" style="margin-top:8px; font-size:12px;">🔄 ログを更新</button>
-  </div>
+</div>
+<!-- ===== システム状態タブ ===== -->
+<div class="main-tab-content" id="tab-status">
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:20px;">
+<div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+<div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">FREEE認証</div>
+<div id="freee-status" style="font-size:16px; font-weight:bold; color:#28a745;">● 確認中...</div>
+</div>
+<div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+<div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">処理件数（今セッション）</div>
+<div id="process-count" style="font-size:28px; font-weight:bold; color:#1a1a2e;">0</div>
+</div>
+<div style="background:#f8f9fa; border-radius:8px; padding:16px; border:1px solid #dee2e6;">
+<div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">システム状態</div>
+<div id="system-state" style="font-size:16px; font-weight:bold; color:#17a2b8;">待機中</div>
+<div style="font-size:11px; color:#888; margin-top:4px;">ボタンを押したときだけ処理を実行します</div>
+</div>
+</div>
+<div id="status-log-section" style="display:none;">
+<h3 style="font-size:14px; font-weight:bold; margin-bottom:8px;">処理ログ（直近50件）</h3>
+<div id="status-log-list" style="font-size:12px; max-height:400px; overflow-y:auto; border:1px solid #dee2e6; border-radius:6px; padding:12px; background:#f8f9fa;"></div>
+</div>
+<button class="btn btn-secondary" onclick="loadStatusLog()" style="margin-top:8px; font-size:12px;">🔄 ログを更新</button>
 </div>
 
 <!-- 証憑プレビューモーダル -->
 <div id="receipt-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
-  <div style="background:#fff; border-radius:10px; width:min(800px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #dee2e6;">
-      <div id="receipt-modal-title" style="font-weight:700; font-size:14px;"></div>
-      <button onclick="closeReceiptModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#666; line-height:1;">&times;</button>
-    </div>
-    <div id="receipt-modal-body" style="padding:16px; overflow-y:auto; flex:1;"></div>
-  </div>
+<div style="background:#fff; border-radius:10px; width:min(800px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+<div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #dee2e6;">
+<div id="receipt-modal-title" style="font-weight:700; font-size:14px;"></div>
+<button onclick="closeReceiptModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#666; line-height:1;">×</button>
+</div>
+<div id="receipt-modal-body" style="padding:16px; overflow-y:auto; flex:1;"></div>
+</div>
 </div>
 
 {% endblock %}
@@ -816,7 +539,46 @@ document.addEventListener('DOMContentLoaded', () => {
   loadExecLog('jidou');
   loadExecLog('shocho');
   loadExecLog('shiharai');
+  loadChatSessionLog();
+  // インラインルール動的読み込み（rules.htmlから取得）
+  loadAllInlineRules();
 });
+
+// ===== インラインルール動的読み込み =====
+// rules.htmlをsingle source of truthとし、index.htmlの各タブのルールセクションを動的に読み込む。
+const INLINE_RULE_TABS = [
+  { key: 'jidou',     rulesTabId: 'tab-jidou' },
+  { key: 'assistant', rulesTabId: 'tab-assistant' },
+  { key: 'shocho',    rulesTabId: 'tab-shocho' },
+  { key: 'shiharai',  rulesTabId: 'tab-shiharai' },
+];
+
+async function loadAllInlineRules() {
+  for (const { key, rulesTabId } of INLINE_RULE_TABS) {
+    loadInlineRule(key, rulesTabId);
+  }
+}
+
+async function loadInlineRule(key, rulesTabId) {
+  const el = document.getElementById(`inline-rule-content-${key}`);
+  if (!el) return;
+  try {
+    const r = await fetch(`/api/rules_html/${rulesTabId}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.html) {
+      // rules.htmlのタブ内容をそのまま埋め込む
+      el.innerHTML = data.html;
+      el.style.color = '';
+      el.style.fontSize = '';
+      el.style.padding = '';
+    } else {
+      el.innerHTML = `<div style="color:#dc3545; font-size:12px;">ルール読み込みエラー: ${data.error || '不明'}</div>`;
+    }
+  } catch(e) {
+    if (el) el.innerHTML = `<div style="color:#dc3545; font-size:12px;">ルール取得エラー: ${e.message}</div>`;
+  }
+}
 
 // ===== 自動転記 =====
 async function runProcess(dbType) {
@@ -1846,7 +1608,11 @@ function toggleExecLog(tabName) {
     body.classList.add('open');
     toggle.classList.add('open');
     // 初回開展時にログをロード
-    loadExecLog(tabName);
+    if (tabName === 'assistant') {
+      loadChatSessionLog();
+    } else {
+      loadExecLog(tabName);
+    }
   }
 }
 
@@ -1941,6 +1707,81 @@ function buildDetailHtml(tabName, detail) {
     return html || '<div style="color:#94a3b8;font-size:11px;">詳細なし</div>';
   }
   return `<pre style="font-size:10px;overflow-x:auto;">${JSON.stringify(detail, null, 2).substring(0, 500)}</pre>`;
+}
+
+// ===== 仕訳アシスタント：会話セッションログ =====
+let _chatSessionLogLoaded = false;
+
+async function loadChatSessionLog(forceReload = false) {
+  const contentEl = document.getElementById('exec-log-content-assistant');
+  const countEl = document.getElementById('exec-log-count-assistant');
+  if (!contentEl) return;
+  if (!forceReload && _chatSessionLogLoaded) return;
+  try {
+    const r = await fetch('/api/chat_sessions');
+    const data = await r.json();
+    const sessions = data.sessions || [];
+    _chatSessionLogLoaded = true;
+    if (countEl) countEl.textContent = sessions.length > 0 ? `（${sessions.length}件）` : '';
+    if (sessions.length === 0) {
+      contentEl.innerHTML = '<div style="color:#94a3b8; font-size:12px; padding:8px 0;">会話履歴なし</div>';
+      return;
+    }
+    contentEl.innerHTML = sessions.map((s, idx) => buildChatSessionEntry(s, idx)).join('');
+  } catch(e) {
+    if (contentEl) contentEl.innerHTML = `<div style="color:#dc3545; font-size:12px; padding:8px 0;">ログ取得エラー: ${e.message}</div>`;
+  }
+}
+
+function buildChatSessionEntry(session, idx) {
+  const startedAt = session.started_at ? session.started_at.replace('T', ' ').substring(0, 16) : '-';
+  const lastAt = session.last_at ? session.last_at.replace('T', ' ').substring(0, 16) : '-';
+  const msgCount = session.msg_count || 0;
+  const firstMsg = (session.first_user_msg || '').substring(0, 60);
+  return `
+    <div class="exec-log-entry">
+      <div class="exec-log-entry-header" onclick="toggleChatSessionDetail(${idx})" style="cursor:pointer;">
+        <span class="exec-log-badge-manual">手動</span>
+        <span style="color:#64748b;">${startedAt}</span>
+        <span style="flex:1; color:#334155;">${firstMsg || '(発言なし)'}</span>
+        <span style="color:#94a3b8; font-size:10px;">メッセージ${msgCount}件 ↓</span>
+      </div>
+      <div class="exec-log-entry-body" id="chat-session-body-${idx}" style="display:none; padding:8px 12px;">
+        <div style="font-size:11px; color:#64748b; margin-bottom:6px;">最終発言: ${lastAt} / セッションID: <code>${session.session_id}</code></div>
+        <button class="btn btn-secondary" style="font-size:11px; padding:3px 10px;" onclick="loadAndShowChatSession('${session.session_id}', ${idx})">💬 会話内容を表示</button>
+        <div id="chat-session-messages-${idx}" style="margin-top:8px;"></div>
+      </div>
+    </div>`;
+}
+
+function toggleChatSessionDetail(idx) {
+  const body = document.getElementById(`chat-session-body-${idx}`);
+  if (!body) return;
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadAndShowChatSession(sessionId, idx) {
+  const msgEl = document.getElementById(`chat-session-messages-${idx}`);
+  if (!msgEl) return;
+  msgEl.innerHTML = '<div style="color:#888;font-size:12px;">読み込み中...</div>';
+  try {
+    const r = await fetch(`/api/chat_history/${sessionId}`);
+    const data = await r.json();
+    const messages = data.messages || [];
+    if (messages.length === 0) {
+      msgEl.innerHTML = '<div style="color:#94a3b8;font-size:12px;">メッセージなし</div>';
+      return;
+    }
+    msgEl.innerHTML = messages.map(m => {
+      const isUser = m.role === 'user';
+      const bg = isUser ? '#eff6ff' : '#f8fafc';
+      const label = isUser ? '👤 ユーザー' : '🤖 AI';
+      const content = (m.content || '').substring(0, 300).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div style="margin-bottom:6px; padding:6px 8px; background:${bg}; border-radius:4px; font-size:11px;"><strong>${label}:</strong> ${content}${m.content && m.content.length > 300 ? '...' : ''}</div>`;
+    }).join('');
+  } catch(e) {
+    msgEl.innerHTML = `<div style="color:#dc3545;font-size:12px;">取得エラー: ${e.message}</div>`;
+  }
 }
 
 async function registerAiEntries(entries, withFiles = true) {

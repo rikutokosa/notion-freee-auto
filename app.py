@@ -2400,6 +2400,43 @@ def api_delete_chat_history(session_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/chat_sessions", methods=["GET"])
+def api_list_chat_sessions():
+    """会話セッション一覧を返す（実行ログプルダウン用）
+    各セッションの最初のメッセージ日時・件数・最初のユーザー発言を返す。
+    """
+    try:
+        conn = _get_db()
+        rows = conn.execute(
+            """
+            SELECT
+                session_id,
+                MIN(created_at) AS started_at,
+                MAX(created_at) AS last_at,
+                COUNT(*) AS msg_count,
+                MIN(CASE WHEN role='user' THEN content END) AS first_user_msg
+            FROM chat_sessions
+            GROUP BY session_id
+            ORDER BY started_at DESC
+            LIMIT 50
+            """
+        ).fetchall()
+        conn.close()
+        sessions = []
+        for r in rows:
+            sessions.append({
+                "session_id": r[0],
+                "started_at": r[1],
+                "last_at": r[2],
+                "msg_count": r[3],
+                "first_user_msg": (r[4] or "")[:80],
+            })
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        logger.exception("chat_sessions一覧取得エラー")
+        return jsonify({"sessions": []})
+
+
 # ============================================================
 # ルールブックページ
 # ============================================================
@@ -2413,6 +2450,27 @@ def rules_page():
         "rules.html",
         rules=RULES,
     )
+
+
+@app.route("/api/rules_html/<tab_id>")
+def api_rules_html(tab_id):
+    """rules.htmlの指定タブのHTMLフラグメントを返す（index.htmlのインラインルール表示用）"""
+    from flask import render_template_string
+    from bs4 import BeautifulSoup
+    try:
+        # rules.htmlをレンダリング
+        rendered = render_template("rules.html")
+        soup = BeautifulSoup(rendered, "html.parser")
+        tab_div = soup.find("div", {"id": tab_id})
+        if not tab_div:
+            return jsonify({"html": "", "error": f"tab_id '{tab_id}' not found"}), 404
+        # rules-sectionの内容だけ返す（display:noneなどの属性は除去）
+        tab_div["class"] = [c for c in tab_div.get("class", []) if c not in ["rules-section", "active"]]
+        del tab_div["id"]
+        return jsonify({"html": str(tab_div)})
+    except Exception as e:
+        logger.exception("rules_html取得エラー")
+        return jsonify({"html": "", "error": str(e)}), 500
 
 
 @app.route("/changelog")

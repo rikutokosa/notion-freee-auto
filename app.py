@@ -2235,22 +2235,58 @@ def changelog():
 def send_notification_email(subject: str, body: str):
     """
     スケジュール実行結果をメールで通知する。
+    優先順位:
+      1. RESEND_API_KEY が設定されていれば Resend HTTP API を使用
+      2. SMTP_USER/SMTP_PASS が設定されていれば Gmail SMTP SSL（ポート465）を使用
     環境変数:
-      SMTP_HOST   : SMTPサーバー（デフォルト: smtp.gmail.com）
-      SMTP_PORT   : SMTPポート（デフォルト: 587）
-      SMTP_USER   : 送信元メールアドレス
-      SMTP_PASS   : SMTPパスワード（Gmailの場合はアプリパスワード）
-      NOTIFY_TO   : 送信先メールアドレス（デフォルト: r.kosa@bearsnavi.com）
+      RESEND_API_KEY : Resend APIキー（設定時はResend優先）
+      RESEND_FROM    : 送信元アドレス（デフォルト: onboarding@resend.dev）
+      SMTP_HOST      : SMTPサーバー（デフォルト: smtp.gmail.com）
+      SMTP_PORT      : SMTPポート（デフォルト: 465）
+      SMTP_USER      : 送信元メールアドレス
+      SMTP_PASS      : SMTPパスワード（Gmailの場合はアプリパスワード）
+      NOTIFY_TO      : 送信先メールアドレス（デフォルト: r.kosa@bearsnavi.com）
     """
     import smtplib
+    import ssl
+    import requests as _requests
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
+    notify_to = os.environ.get("NOTIFY_TO", "r.kosa@bearsnavi.com")
+
+    # --- 1. Resend HTTP API ---
+    resend_api_key = os.environ.get("RESEND_API_KEY", "")
+    if resend_api_key:
+        resend_from = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
+        try:
+            resp = _requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": resend_from,
+                    "to": [notify_to],
+                    "subject": subject,
+                    "text": body,
+                },
+                timeout=15,
+            )
+            if resp.status_code in (200, 201):
+                logger.info(f"Resendメール送信完了: {notify_to}")
+                return
+            else:
+                logger.warning(f"Resend送信失敗 ({resp.status_code}): {resp.text} → SMTPにフォールバック")
+        except Exception as e:
+            logger.warning(f"Resend送信例外: {e} → SMTPにフォールバック")
+
+    # --- 2. Gmail SMTP SSL（ポート465）---
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_port = int(os.environ.get("SMTP_PORT", 465))
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASS", "")
-    notify_to = os.environ.get("NOTIFY_TO", "r.kosa@bearsnavi.com")
 
     if not smtp_user or not smtp_pass:
         logger.warning("SMTP設定が未設定のためメール送信をスキップします")
@@ -2263,12 +2299,20 @@ def send_notification_email(subject: str, body: str):
         msg["To"] = notify_to
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, [notify_to], msg.as_string())
-        logger.info(f"メール送信完了: {notify_to}")
+        context = ssl.create_default_context()
+        if smtp_port == 465:
+            # SSL/SMTPS
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [notify_to], msg.as_string())
+        else:
+            # STARTTLS（587など）
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [notify_to], msg.as_string())
+        logger.info(f"SMTPメール送信完了: {notify_to}")
     except Exception as e:
         logger.error(f"メール送信失敗: {e}")
 

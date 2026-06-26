@@ -804,7 +804,8 @@ def api_assistant_ai():
 
 # freeeマスタデータ
 取引先: {partners_list}
-部門（「親部門：子部門」形式。section_nameには「子部門名」のみを指定すること）: {sections_list}
+部門（「親部門：子部門」形式）: {sections_list}
+※ 同名の子部門が複数ある場合（例:「その他」が本店とCSSの両方にある）は、必ず「親部門：子部門」形式で指定すること。例: 「本店：その他」「CSS：その他」
 メモタグ: {tags_list}
 勘定科目: {account_items_list}
 
@@ -819,6 +820,8 @@ def api_assistant_ai():
 ## 2. 登録・更新処理
 - 取引先名・勘定科目名はマスタ一覧から最も近いものを推測して使用する
   例: 「ステリファイ」→「stellify」、「売上」→「売上高」、「広告費」→「広告宣伝費」
+- **ユーザーが勘定科目を明示的に指定した場合は、必ずその科目を使用する**。AIが「より適切」と判断しても勝手に変更しない。
+  例: ユーザーが「前払費用で」と言ったら「前払費用」を使う（「地代家賃」に変えない）
 - 取引先がマスタに存在しない場合はcreate_partnerで自動作成してから登録する
 - 日付の解釈: 「先月」→{last_month_year}-{last_month:02d}、「今月」→{today.year}-{today.month:02d}、「7月」→{fiscal_year}-07
 - 複数件の登録指示（スケジュール表・明細表など）は全件を処理する
@@ -842,7 +845,7 @@ def api_assistant_ai():
 
 更新時の重要ルール:
 - **既存仕訳の勘定科目構成を維持する**：ユーザーが明示的に科目変更を指示しない限り、各明細行の勘定科目は現在のまま維持する。例えば「前払費用」と「地代家賃」の2行がある仕訳で「金額を修正して」と言われたら、科目はそのままで金額だけ変える。画像や資料に別の科目名が書いてあっても、それは内訳や参考情報であり、既存仕訳の科目を書き換える根拠にはしない。
-- **部門名は子部門名のみ指定する**：マスタの「親部門：子部門」のうち「子部門」部分のみをsection_nameに指定する。親部門名（CSS、本店等）は指定不可。例: 「CSS：その他」の場合は「その他」を指定する。
+- **部門名の指定方法**：子部門名のみでも「親部門：子部門」形式でも指定可能。ただし同名の子部門が複数ある場合（「その他」など）は必ず「親部門：子部門」形式で指定する。例: 「本店：その他」「CSS：その他」「本店：CA」。一意な子部門名（「AIスカウト」等）はそのまま指定してよい。
 - **取引先名は必ずマスタ一覧から正確な名前を使用する**：上記「取引先」マスタの値をそのまま使用する。誤った取引先名を使わない。
 - **明細行の部門は現在の値を必ず引き継ぐ**：明細行の内容を変更する場合、変更しない行の部門名・勘定科目・金額は現在値をそのまま維持する。部門を変更しない場合はsection_nameを省略する（システムが自動で現在値を引き継ぐ）。
 - **変更内容を具体的に提示**：「仕訳ID XXXXXの金額を○○円→○○円に変更、勘定科目・部門は現在のまま」のように明示する。
@@ -1252,11 +1255,10 @@ def api_assistant_ai():
                             if cur.get("tags"):
                                 detail["tag_ids"] = [t["id"] for t in cur["tags"] if t.get("id")]
                         if d.get("section_name"):
-                            # 指定された部門名で子部門のみから検索（親部門は取引に設定不可）
+                            # 「親部門：子部門」形式にも対応
+                            from freee_client import _find_section_id as _resolve_sec
                             sec_name = d["section_name"]
-                            sec_id = next((s["id"] for s in child_sections if s["name"] == sec_name), None)
-                            if not sec_id:
-                                sec_id = next((s["id"] for s in child_sections if sec_name in s["name"]), None)
+                            sec_id = _resolve_sec(sec_name, sections)
                             if sec_id:
                                 detail["section_id"] = sec_id
                             elif idx < len(current_details) and current_details[idx].get("section_id"):

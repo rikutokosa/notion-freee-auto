@@ -334,8 +334,25 @@ def _find_tag_id(name: str, tags_cache: list) -> Optional[int]:
 # 取引（仕訳）登録
 # ============================================================
 def _find_section_id(name: str, sections_cache: list) -> Optional[int]:
+    # 「親部門：子部門」形式に対応（同名の子部門が複数ある場合の曖昧さを解消）
+    if "：" in name or ":" in name:
+        sep = "：" if "：" in name else ":"
+        parent_name, child_name = name.split(sep, 1)
+        parent_name = parent_name.strip()
+        child_name = child_name.strip()
+        # 親部門のIDを先に特定
+        parent_id = None
+        for sec in sections_cache:
+            if sec.get("name") == parent_name and not sec.get("parent_id"):
+                parent_id = sec.get("id")
+                break
+        if parent_id:
+            for sec in sections_cache:
+                if sec.get("name") == child_name and sec.get("parent_id") == parent_id:
+                    return sec.get("id")
+    # 子部門名のみの場合は従来通り（ただし親部門を除外）
     for sec in sections_cache:
-        if sec.get("name") == name:
+        if sec.get("name") == name and sec.get("parent_id"):
             return sec.get("id")
     return None
 

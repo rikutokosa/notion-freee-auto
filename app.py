@@ -2234,77 +2234,32 @@ def changelog():
 # ============================================================
 def send_notification_email(subject: str, body: str):
     """
-    スケジュール実行結果をメールで通知する。
-    優先順位:
-      1. GMAIL_USER/GMAIL_APP_PASS が設定されていれば Gmail API HTTP REST（ポート443）を使用
-      2. RESEND_API_KEY が設定されていれば Resend HTTP API を使用
+    スケジュール実行結果をSlack Webhookで通知する。
     環境変数:
-      GMAIL_USER     : Gmailアドレス（送信元）
-      GMAIL_APP_PASS : Gmailアプリパスワード
-      RESEND_API_KEY : Resend APIキー（フォールバック）
-      NOTIFY_TO      : 送信先メールアドレス（デフォルト: r.kosa@bearsnavi.com）
+      SLACK_WEBHOOK_URL : Slack Incoming Webhook URL
     """
-    import base64
     import requests as _requests
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
 
-    notify_to = os.environ.get("NOTIFY_TO", "r.kosa@bearsnavi.com")
+    slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL", "")
+    if not slack_webhook_url:
+        logger.error("Slack通知失敗: SLACK_WEBHOOK_URLが設定されていません")
+        return
 
-    # --- 1. Gmail API HTTP REST（アプリパスワード + OAuth2不要のXOAuth2代替）---
-    # Gmail SMTP RelayをHTTP経由で呼び出す（ポート443のみHTTPS使用）
-    gmail_user = os.environ.get("GMAIL_USER", "")
-    gmail_app_pass = os.environ.get("GMAIL_APP_PASS", "")
-    if gmail_user and gmail_app_pass:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = gmail_user
-            msg["To"] = notify_to
-            msg.attach(MIMEText(body, "plain", "utf-8"))
-            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-            # Gmail API の send endpoint（OAuth2 Bearerトークン不要、Basic認証使用）
-            # 実際はGmail APIはOAuth2必須のため、代わりに
-            # smtp2go/mailhog等ではなく、サンドボックスアドレスにフォールバック
-            # Gmail SMTPをHTTPSトンネル経由で呼び出す
-            import smtplib, ssl as _ssl
-            context = _ssl.create_default_context()
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-                server.login(gmail_user, gmail_app_pass)
-                server.sendmail(gmail_user, [notify_to], msg.as_string())
-            logger.info(f"Gmail SMTPメール送信完了: {notify_to}")
-            return
-        except Exception as e:
-            logger.warning(f"Gmail SMTP送信失敗: {e} → Resendにフォールバック")
-
-    # --- 2. Resend HTTP API ---
-    resend_api_key = os.environ.get("RESEND_API_KEY", "")
-    if resend_api_key:
-        resend_from = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
-        try:
-            resp = _requests.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {resend_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "from": resend_from,
-                    "to": [notify_to],
-                    "subject": subject,
-                    "text": body,
-                },
-                timeout=15,
-            )
-            if resp.status_code in (200, 201):
-                logger.info(f"Resendメール送信完了: {notify_to}")
-                return
-            else:
-                logger.warning(f"Resend送信失敗 ({resp.status_code}): {resp.text}")
-        except Exception as e:
-            logger.error(f"Resend送信例外: {e}")
-
-    logger.error("メール送信失敗: GMAIL_USER/GMAIL_APP_PASSまたはRESEND_API_KEYを設定してください")
+    try:
+        # Slackのメッセージ本文を整形（コードブロックで読みやすく）
+        slack_text = f"*{subject}*\n```{body}```"
+        resp = _requests.post(
+            slack_webhook_url,
+            headers={"Content-Type": "application/json"},
+            json={"text": slack_text},
+            timeout=15,
+        )
+        if resp.status_code == 200 and resp.text == "ok":
+            logger.info("Slack通知送信完了")
+        else:
+            logger.warning(f"Slack通知失敗 ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        logger.error(f"Slack通知例外: {e}")
 
 
 @app.route("/api/scheduled_run", methods=["POST"])

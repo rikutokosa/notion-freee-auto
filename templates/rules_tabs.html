@@ -276,7 +276,7 @@
               <td>③ AI-OCRフォールバック</td>
               <td>
                 freee OCRで金額または発行日が取れない場合、PDFをダウンロードして
-                OpenAI Vision API（gpt-5-mini）で再解析。最大3ページを画像化して処理。
+                OpenAI Vision API（gpt-4o-mini）で再解析。最大3ページを画像化して処理。
                 <strong>AI-OCRでも取得できない場合は「未照合」として記録。</strong>
               </td>
             </tr>
@@ -674,7 +674,7 @@
             <tr><td><strong>GitHubリポジトリ</strong></td><td><a href="https://github.com/rikutokosa/notion-freee-auto" target="_blank">rikutokosa/notion-freee-auto</a></td></tr>
             <tr><td><strong>起動コマンド</strong></td><td><code>gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120</code></td></tr>
             <tr><td><strong>ヘルスチェック</strong></td><td><code>/api/status</code></td></tr>
-            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にfreeeトークン・チャット履歴・実行ログをSQLite（<code>/data/app.db</code>）に保存</td></tr>
+            <tr><td><strong>データ永続化</strong></td><td>Railway Volume（<code>RAILWAY_VOLUME_MOUNT_PATH=/data</code>）にデータを永続保存。チャット履歴・実行ログはSQLite（<code>/data/chat_history.db</code>）、freeeトークンは<code>/data/freee_token.json</code>に保存</td></tr>
           </tbody>
         </table>
       </div>
@@ -755,7 +755,7 @@
             </tr>
             <tr>
               <td><strong>トークン期限切れ</strong></td>
-              <td>freeeアクセストークンは自動リフレッシュ。リフレッシュトークン切れの場合は<code>/freee/auth</code>から再認証</td>
+              <td>freeeアクセストークンは自動リフレッシュ。リフレッシュトークン切れの場合は<code>/auth/freee</code>から再認証</td>
             </tr>
             <tr>
               <td><strong>日次スケジュール</strong></td>

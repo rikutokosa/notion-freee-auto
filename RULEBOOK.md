@@ -37,7 +37,7 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 |---|---|---|---|
 | `本部確認済` | 仕訳登録 | `承諾→freee登録済` | `仕訳成功` |
 | `入社前辞退` | freee取引削除 | `入社前辞退→freee更新済` | `仕訳成功` |
-| `返金発生` | マイナス仕訳登録 | `返金→freee・請求書更新済` | `仕訳成功` |
+| `●返金（短期離職）` | マイナス仕訳登録 | `返金→freee・請求書更新済` | `仕訳成功` |
 
 ### freee処理状態の値
 
@@ -111,7 +111,7 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 | フィールド | 設定値 |
 |---|---|
 | 件名（subject） | `人材紹介手数料` |
-| 明細1（item行） | 品目名: 求職者名、単価: 税抜売上、数量: 1 |
+| 明細1（item行） | 品目名: 求職者名、単価: 税込売上（tax_entry_method="in"固定）、数量: 1 |
 | 明細2（text行） | `入社企業：{入社企業名}様` |
 | 備考（invoice_note） | `振込手数料は貴社負担でお願いいたします。` |
 | 社内メモ | `本店：CA` または `本店：PCA` |
@@ -197,6 +197,7 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 | `APP_BASE_URL` | アプリのベースURL（OAuth redirect用） | なし |
 | `OPENAI_API_KEY` | OpenAI APIキー（AI仕訳提案用） | なし |
 | `OPENAI_API_BASE` | OpenAI APIベースURL | `https://api.openai.com/v1` |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL（自動転記・振込アラート等の通知先。設定済み） | なし |
 | `SECRET_KEY` | Flaskセッションキー | `notion-freee-secret-2026` |
 | `PORT` | Flaskサーバーポート | `5000` |
 
@@ -220,12 +221,13 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 | GET | `/api/logs` | 処理ログ（JSON） |
 | GET | `/api/status` | システム状態（JSON） |
 | POST | `/api/refresh_cache` | freeeマスタキャッシュ更新 |
-| GET | `/api/freee_master` | freeeマスタデータ（デバッグ用） |
 | POST | `/api/assistant/register` | フォームから仕訳登録 |
 | POST | `/api/assistant/register_bulk` | AI生成仕訳を一括登録 |
 | POST | `/api/assistant/ai` | AI仕訳提案 |
 | POST | `/api/assistant/upload_receipt` | 証憑アップロード |
 | POST | `/api/assistant/extract_file` | ファイル読み取り（AI仕訳提案用） |
+| POST | `/api/scheduled_run` | 日次自動転記→請求書照合の順に実行しSlack通知 |
+| GET | `/api/execution_logs` | 実行ログ一覧（JSON） |
 
 ---
 

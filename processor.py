@@ -155,6 +155,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         result["journal"] = journal
         result["job_db"] = journal.get("job_db", "")
         result["nyusha_date"] = journal.get("nyusha_date", "")
+        result["name"] = journal.get("jobseeker_name", "")  # 実行ログの名前欄に表示
         current_status = journal.get("original_status", "")
         db_type = record.get("_db_type", "honten")
 

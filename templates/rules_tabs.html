@@ -120,11 +120,29 @@
           <strong style="color:#b45309;">⚠️ 返金処理の計算ルール</strong>
           <p style="color:#92400e;">
             返金額の計算は以下の優先順位で行います。<br>
-            ① Notionに「返金後入金売上」「返金後集客手数料」が入力されている場合 → その値と元の値の差額<br>
+            ① Notionに「返金後入金売上」「返金後集客手数料」が両方入力されている場合 → その値と元の値の差額（返金率不要）<br>
             ② 未入力の場合 → 元の税抜金額 × 返金率 ÷ 100 × 1.1（税込換算）<br>
             売上返金の決済期日：退職日の翌月末。仕入返金の決済期日：退職日 + 30日。<br>
+            <strong>⚠️ 返金率フィールド名：</strong>本店CA・PCA共通でNotionの「<strong>返金料率</strong>」フィールドを使用。（「返金率」フィールドは存在しない）<br>
             <strong>⚠️ キミナラ例外：</strong>キミナラは返金が発生しないため、売上マイナス仕訳のみ登録し、仕入側（集客手数料）は変更しない。
           </p>
+        </div>
+
+        <div class="info-box yellow" style="margin-top:12px;">
+          <strong style="color:#b45309;">⚠️ 手動対応が必要なケース（「要確認」としてNotionに記録）</strong>
+          <table class="rules-table" style="margin-top:10px;">
+            <thead>
+              <tr><th>ケース</th><th>理由</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>求人データベースが「都度確認」</td><td>決済期日が毎回異なるため</td></tr>
+              <tr><td>求人データベースが「申請フォーム」（Hitolink等）</td><td>外部フォームでの申請が必要</td></tr>
+              <tr><td>入社前辞退でfreee取引IDが未設定</td><td>削除対象の取引が特定できない</td></tr>
+              <tr><td>返金率が0%または未設定（かつ「返金後入金売上」「返金後集客手数料」のどちらかが未入力）</td><td>マイナス仕訳の金額が計算できない</td></tr>
+              <tr><td>入社済で請求書IDが未設定</td><td>送付対象の請求書が特定できない</td></tr>
+              <tr><td>求人データベースに対応ルールがない</td><td>rules.pyに未登録の求人データベースの場合</td></tr>
+            </tbody>
+          </table>
         </div>
 
         <div class="info-box blue" style="margin-top:12px;">

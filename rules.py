@@ -369,7 +369,8 @@ def _extract_props(record: dict) -> dict:
 
     # 退職日・辞退日（返金時の決済期日計算に使用）
     taishoku_str = get_date("退職日•辞退日")
-    henkin_ritsu_raw = get_number("返金料率") if db_type == "pca" else get_number("返金率")
+    # 返金率: 本店CA・PCA共通で「返金料率」フィールドを使用（「返金率」フィールドは存在しない）
+    henkin_ritsu_raw = get_number("返金料率")
     # 返金後入金売上（返金後の実際の売上額）
     henkin_go_uriage = get_number("返金後入金売上")
     henkin_go_shukyaku = get_number("返金後集客手数料")
@@ -482,6 +483,8 @@ def build_journal_entries(record: dict) -> dict:
         "nyusha_date": p["nyusha_str"] or "",
         "phase": phase,
         "original_status": current_status,
+        "jobseeker_name": p.get("jobseeker_name", ""),  # 実行ログの名前欄用
+        "company_name": p.get("company_name", ""),  # 入社企業名
     }
 
     # ============================================================
@@ -504,9 +507,12 @@ def build_journal_entries(record: dict) -> dict:
     # ============================================================
     if current_status == "●返金（短期離職）":
         henkin_ritsu = p["henkin_ritsu"]
-        if henkin_ritsu <= 0:
+        henkin_uriage_check = p["henkin_go_uriage"]
+        henkin_shukyaku_check = p["henkin_go_shukyaku"]
+        # 返金率チェック: 「返金後入金売上」「返金後集客手数料」が両方設定されていれば返金率不要
+        if henkin_ritsu <= 0 and (henkin_uriage_check is None or henkin_shukyaku_check is None):
             base["action"] = "review"
-            base["message"] = "返金ですが、返金率が0%または未設定です。手動で確認してください。"
+            base["message"] = "返金ですが、返金率が0%または未設定です。「返金後入金売上」「返金後集客手数料」を入力するか、返金率を設定してください。"
             return base
 
         original_uriage = p["zeinuki_uriage"] or 0

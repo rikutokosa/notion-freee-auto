@@ -640,29 +640,6 @@ def api_freee_master():
 
 
 # ============================================================
-# デバッグ用エンドポイント
-# ============================================================
-@app.route("/api/debug/deal/<int:deal_id>")
-def api_debug_deal(deal_id):
-    """指定した仕訳IDのタグ・支払状況を確認する（デバッグ用）"""
-    try:
-        from freee_client import get_deal
-        deal = get_deal(deal_id)
-        return jsonify({
-            "id": deal.get("id"),
-            "payment_status": deal.get("payment_status"),
-            "tags": deal.get("tags", []),
-            "tag_ids": [t.get("id") for t in deal.get("tags", [])],
-            "tag_names": [t.get("name") for t in deal.get("tags", [])],
-            "receipts_count": len(deal.get("receipts", [])),
-            "due_date": deal.get("due_date"),
-            "amount": deal.get("amount"),
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ============================================================
 # 仕訳アシスタント
 # ============================================================
 @app.route("/assistant")
@@ -1642,7 +1619,7 @@ def api_assistant_execute_delete():
 
 
 # ============================================================
-# 証桯アップロード
+# 証憑アップロード
 # ============================================================
 @app.route("/api/assistant/upload_receipt", methods=["POST"])
 def api_upload_receipt():
@@ -2497,7 +2474,7 @@ def scheduled_payment_alert():
             lines.append(f"    金額: {amount:,}円")
             lines.append(f"    対応部門: {sections}")
             if alert_reason == "no_receipt":
-                lines.append("    ⚠️ 証桫未添付")
+                lines.append("    ⚠️ 証憑未添付")
             elif alert_reason == "bank_missing":
                 lines.append("    ⚠️ 銀行口座未登録")
             if deal_id != "-":
@@ -2505,7 +2482,7 @@ def scheduled_payment_alert():
             lines.append("")
 
     if unprocessed_near_due:
-        lines.append(f"▶ 振込未処理（証桫あり・口座登録済み）: {len(unprocessed_near_due)}件")
+        lines.append(f"▶ 振込未処理（証憑あり・口座登録済み）: {len(unprocessed_near_due)}件")
         lines.append("-" * 40)
         for t in sorted(unprocessed_near_due, key=lambda x: x.get("days_until_due", 99)):
             due = t.get("due_date", "-")
@@ -2533,7 +2510,7 @@ def scheduled_payment_alert():
     subject = f"⚠️ [総合振込アラート] 支払期日5日以内の未処理取引が{total_alert}件あります {now_str}"
 
     send_notification_email(subject, body)
-    logger.info(f"総合振込アラートメール送信完了: {total_alert}件")
+    logger.info(f"総合振込アラートSlack通知送信完了: {total_alert}件")
 
     return jsonify({
         "status": "ok",

@@ -1552,4 +1552,10 @@ def add_furikomi_tag(deal_id: int) -> bool:
     }
     put_r = requests.put(f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
                          json={"deal": payload}, timeout=15)
-    return put_r.status_code == 200
+    if put_r.status_code != 200:
+        import logging
+        logging.getLogger(__name__).error(
+            f"振込依頼済タグ付与失敗 deal_id={deal_id}: status={put_r.status_code} body={put_r.text[:500]}"
+        )
+        return False
+    return True

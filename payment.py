@@ -13,7 +13,7 @@ from freee_client import get_partner_bank
 # ============================================================
 # 依頼人情報（住信SBIネット銀行 法人口座）
 # ============================================================
-REQUESTER_CODE = "9999999999"       # 依頼人コード（10桁）※SBIに確認して設定
+REQUESTER_CODE = "2010523001"       # 依頼人コード（10桁）住信SBIネット銀行
 REQUESTER_NAME_KANA = "ﾍﾞｱｰｽﾞﾅﾋﾞ"  # 依頼人名（カナ・半角20文字以内）
 REQUESTER_BANK_CODE = "0038"        # 住信SBIネット銀行
 REQUESTER_BRANCH_CODE = "106"       # 支店番号

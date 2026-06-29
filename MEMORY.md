@@ -103,6 +103,12 @@ PCAは3つの登録が必要（仕入れがない場合もある）：
 - **毎回デプロイ後はfreee再認証が必要** → 必ず案内すること
   - 再認証URL: https://notion-freee-production.up.railway.app/auth/freee
 
+### GitHubプッシュ方法
+- **classic PAT（期限なし）**: `ghp_8L73****` → ユーザーが発行済み。トークンはセキュリティ上ここには記載しないが、Manusのコンテキスト内に記憶されている。
+- 使用方法: `git remote set-url origin "https://rikutokosa:{PAT}@github.com/rikutokosa/notion-freee-auto.git"`
+- fine-grained PATはcontents=writeが付与されないためgit pushに使用不可。必ずclassic PAT（`ghp_`始まり）を使うこと。
+- ManusのGitHubコネクタ（MCP）はgit pushには使用不可（リポジトリ管理用途のみ）。
+
 ---
 
 ## 6. PCA DBと本店CA DBのプロパティ型の違い
@@ -155,6 +161,11 @@ PCAは3つの登録が必要（仕入れがない場合もある）：
 | 2026-06-26 | 通知メールが届かない | Railway環境でSMTPポート（587, 465）がブロックされているため、メール送信が失敗していた | `send_notification_email` 関数を書き換え、Slack Incoming Webhookでの通知に完全移行。 |
 | 2026-06-26 | 振込漏れが発生するリスク | 振込データのダウンロード状況を監視する仕組みがなかった | `/api/payment_alert` エンドポイントを追加。支払期日5日以内の未処理取引（振込依頼済タグなし等）を検出し、Slackに通知する機能を追加。 |
 | 2026-06-27 | 定期実行が機能していない | cron等のスケジュール設定がシステム外部になかった | `manus-config` を用いて、毎日12:00 JSTにスケジュール実行するよう設定（task-uid: AXQeZ）。 |
+| 2026-06-29 | スケジュール実行後に通知が来ない | `runMode: ask_user` のため確認待ち状態で止まっていた | `--run-as-new-task` モードに変更し、毎日自動実行されるよう修正。 |
+| 2026-06-29 | 振込アラートで「本日期限」が誤表示（30日なのに29日と表示） | `freee_client.py` の `today = datetime.now()` がUTC基準のため9時間ずれ | `datetime.now(JST).replace(tzinfo=None)` に変更してJST基準で計算するよう修正。 |
+| 2026-06-29 | 振込アラートで要対応アラートが振込未処理より下に表示される | 表示順序が逆だった | 要対応アラートを先頭に、振込未処理を後に表示するよう順序変更。 |
+| 2026-06-29 | 自動転記の「要確認」件数があっても詳細がSlackに出力されない | reviewステータスの詳細出力ロジックが未実装だった | `[要確認詳細]` セクションを追加し、件名・理由をSlackに出力するよう修正。 |
+| 2026-06-29 | 振込アラートのSlack通知に仕訳URLが含まれない | 仕訳IDのみ表示でURLが付いていなかった | `https://secure.freee.co.jp/deals#deal_id={deal_id}` 形式のURLを追加。 |
 
 ---
 
@@ -164,3 +175,5 @@ PCAは3つの登録が必要（仕入れがない場合もある）：
 2. 毎回デプロイ後はfreee再認証URLを自動的に案内すること
 3. このMEMORY.mdを毎回作業開始時に読み込むこと
 4. 過去の指示を忘れないこと（ユーザーの不満の原因）
+5. ユーザーからの指示内容がプロジェクト設定（MEMORY.md・HANDOVER.md・RULEBOOK.md）と矛盾・不整合がある場合は、その都度プロジェクト設定の修正を提案すること
+6. 作業完了後は必ずMEMORY.md・HANDOVER.mdをリポジトリとプロジェクト共有ファイルの両方に反映すること

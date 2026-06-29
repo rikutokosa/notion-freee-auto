@@ -640,6 +640,29 @@ def api_freee_master():
 
 
 # ============================================================
+# デバッグ用エンドポイント
+# ============================================================
+@app.route("/api/debug/deal/<int:deal_id>")
+def api_debug_deal(deal_id):
+    """指定した仕訳IDのタグ・支払状況を確認する（デバッグ用）"""
+    try:
+        from freee_client import get_deal
+        deal = get_deal(deal_id)
+        return jsonify({
+            "id": deal.get("id"),
+            "payment_status": deal.get("payment_status"),
+            "tags": deal.get("tags", []),
+            "tag_ids": [t.get("id") for t in deal.get("tags", [])],
+            "tag_names": [t.get("name") for t in deal.get("tags", [])],
+            "receipts_count": len(deal.get("receipts", [])),
+            "due_date": deal.get("due_date"),
+            "amount": deal.get("amount"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
 # 仕訳アシスタント
 # ============================================================
 @app.route("/assistant")

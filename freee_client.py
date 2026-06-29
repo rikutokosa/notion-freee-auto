@@ -1277,7 +1277,7 @@ def get_payment_deals(
     from datetime import timedelta
     from datetime import timezone
     JST = timezone(timedelta(hours=9))
-    today = datetime.now(JST).replace(tzinfo=None)  # JST基準で「今日」を計算
+    today = datetime.now(JST).date()  # JST基準で「今日」の日付のみ取得（時刻を含めない）
     start = (today - timedelta(days=months_back * 30)).strftime("%Y-%m-%d")  # months_backヶ月前まで過去の未払いも対象
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 
@@ -1345,7 +1345,7 @@ def get_payment_deals(
         days_until_due = None
         if due_date_str:
             try:
-                due_dt = datetime.strptime(due_date_str, "%Y-%m-%d")
+                due_dt = datetime.strptime(due_date_str, "%Y-%m-%d").date()
                 days_until_due = (due_dt - today).days
             except ValueError:
                 pass

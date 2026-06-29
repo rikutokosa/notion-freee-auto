@@ -2500,8 +2500,6 @@ def scheduled_payment_alert():
                 lines.append(f"    支払期日: {due}（あと{days}日）")
             lines.append(f"    金額: {amount:,}円")
             lines.append(f"    対応部門: {sections}")
-            if deal_id != "-":
-                lines.append(f"    仕訳: https://secure.freee.co.jp/deals#deal_id={deal_id}")
             lines.append("")
 
     lines.append("-" * 50)

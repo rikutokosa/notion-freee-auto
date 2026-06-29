@@ -2310,6 +2310,14 @@ def scheduled_run():
                         lines.append(f"    - {name}: {links}")
                     elif r.get("invoice_id"):
                         lines.append(f"    - {name}: 請求書ID={r['invoice_id']}")
+        if reviews > 0:
+            has_error = True
+            lines.append("  [要確認詳細]")
+            for r in results:
+                if r.get("status") == "review":
+                    name = r.get("name") or r.get("page_id", "")
+                    msg  = r.get("message", "")
+                    lines.append(f"    - {name}: {msg}")
         if errors > 0:
             has_error = True
             lines.append("  [エラー詳細]")
@@ -2445,30 +2453,8 @@ def scheduled_payment_alert():
     lines.append("支払期日5日以内に迫る取引のうち、振込データのダウンロードがまだ行われていないものがあります。")
     lines.append("")
 
-    if unprocessed_near_due:
-        lines.append(f"▶ 振込未処理（証憑あり・口座登録済み）: {len(unprocessed_near_due)}件")
-        lines.append("-" * 40)
-        for t in sorted(unprocessed_near_due, key=lambda x: x.get("days_until_due", 99)):
-            due = t.get("due_date", "-")
-            days = t.get("days_until_due", "-")
-            partner = t.get("partner_name", "-")
-            amount = t.get("amount", 0)
-            sections = ", ".join(t.get("section_names", [])) or "-"
-            deal_id = t.get("deal_id", "-")
-            lines.append(f"  ・取引先: {partner}")
-            if days == 0:
-                lines.append(f"    支払期日: {due}（本日期限）")
-            elif days < 0:
-                lines.append(f"    支払期日: {due}（{abs(days)}日過ぎ）")
-            else:
-                lines.append(f"    支払期日: {due}（あと{days}日）")
-            lines.append(f"    金額: {amount:,}円")
-            lines.append(f"    対応部門: {sections}")
-            lines.append(f"    仕訳ID: {deal_id}")
-            lines.append("")
-
     if alert_near_due:
-        lines.append(f"▶ 要対応アラート: {len(alert_near_due)}件")
+        lines.append(f"⚠️ 要対応アラート: {len(alert_near_due)}件")
         lines.append("-" * 40)
         for t in sorted(alert_near_due, key=lambda x: x.get("days_until_due", 99)):
             due = t.get("due_date", "-")
@@ -2487,11 +2473,35 @@ def scheduled_payment_alert():
                 lines.append(f"    支払期日: {due}（あと{days}日）")
             lines.append(f"    金額: {amount:,}円")
             lines.append(f"    対応部門: {sections}")
-            lines.append(f"    仕訳ID: {deal_id}")
             if alert_reason == "no_receipt":
-                lines.append("    ⚠️ 証憑未添付")
+                lines.append("    ⚠️ 証桫未添付")
             elif alert_reason == "bank_missing":
                 lines.append("    ⚠️ 銀行口座未登録")
+            if deal_id != "-":
+                lines.append(f"    仕訳: https://secure.freee.co.jp/deals#deal_id={deal_id}")
+            lines.append("")
+
+    if unprocessed_near_due:
+        lines.append(f"▶ 振込未処理（証桫あり・口座登録済み）: {len(unprocessed_near_due)}件")
+        lines.append("-" * 40)
+        for t in sorted(unprocessed_near_due, key=lambda x: x.get("days_until_due", 99)):
+            due = t.get("due_date", "-")
+            days = t.get("days_until_due", "-")
+            partner = t.get("partner_name", "-")
+            amount = t.get("amount", 0)
+            sections = ", ".join(t.get("section_names", [])) or "-"
+            deal_id = t.get("deal_id", "-")
+            lines.append(f"  ・取引先: {partner}")
+            if days == 0:
+                lines.append(f"    支払期日: {due}（本日期限）")
+            elif days < 0:
+                lines.append(f"    支払期日: {due}（{abs(days)}日過ぎ）")
+            else:
+                lines.append(f"    支払期日: {due}（あと{days}日）")
+            lines.append(f"    金額: {amount:,}円")
+            lines.append(f"    対応部門: {sections}")
+            if deal_id != "-":
+                lines.append(f"    仕訳: https://secure.freee.co.jp/deals#deal_id={deal_id}")
             lines.append("")
 
     lines.append("-" * 50)

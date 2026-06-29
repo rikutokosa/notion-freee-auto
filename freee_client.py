@@ -1275,7 +1275,9 @@ def get_payment_deals(
         }
     """
     from datetime import timedelta
-    today = datetime.now()
+    from datetime import timezone
+    JST = timezone(timedelta(hours=9))
+    today = datetime.now(JST).replace(tzinfo=None)  # JST基準で「今日」を計算
     start = (today - timedelta(days=months_back * 30)).strftime("%Y-%m-%d")  # months_backヶ月前まで過去の未払いも対象
     end = (today + timedelta(days=60)).strftime("%Y-%m-%d")
 

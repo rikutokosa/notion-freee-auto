@@ -100,8 +100,8 @@ PCAは3つの登録が必要（仕入れがない場合もある）：
 - プラットフォーム: Railway
 - URL: https://notion-freee-production.up.railway.app
 - GitHub連携: 自動デプロイ
-- **毎回デプロイ後はfreee再認証が必要** → 必ず案内すること
-  - 再認証URL: https://notion-freee-production.up.railway.app/auth/freee
+- **freee再認証は通常不要**: Railwayボリュームにリフレッシュトークンが永続保存されるため、デプロイ後もそのまま動作する
+- **トークンが失効した場合のみ**再認証が必要: https://notion-freee-production.up.railway.app/auth/freee
 
 ### GitHubプッシュ方法
 - **classic PAT（期限なし）**: `ghp_8L73****` → ユーザーが発行済み。トークンはセキュリティ上ここには記載しないが、Manusのコンテキスト内に記憶されている。
@@ -172,7 +172,7 @@ PCAは3つの登録が必要（仕入れがない場合もある）：
 ## 9. 開発時の注意事項
 
 1. 実装前にローカルテストを行い、エラーがないことを確認してからプッシュすること
-2. 毎回デプロイ後はfreee再認証URLを自動的に案内すること
+2. freee再認証は通常不要（Railwayボリュームにトークンを永続保存）。トークン失効時のみ /auth/freee へ案内すること
 3. このMEMORY.mdを毎回作業開始時に読み込むこと
 4. 過去の指示を忘れないこと（ユーザーの不満の原因）
 5. ユーザーからの指示内容がプロジェクト設定（MEMORY.md・HANDOVER.md・RULEBOOK.md）と矛盾・不整合がある場合は、その都度プロジェクト設定の修正を提案すること

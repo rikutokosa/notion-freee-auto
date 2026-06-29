@@ -586,7 +586,9 @@ def build_journal_entries(record: dict) -> dict:
             }
 
         # マイナス仕入仕訳
-        if rule and rule["payment_rule"] != "登録不要" and minus_shukyaku_tax_incl != 0:
+        # キミナラは返金が発生しない（仕入側は変更しない）
+        is_kiminara = (p.get("shukyaku_keiro") or "") == "キミナラ"
+        if rule and rule["payment_rule"] != "登録不要" and minus_shukyaku_tax_incl != 0 and not is_kiminara:
             base["purchase_entry"] = {
                 "issue_date": today_str,
                 "due_date": purchase_due_date,

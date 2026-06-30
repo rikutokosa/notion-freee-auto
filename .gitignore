@@ -14,3 +14,7 @@ token.json
 freee_token.json
 set_env_vars2.py
 notion-freee-auto-dump*.txt
+notion-freee-auto-full-dump.txt
+notion-freee-auto-review-dump.txt
+scripts/add_invoice_id_field.py
+scripts/setup_notion_fields.py

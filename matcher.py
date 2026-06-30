@@ -24,7 +24,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from freee_client import (
-    FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers, )
+    FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers, _freee_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +498,8 @@ def attach_receipt_to_deal(deal_id: int, receipt_id: int) -> bool:
     if deal.get("partner_id"):
         put_payload["partner_id"] = deal["partner_id"]
 
-    resp = requests.put(
+    resp = _freee_request(
+        "PUT",
         f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
         json=put_payload,

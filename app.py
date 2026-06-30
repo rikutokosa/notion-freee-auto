@@ -1141,8 +1141,15 @@ def api_assistant_ai():
 
             if name == "search_deals":
                 deals = search_deals(**args)
+                # freee APIはpartner_nameを返さずpartner_idのみ返すため、マスタキャッシュから名前を解決する
+                try:
+                    _cache = get_master_cache()
+                    _partners_map = {p["id"]: p["name"] for p in _cache.get("partners", []) if p.get("id")}
+                except Exception:
+                    _partners_map = {}
                 return _json.dumps([
-                    {"id": d["id"], "issue_date": d.get("issue_date"), "partner_name": d.get("partner_name"),
+                    {"id": d["id"], "issue_date": d.get("issue_date"),
+                     "partner_name": _partners_map.get(d.get("partner_id")) or d.get("partner_name") or "",
                      "amount": d.get("amount"), "type": d.get("type")}
                     for d in deals
                 ], ensure_ascii=False)

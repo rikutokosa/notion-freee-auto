@@ -25,8 +25,18 @@
 | 通知 | Slack Incoming Webhook（`SLACK_WEBHOOK_URL` 環境変数に設定済み） |
 | スケジュール実行 | 毎日12:00 JST（Asia/Tokyo）。**APScheduler**（app.py内蔵）が `_do_scheduled_run` → `_do_payment_alert` を順次実行。Manusスケジューラは無効化済み。 |
 | freee事業所ID | 1856949 |
+| freeeアプリClient ID | 740864584696172 |
+| freeeアプリ管理画面 | https://app.secure.freee.co.jp/developers/applications |
+| freee OAuthコールバックURL | https://notion-freee-production.up.railway.app/auth/freee/callback |
 
 > RailwayはSMTPポートをブロックしているためメール通知は使用不可。通知はSlack Webhookのみ。
+
+### Notion DB ID（Railway環境変数に設定済み）
+
+| 変数名 | DB | ID |
+|---|---|---|
+| `NOTION_DB_ID_HONTEN` | 本店CA成約管理DB | `320a7a34-dbe2-8082-8055-c57f9b8a04bb` |
+| `NOTION_DB_ID_PCA` | PCA成約管理DB | `32fa7a34-dbe2-8005-ab91-ff33d64506e0` |
 
 ---
 
@@ -47,6 +57,7 @@
 - 手動対応ケース（自動処理をスキップしてNotionに「要確認」と記録）の詳細は `RULEBOOK.md` セクション7を参照。
 
 ### DBプロパティ型の違い（本店CA vs PCA）
+
 | プロパティ | 本店CA | PCA |
 |---|---|---|
 | 集客経路 | rollup | select |
@@ -60,5 +71,3 @@
 ## 4. 仕訳ルール・業務仕様
 
 詳細は **`RULEBOOK.md`** を参照すること。MEMORY.mdには重複して記載しない。
-
----

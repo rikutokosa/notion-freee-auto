@@ -12,3 +12,5 @@ venv/
 *.log
 token.json
 freee_token.json
+set_env_vars2.py
+scripts/

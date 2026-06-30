@@ -11,6 +11,7 @@
 3. **作業完了後**: このMEMORY.mdをリポジトリとManusプロジェクト共有ファイルの両方に反映すること。
 4. **GitHubプッシュ**: classic PAT（`ghp_`始まり・期限なし）を使用。`git remote set-url origin "https://rikutokosa:{PAT}@github.com/rikutokosa/notion-freee-auto.git"` で設定してからpush。fine-grained PATはcontents=writeが付かないため使用不可。
 5. **freee再認証**: 通常不要（Railwayボリュームにトークン永続保存）。トークン失効時のみ https://notion-freee-production.up.railway.app/auth/freee へ案内すること。
+6. **テスト必須**: コード修正後は必ず `python3 -m py_compile` で構文チェックを実施すること。freee API・Notion APIを使う修正はサンドボックスにトークンがないため実機テスト不可。その場合は **「実機テスト未実施・Railway環境での動作確認が必要」と明示してからプッシュ**すること。テスト可能なもの（構文・ロジック・モックデータでの動作確認）は必ず実施してから返すこと。
 
 ---
 

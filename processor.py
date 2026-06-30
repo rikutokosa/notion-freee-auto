@@ -11,7 +11,6 @@ Notionの②経理対応待ちレコードを取得し、freeeに登録する
   - review: 手動確認が必要
 """
 import logging
-import time
 from datetime import datetime
 from typing import Optional
 
@@ -472,15 +471,3 @@ def process_single_by_id(page_id: str, db_type: str = "honten",
     record["_db_type"] = db_type
     return process_record(record, dry_run=dry_run)
 
-
-def run_polling_loop(interval_seconds: int = 300):
-    """
-    定期ポーリングループ（バックグラウンドスレッドで実行）
-    """
-    logger.info(f"ポーリングループ開始 (間隔: {interval_seconds}秒)")
-    while True:
-        try:
-            run_once()
-        except Exception as e:
-            logger.exception(f"ポーリングループエラー: {e}")
-        time.sleep(interval_seconds)

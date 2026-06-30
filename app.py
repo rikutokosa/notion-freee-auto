@@ -6,14 +6,10 @@ Flask Webアプリ本体
   GET  /                     ダッシュボード
   GET  /preview              経理対応待ちプレビュー
   GET  /log                  処理ログ
-  GET  /chat                 自然言語指示チャット
-  POST /chat                 チャット送信
   GET  /auth/freee           freee OAuth認証開始
   GET  /auth/freee/callback  freee OAuth認証コールバック
   POST /run                  手動で全件処理
   POST /run/single           1件処理
-  POST /polling/start        ポーリング開始
-  POST /polling/stop         ポーリング停止
   GET  /api/pending          経理対応待ち一覧（JSON）
   GET  /api/logs             処理ログ（JSON）
   GET  /api/status           システム状態（JSON）
@@ -119,7 +115,7 @@ from flask import Flask, render_template, request, redirect, jsonify, url_for, s
 
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
-    load_token, is_token_expired, clear_master_cache, get_master_cache,
+    clear_master_cache, get_master_cache,
     create_deal, upload_receipt, create_partner,
     search_deals, search_invoices, delete_deal, delete_invoice,
     # エージェント拡張ツール
@@ -150,24 +146,18 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "notion-freee-secret-2026")
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
-
 # ============================================================
-# バックグラウンド自動転記
+# 停止フラグ・通知ログ
 # ============================================================
-_polling_thread = None
-_polling_active = False
-
-# 停止フラグ：Railway環境変数 FREEE_AUTO_STOPPED=1 で永続化
-# ファイルはコンテナ再起動で消えるため使わない
-# メモリ内フラグ（プロセス内永続）
+# FREEE_AUTO_STOPPED=1 で APScheduler の定期実行を停止する
+# メモリ内フラグ（プロセス再起動後は環境変数の初期値に戻る）
 _manually_stopped: bool = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
 # 仕訳アシスタント登録ログ（メモリ内、最新200件）
 assistant_log: list = []
 
 
 def _is_manually_stopped() -> bool:
-    """手動停止中かどうかを返す（メモリ内フラグ）"""
+    """停止フラグを返す（FREEE_AUTO_STOPPED=1 の場合 True）"""
     return _manually_stopped
 
 
@@ -175,39 +165,7 @@ def _set_manually_stopped(stopped: bool):
     """停止フラグをメモリ内に設定する"""
     global _manually_stopped
     _manually_stopped = stopped
-    # Railway環境変数にも書き込む（プロセス内のみ有効、再起動後は環境変数の初期値に戻る）
     os.environ["FREEE_AUTO_STOPPED"] = "1" if stopped else "0"
-
-
-def start_polling(force: bool = False):
-    """自動転記を開始する。force=Trueの場合は手動停止フラグを無視して開始。"""
-    global _polling_thread, _polling_active
-    # 手動停止中は開始しない（forceの場合のみ例外）
-    if not force and _is_manually_stopped():
-        logger.info("自動転記: 手動停止中のため自動開始をスキップ")
-        return
-    if _polling_thread and _polling_thread.is_alive():
-        return
-    _polling_active = True
-    _set_manually_stopped(False)
-
-    def loop():
-        import time
-        while _polling_active:
-            try:
-                token = load_token()
-                if token and not is_token_expired(token):
-                    logger.info("freee自動転記実行")
-                    run_once(db_type="all")
-                else:
-                    logger.warning("freeeトークン未設定または期限切れ。freee自動転記をスキップ。")
-            except Exception as e:
-                logger.exception(f"freee自動転記エラー: {e}")
-            time.sleep(POLL_INTERVAL)
-
-    _polling_thread = threading.Thread(target=loop, daemon=True)
-    _polling_thread.start()
-    logger.info(f"freee自動転記開始 (間隔: {POLL_INTERVAL}秒)")
 
 
 # ============================================================
@@ -309,21 +267,6 @@ def auth_freee_callback():
         return render_template("error.html", message=f"トークン取得エラー: {str(e)}")
 
 
-@app.route("/api/get_refresh_token")
-def api_get_refresh_token():
-    """現在のリフレッシュトークンを返す（Railway環境変数設定用）"""
-    token_data = load_token()
-    if not token_data:
-        return jsonify({"error": "トークン未認証。/auth/freee から認証してください。"}), 401
-    refresh_token = token_data.get("refresh_token", "")
-    if not refresh_token:
-        return jsonify({"error": "リフレッシュトークンがありません。再認証してください。"}), 401
-    return jsonify({
-        "refresh_token": refresh_token,
-        "instruction": "Railwayダッシュボードの環境変数に FREEE_REFRESH_TOKEN = <上記の値> を設定してください。以後はデプロイ後も自動復元されます。"
-    })
-
-
 # ============================================================
 # 手動実行
 # ============================================================
@@ -377,109 +320,6 @@ def run_single():
     except Exception as e:
         logger.exception("単件処理エラー")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/polling/start", methods=["POST"])
-def polling_start():
-    """freee自動転記を手動で開始（手動停止フラグをクリアして強制開始）"""
-    start_polling(force=True)
-    return jsonify({"status": "ok", "message": "freee自動転記開始"})
-
-
-@app.route("/polling/stop", methods=["POST"])
-def polling_stop():
-    """freee自動転記を手動停止（フラグをファイルに保存して再認証後も自動開始しない）"""
-    global _polling_active
-    _polling_active = False
-    _set_manually_stopped(True)
-    return jsonify({"status": "ok", "message": "freee自動転記を停止しました。手動で「自動転記開始」を押すまで停止します。"})
-
-
-# ============================================================
-# チャット指示（自然言語）
-# ============================================================
-def handle_chat_command(message: str) -> str:
-    """自然言語コマンドを解釈して実行する"""
-    msg = message.lower()
-
-    # 全件実行
-    if any(k in msg for k in ["実行", "登録", "転記", "処理", "run", "今すぐ", "全件"]):
-        try:
-            results = run_once(db_type="all")
-            success = [r for r in results if r.get("status") == "success"]
-            errors = [r for r in results if r.get("status") == "error"]
-            reviews = [r for r in results if r.get("status") == "review"]
-            lines = [f"処理完了: {len(results)}件"]
-            if success:
-                lines.append(f"✅ 成功: {len(success)}件")
-                for r in success:
-                    lines.append(f"  - {r.get('phase', '')} [{r.get('action','')}]: {r.get('message','')}")
-            if reviews:
-                lines.append(f"⚠️ 要確認: {len(reviews)}件")
-                for r in reviews:
-                    lines.append(f"  - {r.get('phase', '')}: {r.get('message', '')}")
-            if errors:
-                lines.append(f"❌ エラー: {len(errors)}件")
-                for r in errors:
-                    lines.append(f"  - {r.get('phase', '')}: {r.get('message', '')}")
-            if not results:
-                lines.append("経理対応待ちのレコードはありませんでした。")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"エラーが発生しました: {str(e)}"
-
-    # 件数確認
-    if any(k in msg for k in ["状態", "ステータス", "確認", "status", "何件", "いくつ"]):
-        try:
-            records = fetch_pending_records("all")
-            if not records:
-                return "経理対応待ちのレコードはありません。"
-            lines = [f"経理対応待ちレコード: {len(records)}件"]
-            for r in records:
-                j = build_journal_entries(r)
-                db = r.get("_db_type", "honten")
-                lines.append(f"  [{db}] {j.get('phase','')} ({j.get('original_status','')}) → {j.get('action','')}")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"Notion接続エラー: {str(e)}"
-
-    # ログ確認
-    if any(k in msg for k in ["ログ", "履歴", "log", "history"]):
-        if not processing_log:
-            return "処理履歴はまだありません。"
-        lines = ["直近の処理履歴:"]
-        icons = {"success": "✅", "error": "❌", "review": "⚠️", "dry_run": "👁"}
-        for r in processing_log[:10]:
-            icon = icons.get(r.get("status", ""), "?")
-            ts = r.get("timestamp", "")[:16]
-            lines.append(f"{icon} {ts} {r.get('phase','')} - {r.get('message','')}")
-        return "\n".join(lines)
-
-    # 認証
-    if any(k in msg for k in ["認証", "ログイン", "auth", "token"]):
-        return "freee認証は /auth/freee から行ってください。"
-
-    # ポーリング制御
-    if any(k in msg for k in ["停止", "stop", "止め"]):
-        global _polling_active
-        _polling_active = False
-        return "自動ポーリングを停止しました。"
-    if any(k in msg for k in ["開始", "start", "再開"]):
-        start_polling()
-        return "自動ポーリングを開始しました。"
-
-    # プレビュー
-    if any(k in msg for k in ["プレビュー", "preview", "確認", "見せ"]):
-        return "プレビューは /preview から確認できます。"
-
-    return (
-        "以下のコマンドが使えます:\n"
-        "・「今すぐ処理して」「全件登録」 → 経理対応待ちレコードをfreeeに登録\n"
-        "・「何件ある？」「状態確認」 → 未処理件数と内容を確認\n"
-        "・「ログ見せて」「履歴」 → 処理履歴を表示\n"
-        "・「ポーリング開始/停止」 → 自動処理の制御\n"
-        "・「プレビュー」 → 登録前の仕訳内容を確認\n"
-    )
 
 
 # ============================================================
@@ -2243,7 +2083,7 @@ def changelog():
 # ============================================================
 # メール通知
 # ============================================================
-def send_notification_email(subject: str, body: str):
+def send_slack_notification(subject: str, body: str):
     """
     スケジュール実行結果をSlack Webhookで通知する。
     環境変数:
@@ -2417,7 +2257,7 @@ def _do_scheduled_run():
     subject_prefix = "⚠️ [要確認] " if has_error else "✅ "
     subject = f"{subject_prefix}本店経理自動化 日次実行レポート {now_str}"
 
-    send_notification_email(subject, body)
+    send_slack_notification(subject, body)
     logger.info(f"scheduled_run バックグラウンド処理完了: {now_str}")
 
 
@@ -2534,7 +2374,7 @@ def _do_payment_alert():
     body = "\n".join(lines)
     total_alert = len(unprocessed_near_due) + len(alert_near_due)
     subject = f"⚠️ [総合振込アラート] 支払期日5日以内の未処理取引が{total_alert}件あります {now_str}"
-    send_notification_email(subject, body)
+    send_slack_notification(subject, body)
     logger.info(f"総合振込アラートSlack通知送信完了: {total_alert}件")
 
 
@@ -2653,6 +2493,9 @@ def api_healthcheck():
 # ============================================================
 def _scheduled_job():
     """APSchedulerから毎日12:00 JSTに呼ばれるジョブ"""
+    if _is_manually_stopped():
+        logger.info("[APScheduler] FREEE_AUTO_STOPPED=1 のため定期実行をスキップ")
+        return
     logger.info("[APScheduler] 定期実行開始")
     try:
         _do_scheduled_run()

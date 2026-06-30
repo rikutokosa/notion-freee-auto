@@ -158,7 +158,7 @@
     <div class="func-rule-card">
       <div class="func-rule-card-header">
         <span style="font-size:22px;">🔁</span>
-        <h3>転記実行の停止・再開ルール</h3>
+        <h3>転記実行の停止ルール</h3>
       </div>
       <div class="func-rule-card-body">
         <table class="rules-table">
@@ -167,16 +167,12 @@
           </thead>
           <tbody>
             <tr>
-              <td>「転記停止」ボタン</td>
-              <td>メモリ内フラグ（<code>FREEE_AUTO_STOPPED=1</code>）を立てて停止。<strong>プロセス再起動後は環境変数の初期値に戻る。</strong></td>
-            </tr>
-            <tr>
-              <td>「転記開始」ボタン</td>
-              <td>停止フラグを解除して強制開始（<code>force=True</code>）。</td>
+              <td>Railway環境変数 <code>FREEE_AUTO_STOPPED=1</code></td>
+              <td>APSchedulerの定期実行（毎日12:00 JST）をスキップする。プロセス再起動後は環境変数の値で初期化される。</td>
             </tr>
             <tr>
               <td>freeeトークン期限切れ</td>
-              <td>転記をスキップしてログに警告を記録。認証後に自動再開。</td>
+              <td>転記をスキップしてログに警告を記録。<code>/auth/freee</code>から再認証する。</td>
             </tr>
           </tbody>
         </table>
@@ -807,7 +803,7 @@
             <tr><td><code>RAILWAY_VOLUME_MOUNT_PATH</code></td><td>トークンファイル保存先パス（デフォルト: /data）</td></tr>
             <tr><td><code>FREEE_AUTO_STOPPED</code></td><td>転記停止フラグ（1=停止、デフォルト: 0）</td></tr>
             <tr><td><code>SLACK_WEBHOOK_URL</code></td><td>Slack Incoming Webhook URL（自動転記・振込アラート等の通知先。設定済み）</td></tr>
-            <tr><td><code>SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / NOTIFY_TO</code></td><td>メール通知用（現在未使用。RailwayがSMTPポートをブロックしているため使用不可）</td></tr>
+
           </tbody>
         </table>
       </div>

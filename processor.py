@@ -147,6 +147,19 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         "errors": [],
     }
 
+
+    # idempotency チェック
+    from app import _get_db
+    conn = _get_db()
+    try:
+        existing = conn.execute("SELECT page_id FROM idempotency_keys WHERE page_id=?", (page_id,)).fetchone()
+        if existing:
+            result["status"] = "skip"
+            result["message"] = "既に登録済み（idempotency）"
+            return result
+    finally:
+        conn.close()
+
     try:
         # 仕訳データを構築
         journal = build_journal_entries(record)
@@ -244,6 +257,15 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["sales_id"] = reg_result["sales_id"]
                 result["purchase_id"] = reg_result["purchase_id"]
                 result["pca_id"] = reg_result["pca_id"]
+
+                # 成功したらidempotency_keysに記録
+                conn = _get_db()
+                try:
+                    conn.execute("INSERT OR IGNORE INTO idempotency_keys (page_id, registered_at) VALUES (?, ?)", (page_id, datetime.now().isoformat()))
+                    conn.commit()
+                finally:
+                    conn.close()
+
                 ok = mark_as_done(page_id, current_status,
                                   db_type=db_type,
                                   freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,

@@ -6,6 +6,20 @@ import os
 import json
 import time
 import requests
+
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+def _freee_request(method: str, url: str, **kwargs):
+    """freee APIへのリクエスト共通ラッパー。429/5xxで最大3回リトライ。"""
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST", "PATCH", "DELETE"])
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    resp = session.request(method, url, **kwargs)
+    resp.raise_for_status()
+    return resp
+
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -177,8 +191,7 @@ def _api_headers() -> dict:
 
 def get_account_items() -> list:
     """勘定科目一覧を取得する"""
-    resp = requests.get(
-        f"{FREEE_API_BASE}/account_items",
+    resp = _freee_request("GET", f"{FREEE_API_BASE}/account_items",
         headers=_api_headers(),
         params={"company_id": FREEE_COMPANY_ID},
         timeout=30,
@@ -193,8 +206,7 @@ def get_partners() -> list:
     offset = 0
     limit = 100
     while True:
-        resp = requests.get(
-            f"{FREEE_API_BASE}/partners",
+        resp = _freee_request("GET", f"{FREEE_API_BASE}/partners",
             headers=_api_headers(),
             params={"company_id": FREEE_COMPANY_ID, "limit": limit, "offset": offset},
             timeout=30,
@@ -213,8 +225,7 @@ def get_partners() -> list:
 def get_sections() -> list:
     """部門一覧を取得する（権限がない場合は空リストを返す）"""
     try:
-        resp = requests.get(
-            f"{FREEE_API_BASE}/sections",
+        resp = _freee_request("GET", f"{FREEE_API_BASE}/sections",
             headers=_api_headers(),
             params={"company_id": FREEE_COMPANY_ID},
             timeout=30,
@@ -230,8 +241,7 @@ def get_sections() -> list:
 def get_items() -> list:
     """品目一覧を取得する（権限がない場合は空リストを返す）"""
     try:
-        resp = requests.get(
-            f"{FREEE_API_BASE}/items",
+        resp = _freee_request("GET", f"{FREEE_API_BASE}/items",
             headers=_api_headers(),
             params={"company_id": FREEE_COMPANY_ID},
             timeout=30,
@@ -247,8 +257,7 @@ def get_items() -> list:
 def get_tags() -> list:
     """メモタグ一覧を取得する（権限がない場合は空リストを返す）"""
     try:
-        resp = requests.get(
-            f"{FREEE_API_BASE}/tags",
+        resp = _freee_request("GET", f"{FREEE_API_BASE}/tags",
             headers=_api_headers(),
             params={"company_id": FREEE_COMPANY_ID},
             timeout=30,
@@ -437,8 +446,7 @@ def create_deal(entry: dict, deal_type: str, cache: dict) -> dict:
     elif partner_name:
         payload["partner_name"] = partner_name
 
-    resp = requests.post(
-        f"{FREEE_API_BASE}/deals",
+    resp = _freee_request("POST", f"{FREEE_API_BASE}/deals",
         headers=_api_headers(),
         json=payload,
         timeout=30,
@@ -464,8 +472,7 @@ def delete_deal(deal_id: int) -> bool:
     """
     freeeの取引を削除する（入社前辞退時に使用）
     """
-    resp = requests.delete(
-        f"{FREEE_API_BASE}/deals/{deal_id}",
+    resp = _freee_request("DELETE", f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
         params={"company_id": FREEE_COMPANY_ID},
         timeout=30,
@@ -509,8 +516,7 @@ def create_partner(name: str, shortcut1: str = "") -> dict:
     }
     if shortcut1:
         payload["shortcut1"] = shortcut1
-    resp = requests.post(
-        f"{FREEE_API_BASE}/partners",
+    resp = _freee_request("POST", f"{FREEE_API_BASE}/partners",
         headers=_api_headers(),
         json=payload,
         timeout=30,
@@ -559,8 +565,7 @@ def search_deals(
         except Exception:
             pass  # 取引先マスタ取得失敗時はフィルタなしで全件取得
 
-    resp = requests.get(
-        f"{FREEE_API_BASE}/deals",
+    resp = _freee_request("GET", f"{FREEE_API_BASE}/deals",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -633,8 +638,7 @@ def search_invoices(
         except Exception:
             pass
 
-    resp = requests.get(
-        f"https://api.freee.co.jp/iv/invoices",
+    resp = _freee_request("GET", f"https://api.freee.co.jp/iv/invoices",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -770,8 +774,7 @@ def create_invoice(entry: dict, cache: dict) -> dict:
         f"billing_date={entry.get('issue_date')}, lines={len(lines)}件"
     )
 
-    resp = requests.post(
-        f"{FREEE_IV_BASE}/invoices",
+    resp = _freee_request("POST", f"{FREEE_IV_BASE}/invoices",
         headers=_api_headers(),
         json=payload,
         timeout=30,
@@ -828,8 +831,7 @@ def upload_receipt(
         data = {"company_id": str(FREEE_COMPANY_ID)}
         if description:
             data["description"] = description
-        resp = requests.post(
-            f"{FREEE_API_BASE}/receipts",
+        resp = _freee_request("POST", f"{FREEE_API_BASE}/receipts",
             headers=headers,
             files=files,
             data=data,
@@ -847,8 +849,7 @@ def upload_receipt(
 
     # 取引に紐付ける
     if deal_id and receipt_id:
-        link_resp = requests.post(
-            f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
+        link_resp = _freee_request("POST", f"{FREEE_API_BASE}/deals/{deal_id}/receipts",
             headers={**headers, "Content-Type": "application/json"},
             json={"company_id": FREEE_COMPANY_ID, "receipt_id": receipt_id},
             timeout=30,
@@ -953,8 +954,7 @@ def get_deal(deal_id: int) -> dict:
     """
     import logging
     logger = logging.getLogger(__name__)
-    resp = requests.get(
-        f"{FREEE_API_BASE}/deals/{deal_id}",
+    resp = _freee_request("GET", f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
         params={"company_id": FREEE_COMPANY_ID},
         timeout=30,
@@ -1022,8 +1022,7 @@ def list_deals(
         except Exception:
             pass
 
-    resp = requests.get(
-        f"{FREEE_API_BASE}/deals",
+    resp = _freee_request("GET", f"{FREEE_API_BASE}/deals",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -1087,16 +1086,14 @@ def get_account_item_balance(
     if account_item_id:
         params["account_item_id"] = account_item_id
 
-    resp = requests.get(
-        f"{FREEE_API_BASE}/reports/trial_bs",
+    resp = _freee_request("GET", f"{FREEE_API_BASE}/reports/trial_bs",
         headers=_api_headers(),
         params=params,
         timeout=30,
     )
     if resp.status_code != 200:
         # 損益計算書も試みる
-        resp2 = requests.get(
-            f"{FREEE_API_BASE}/reports/trial_pl",
+        resp2 = _freee_request("GET", f"{FREEE_API_BASE}/reports/trial_pl",
             headers=_api_headers(),
             params=params,
             timeout=30,
@@ -1140,8 +1137,7 @@ def list_invoices(
         except Exception:
             pass
 
-    resp = requests.get(
-        f"https://api.freee.co.jp/iv/invoices",
+    resp = _freee_request("GET", f"https://api.freee.co.jp/iv/invoices",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -1256,7 +1252,7 @@ def get_payment_deals(
     all_deals = []
     offset = 0
     while True:
-        resp = requests.get(f"{FREEE_API_BASE}/deals", headers=_api_headers(), params={
+        resp = _freee_request("GET", f"{FREEE_API_BASE}/deals", headers=_api_headers(), params={
             "company_id": FREEE_COMPANY_ID,
             "type": "expense",
             "payment_status": "unsettled",
@@ -1389,7 +1385,7 @@ def _get_partner_cached(partner_id: int) -> dict:
     import logging as _logging
     _logger = _logging.getLogger(__name__)
     try:
-        r = requests.get(f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
+        r = _freee_request("GET", f"{FREEE_API_BASE}/partners/{partner_id}", headers=_api_headers(),
                          params={"company_id": FREEE_COMPANY_ID}, timeout=15)
         if r.status_code == 200:
             partner = r.json().get("partner", {})
@@ -1483,7 +1479,7 @@ def add_furikomi_tag(deal_id: int) -> bool:
     Returns: True=成功, False=失敗
     """
     # 現在の仕訳詳細を取得してタグ一覧を確認
-    r = requests.get(f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
+    r = _freee_request("GET", f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
                      params={"company_id": FREEE_COMPANY_ID}, timeout=15)
     if r.status_code != 200:
         return False

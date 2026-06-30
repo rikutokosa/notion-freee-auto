@@ -34,57 +34,65 @@ _VOLUME_PATH = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "/data")
 _DB_PATH = os.path.join(_VOLUME_PATH, "chat_history.db")
 
 def _get_db():
-    """SQLite接続を返す。DBファイルが存在しない場合は作成する。"""
+    """SQLite接続のみ返す（テーブル作成は_init_dbで行う）"""
     os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(_DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS chat_sessions (
-            session_id TEXT NOT NULL,
-            seq        INTEGER NOT NULL,
-            role       TEXT NOT NULL,
-            content    TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            PRIMARY KEY (session_id, seq)
-        )
-    """)
-    # 運用ルール・メモテーブル
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS rules_notes (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            category   TEXT NOT NULL,
-            title      TEXT NOT NULL,
-            content    TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-        )
-    """)
-    # 実行ログ永続保存テーブル（自動転記・請求書照合・総合振込）
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS execution_logs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            log_type    TEXT NOT NULL,
-            executed_at TEXT NOT NULL,
-            trigger     TEXT NOT NULL DEFAULT 'manual',
-            summary     TEXT NOT NULL,
-            detail      TEXT NOT NULL DEFAULT '{}',
-            has_error   INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    # ジョブロックテーブル（複数ワーカー間の二重実行防止）
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS job_locks (
-            job_name   TEXT PRIMARY KEY,
-            locked_at  TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    return conn
+    return sqlite3.connect(_DB_PATH)
+
+def _init_db():
+    """起動時1回のみ呼ぶ。全テーブルを作成する。"""
+    conn = _get_db()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                session_id TEXT NOT NULL,
+                seq        INTEGER NOT NULL,
+                role       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (session_id, seq)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rules_notes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                category   TEXT NOT NULL,
+                title      TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS execution_logs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                log_type    TEXT NOT NULL,
+                executed_at TEXT NOT NULL,
+                trigger     TEXT NOT NULL DEFAULT 'manual',
+                summary     TEXT NOT NULL,
+                detail      TEXT NOT NULL DEFAULT '{}',
+                has_error   INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS job_locks (
+                job_name   TEXT PRIMARY KEY,
+                locked_at  TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS idempotency_keys (
+                page_id TEXT PRIMARY KEY,
+                registered_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _save_execution_log(log_type: str, summary: dict, detail: dict = None, trigger: str = 'manual', has_error: bool = False):
     """実行ログをSQLiteに永続保存する"""
-    from datetime import datetime, timezone, timedelta
     JST = timezone(timedelta(hours=9))
     executed_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
     conn = _get_db()
@@ -120,7 +128,16 @@ def _get_execution_logs(log_type: str, limit: int = 50):
         conn.close()
 
 
-from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file
+
+import requests
+import base64
+import csv
+import io
+import subprocess
+import hmac
+from collections import defaultdict, OrderedDict
+from datetime import datetime, date, timezone, timedelta
+from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file, Response
 
 from freee_client import (
     get_auth_url, exchange_code_for_token, get_valid_token,
@@ -131,10 +148,11 @@ from freee_client import (
     get_deal, update_deal, list_deals, get_account_item_balance,
     list_invoices, register_invoice_agent,
     resolve_partner_id,
+    get_payment_deals, add_furikomi_tag, FREEE_API_BASE, FREEE_COMPANY_ID, CSS_SECTION_IDS, FURIKOMI_TAG_ID, _find_section_id as _resolve_sec
 )
 from matcher import run_matching
 from payment import build_fb_file
-from notion_client import fetch_pending_records, get_record
+from notion_client import fetch_pending_records, get_record, PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
 from rules import build_journal_entries
 from processor import run_once, process_single_by_id, processing_log
 
@@ -297,9 +315,6 @@ def auth_freee_callback():
 @app.route("/run", methods=["POST"])
 def run_manual():
     """手動で全件処理を実行する"""
-    err = _require_admin()
-    if err:
-        return err
     data = request.get_json() or {}
     db_type = data.get("db_type", "all")
     dry_run = data.get("dry_run", False)
@@ -335,9 +350,6 @@ def run_manual():
 @app.route("/run/single", methods=["POST"])
 def run_single():
     """1件を処理する"""
-    err = _require_admin()
-    if err:
-        return err
     data = request.get_json() or {}
     page_id = data.get("page_id")
     db_type = data.get("db_type", "honten")
@@ -378,10 +390,24 @@ def api_pending():
         return jsonify({"error": str(e)}), 500
 
 
+
 @app.route("/api/logs")
 def api_logs():
     limit = int(request.args.get("limit", 100))
-    return jsonify({"logs": processing_log[:limit]})
+    logs_db = _get_execution_logs("auto_transfer", limit)
+
+    formatted_logs = []
+    for log in logs_db:
+        detail = log.get("detail", {})
+        results = detail.get("results", [])
+        for res in results:
+            formatted_logs.append({
+                "status": res.get("status"),
+                "time": log.get("executed_at"),
+                "message": res.get("message", "")
+            })
+
+    return jsonify({"logs": formatted_logs[:limit]})
 
 
 @app.route("/api/execution_logs")
@@ -393,7 +419,13 @@ def api_execution_logs():
     return jsonify({"logs": logs, "log_type": log_type})
 
 
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"}), 200
+
 @app.route("/api/status")
+
 def api_status():
     token_ok = False
     try:
@@ -414,9 +446,6 @@ def api_status():
 
 @app.route("/api/refresh_cache", methods=["POST"])
 def api_refresh_cache():
-    err = _require_admin()
-    if err:
-        return err
     clear_master_cache()
     return jsonify({"message": "マスタキャッシュをクリアしました"})
 
@@ -472,9 +501,6 @@ def api_match_preview():
 @app.route("/api/match/execute", methods=["POST"])
 def api_match_execute():
     """書類照合実行（dry_run=False）"""
-    err = _require_admin()
-    if err:
-        return err
     try:
         result = run_matching(dry_run=False)
         _save_execution_log(
@@ -549,7 +575,6 @@ def api_assistant_register():
 
         registered_ids = []
         from dateutil.relativedelta import relativedelta
-        from datetime import date
         base_date = date.fromisoformat(issue_date)
 
         count = repeat_count if repeat else 1
@@ -571,7 +596,6 @@ def api_assistant_register():
             registered_ids.append(deal.get("id"))
 
         # assistant_logに記録
-        from datetime import datetime as _dt
         for i, rid in enumerate(registered_ids):
             assistant_log.insert(0, {
                 "source": "assistant",
@@ -580,7 +604,7 @@ def api_assistant_register():
                 "partner_name": partner_name or "",
                 "deal_type": deal_type,
                 "amount": sum(d.get("amount", 0) for d in details),
-                "registered_at": _dt.now().strftime("%Y-%m-%d %H:%M"),
+                "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "note": "",
             })
         del assistant_log[200:]
@@ -604,7 +628,6 @@ def api_assistant_register_bulk():
             deal = create_deal(entry, deal_type, cache)
             registered_ids.append(deal.get("id"))
         # assistant_logに記録
-        from datetime import datetime as _dt2
         for entry_orig, rid in zip(entries, registered_ids):
             assistant_log.insert(0, {
                 "source": "assistant",
@@ -613,7 +636,7 @@ def api_assistant_register_bulk():
                 "partner_name": entry_orig.get("partner_name", ""),
                 "deal_type": entry_orig.get("deal_type", "income"),
                 "amount": sum(d.get("amount", 0) for d in entry_orig.get("details", [])),
-                "registered_at": _dt2.now().strftime("%Y-%m-%d %H:%M"),
+                "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "note": "",
             })
         del assistant_log[200:]
@@ -984,7 +1007,6 @@ def api_assistant_ai():
 
         # ツール実行関数
         def execute_tool(name, args):
-            from datetime import datetime as _dt3
 
             if name == "search_deals":
                 deals = search_deals(**args)
@@ -1111,7 +1133,6 @@ def api_assistant_ai():
                                 detail["tag_ids"] = [t["id"] for t in cur["tags"] if t.get("id")]
                         if d.get("section_name"):
                             # 「親部門：子部門」形式にも対応
-                            from freee_client import _find_section_id as _resolve_sec
                             sec_name = d["section_name"]
                             sec_id = _resolve_sec(sec_name, sections)
                             if sec_id:
@@ -1290,7 +1311,6 @@ def api_assistant_ai():
 @app.route("/api/assistant/search_delete", methods=["POST"])
 def api_assistant_search_delete():
     """削除对象の仕訳・請求書を検索してプレビューを返す"""
-    from freee_client import search_deals, search_invoices
     data = request.get_json() or {}
     action = data.get("action", {})
     partner_name = action.get("partner_name")
@@ -1300,7 +1320,6 @@ def api_assistant_search_delete():
     target = action.get("target", "both")
 
     # 日付範囲のデフォルト（今年度）
-    from datetime import date
     today = date.today()
     fiscal_start = f"{today.year}-04-01" if today.month >= 4 else f"{today.year - 1}-04-01"
     fiscal_end = f"{today.year + 1}-03-31" if today.month >= 4 else f"{today.year}-03-31"
@@ -1356,8 +1375,6 @@ def api_assistant_search_delete():
 @app.route("/api/assistant/execute_register", methods=["POST"])
 def api_assistant_execute_register():
     """AIが提案した仕訳をfreeeに登録する（ユーザー確認後に実行）"""
-    from freee_client import create_deal, get_master_cache
-    from datetime import datetime as _dt3
     data = request.get_json() or {}
     pending_registers = data.get("pending_registers", [])
     results = {"registered": [], "failed": []}
@@ -1401,7 +1418,7 @@ def api_assistant_execute_register():
                 "partner_name": deal_args.get("partner_name", ""),
                 "deal_type": deal_type,
                 "amount": sum(d.get("amount", 0) for d in deal_args.get("details", [])),
-                "registered_at": _dt3.now().strftime("%Y-%m-%d %H:%M"),
+                "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "note": "AI登録（確認後）",
             })
             del assistant_log[200:]
@@ -1422,7 +1439,6 @@ def api_assistant_execute_register():
 @app.route("/api/assistant/execute_delete", methods=["POST"])
 def api_assistant_execute_delete():
     """仕訳・請求書を実際に削除する（請求書はcancelを使用）"""
-    from freee_client import delete_deal, delete_invoice
     data = request.get_json() or {}
     deal_ids = data.get("deal_ids", [])
     invoice_ids = data.get("invoice_ids", [])
@@ -1479,15 +1495,19 @@ def api_upload_receipt():
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
             file.save(tmp.name)
-            receipt = upload_receipt(
-                tmp.name,
-                deal_id=int(deal_id) if deal_id else None,
-                description=description,
-            )
+            tmp_path = tmp.name
+        receipt = upload_receipt(
+            tmp_path,
+            deal_id=int(deal_id) if deal_id else None,
+            description=description,
+        )
         return jsonify({"status": "ok", "receipt_id": receipt.get("id")})
     except Exception as e:
         logger.exception("証憑アップロードエラー")
         return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 # ============================================================
@@ -1589,10 +1609,15 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
             texts = []
             for img in images:
                 img_path = path + '_page.png'
-                img.save(img_path, 'PNG')
-                t = _ocr_image_with_openai(img_path)
-                if t:
-                    texts.append(t)
+                try:
+                    img.save(img_path, 'PNG')
+                    t = _ocr_image_with_openai(img_path)
+                    if t:
+                        texts.append(t)
+                finally:
+                    import os
+                    if os.path.exists(img_path):
+                        os.unlink(img_path)
             return '\n'.join(texts)[:8000]
         except Exception:
             pass
@@ -1685,13 +1710,10 @@ def api_payment_preview():
     }
     """
     try:
-        from freee_client import get_payment_deals
-        from collections import defaultdict
         result = get_payment_deals(months_back=3, alert_days=10)
 
         # transfer_targets を due_date × partner_name でグループ化（同じ期日・同じ取引先はまとめる）
         # 構造: {due_date: {partner_name: {amount, deal_ids, section_names}}}
-        from collections import OrderedDict
         grouped: dict = OrderedDict()  # due_date -> {partner_name -> entry}
         for t in result.get("transfer_targets", []):
             due = t.get("due_date") or "unknown"
@@ -1754,9 +1776,6 @@ def api_payment_generate_fb():
     """
     振込対象仕訳から全銀FBファイルを生成してダウンロードさせる
     """
-    err = _require_admin()
-    if err:
-        return err
     data = request.get_json() or {}
     transfer_date = data.get("transfer_date")  # YYYYMMDD
     deal_ids = data.get("deal_ids")  # 選択した仕訳IDリスト（Noneなら全件）
@@ -1765,7 +1784,6 @@ def api_payment_generate_fb():
         transfer_date = datetime.now().strftime("%Y%m%d")
 
     try:
-        from freee_client import get_payment_deals
         result = get_payment_deals(months_back=3, alert_days=10)
         targets = result["transfer_targets"]
 
@@ -1825,14 +1843,10 @@ def api_payment_confirm_fb():
     対象仕訳に「振込依頼済」タグを付与する。
     generate_fb と分離することで、ファイルダウンロードとタグ付与を独立に制御できる。
     """
-    err = _require_admin()
-    if err:
-        return err
     data = request.get_json() or {}
     deal_ids = data.get("deal_ids")  # タグ付与対象の仕訳IDリスト
     if not deal_ids:
         return jsonify({"error": "deal_ids が必要です"}), 400
-    from freee_client import add_furikomi_tag
     tag_results = {}
     for did in deal_ids:
         ok = add_furikomi_tag(did)
@@ -1860,7 +1874,6 @@ def api_receipt_download(receipt_id: int):
     """
     inline = request.args.get("inline", "0") == "1"
     try:
-        from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID
         token = get_valid_token()
         # まず証憑メタ情報を取得してファイル名を得る
         meta_resp = requests.get(
@@ -2005,8 +2018,8 @@ def api_list_chat_sessions():
 @app.route("/rules")
 def rules_page():
     """ルールブック: 機能ルール（rules.py）+ 変更履歴（GitHub API）"""
-    from rules import RULES
 
+    from rules import RULES
     return render_template(
         "rules.html",
         rules=RULES,
@@ -2018,11 +2031,11 @@ def api_rules_html(tab_id):
     """rules_tabs.htmlの指定タブのHTMLフラグメントを返す（index.htmlのインラインルール表示用）
     rules_tabs.htmlは base.htmlをextendsしない独立ファイルなので、リクエストコンテキスト外でもレンダリング可能。
     """
-    from bs4 import BeautifulSoup
     try:
         # rules_tabs.htmlを直接レンダリング（base.htmlに依存しない）
         from rules import RULES
         rendered = render_template("rules_tabs.html", rules=RULES)
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(rendered, "html.parser")
         tab_div = soup.find("div", {"id": tab_id})
         if not tab_div:
@@ -2053,7 +2066,6 @@ def changelog():
             timeout=10,
         )
         if resp.status_code == 200:
-            from datetime import datetime, timezone, timedelta
             JST = timezone(timedelta(hours=9))
             for commit in resp.json():
                 raw_date = commit.get("commit", {}).get("author", {}).get("date", "")
@@ -2127,9 +2139,6 @@ def scheduled_run():
     3. 結果をSlackで通知
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
-    err = _require_admin()
-    if err:
-        return err
     def _run_in_background():
         _do_scheduled_run()
     t = threading.Thread(target=_run_in_background, daemon=True)
@@ -2141,7 +2150,6 @@ def _do_scheduled_run():
     """
     scheduled_run の実処理（バックグラウンドスレッドで実行）
     """
-    from datetime import datetime, timezone, timedelta
     JST = timezone(timedelta(hours=9))
     now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
@@ -2277,9 +2285,6 @@ def scheduled_payment_alert():
     支払期日5日以内に振込データがダウンロードされていない取引を検出し、Slack通知する。
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
-    err = _require_admin()
-    if err:
-        return err
     if _is_manually_stopped():
         return jsonify({"status": "skipped", "message": "FREEE_AUTO_STOPPED=1 のため実行をスキップしました"}), 200
     def _run_in_background():
@@ -2293,7 +2298,6 @@ def _do_payment_alert():
     """
     payment_alert の実処理（バックグラウンドスレッドで実行）
     """
-    from freee_client import get_payment_deals
     JST = timezone(timedelta(hours=9))
     now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
@@ -2403,7 +2407,6 @@ def api_healthcheck():
 
     # --- freee部門IDの検証 ---
     try:
-        from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID, CSS_SECTION_IDS
         token = get_valid_token()
         resp = requests.get(
             f"{FREEE_API_BASE}/sections",
@@ -2427,7 +2430,6 @@ def api_healthcheck():
 
     # --- freee振込依頼済タグIDの検証 ---
     try:
-        from freee_client import FURIKOMI_TAG_ID
         resp = requests.get(
             f"{FREEE_API_BASE}/tags",
             headers={"Authorization": f"Bearer {token}"},
@@ -2449,7 +2451,6 @@ def api_healthcheck():
 
     # --- Notionステータス検証 ---
     try:
-        from notion_client import PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
         notion_token = os.environ.get("NOTION_TOKEN", "")
         notion_db_honten = os.environ.get("NOTION_DB_ID_HONTEN", "")
         notion_db_pca = os.environ.get("NOTION_DB_ID_PCA", "")
@@ -2501,7 +2502,6 @@ def api_healthcheck():
 # ============================================================
 def _acquire_job_lock(job_name: str, ttl_seconds: int = 3600) -> bool:
     """ジョブロックを取得する。成功した場合True、既にロック中の場合False。"""
-    from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     expires = now + timedelta(seconds=ttl_seconds)
     conn = _get_db()
@@ -2567,7 +2567,8 @@ def _start_scheduler():
 
 
 # gunicornのworker起動時に実行（__main__以外でも動作する）
-_scheduler = _start_scheduler()
+_scheduler = _init_db()
+_start_scheduler()
 
 
 # ============================================================

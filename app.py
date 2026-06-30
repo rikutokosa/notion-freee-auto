@@ -2277,7 +2277,20 @@ def scheduled_run():
     毎日昼12時のスケジュール実行エンドポイント。
     1. 自動転記（run_once）を実行
     2. 請求書照合（run_matching）を実行
-    3. 結果をメールで通知
+    3. 結果をSlackで通知
+    バックグラウンドスレッドで非同期実行し、即座に202を返す。
+    """
+    import threading
+    def _run_in_background():
+        _do_scheduled_run()
+    t = threading.Thread(target=_run_in_background, daemon=True)
+    t.start()
+    return jsonify({"status": "accepted", "message": "スケジュール実行をバックグラウンドで開始しました"}), 202
+
+
+def _do_scheduled_run():
+    """
+    scheduled_run の実処理（バックグラウンドスレッドで実行）
     """
     from datetime import datetime, timezone, timedelta
     JST = timezone(timedelta(hours=9))
@@ -2403,13 +2416,7 @@ def scheduled_run():
     subject = f"{subject_prefix}本店経理自動化 日次実行レポート {now_str}"
 
     send_notification_email(subject, body)
-
-    return jsonify({
-        "status": "ok",
-        "has_error": has_error,
-        "report": body,
-        "executed_at": now_str,
-    })
+    logger.info(f"scheduled_run バックグラウンド処理完了: {now_str}")
 
 
 # ============================================================
@@ -2418,8 +2425,20 @@ def scheduled_run():
 @app.route("/api/payment_alert", methods=["POST"])
 def scheduled_payment_alert():
     """
-    毎日昼12時のスケジュール実行エンドポイント。
-    支払期日5日以内に振込データがダウンロードされていない取引を検出し、メール通知する。
+    支払期日5日以内に振込データがダウンロードされていない取引を検出し、Slack通知する。
+    バックグラウンドスレッドで非同期実行し、即座に202を返す。
+    """
+    import threading
+    def _run_in_background():
+        _do_payment_alert()
+    t = threading.Thread(target=_run_in_background, daemon=True)
+    t.start()
+    return jsonify({"status": "accepted", "message": "振込アラートをバックグラウンドで開始しました"}), 202
+
+
+def _do_payment_alert():
+    """
+    payment_alert の実処理（バックグラウンドスレッドで実行）
     """
     from datetime import datetime, timezone, timedelta
     from freee_client import get_payment_deals
@@ -2430,30 +2449,24 @@ def scheduled_payment_alert():
         result = get_payment_deals(months_back=3, alert_days=5)
     except Exception as e:
         logger.exception("総合振込アラート取得エラー")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return
 
     transfer_targets = result.get("transfer_targets", [])
     alert_targets = result.get("alert_targets", [])
 
-    # 支払期日5日以内に迫る振込対象（証憑あり・口座登録済み）で振込データ未ダウンロードのもの
-    # ※ 「振込データ未ダウンロード」の判定: 「振込依頼済」タグが付いていない = 未処理
     unprocessed_near_due = [
         t for t in transfer_targets
         if t.get("days_until_due") is not None and t["days_until_due"] <= 5
     ]
-
-    # アラート対象（証憑なし or 口座未登録）で支払期日5日以内
     alert_near_due = [
         t for t in alert_targets
         if t.get("days_until_due") is not None and t["days_until_due"] <= 5
     ]
 
-    # アラートが不要な場合はメール送信しない
     if not unprocessed_near_due and not alert_near_due:
         logger.info("総合振込アラート: 対象なし")
-        return jsonify({"status": "ok", "message": "アラート対象なし", "alert_count": 0})
+        return
 
-    # メール本文作成
     lines = []
     lines.append("本店経理自動化システム 総合振込アラート")
     lines.append(f"実行日時: {now_str} JST")
@@ -2509,6 +2522,8 @@ def scheduled_payment_alert():
                 lines.append(f"    支払期日: {due}（あと{days}日）")
             lines.append(f"    金額: {amount:,}円")
             lines.append(f"    対応部門: {sections}")
+            if deal_id != "-":
+                lines.append(f"    仕訳: https://secure.freee.co.jp/deals#deal_id={deal_id}")
             lines.append("")
 
     lines.append("-" * 50)
@@ -2517,17 +2532,8 @@ def scheduled_payment_alert():
     body = "\n".join(lines)
     total_alert = len(unprocessed_near_due) + len(alert_near_due)
     subject = f"⚠️ [総合振込アラート] 支払期日5日以内の未処理取引が{total_alert}件あります {now_str}"
-
     send_notification_email(subject, body)
     logger.info(f"総合振込アラートSlack通知送信完了: {total_alert}件")
-
-    return jsonify({
-        "status": "ok",
-        "alert_count": total_alert,
-        "unprocessed_near_due": len(unprocessed_near_due),
-        "alert_near_due": len(alert_near_due),
-        "executed_at": now_str,
-    })
 
 
 # ============================================================

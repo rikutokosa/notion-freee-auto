@@ -12,7 +12,6 @@ Notionの②経理対応待ちレコードを取得し、freeeに登録する
 """
 import logging
 from datetime import datetime
-from typing import Optional
 
 from notion_client import (
     fetch_pending_records,
@@ -28,6 +27,7 @@ from notion_client import (
     FREEE_STATUS_INVOICE_SUCCESS,
 )
 from rules import build_journal_entries, _extract_props
+from app import _get_db
 from freee_client import (
     register_journal,
     register_invoice_and_deal,
@@ -118,6 +118,27 @@ def _build_invoice_entry(journal: dict, props: dict) -> dict:
     }
 
 
+
+import json as _json
+
+def _idem_save(page_id: str, action: str, freee_ids: dict):
+    """freee変更成功後にidempotency_keysへ記録する。"""
+    key = f"{page_id}:{action}"
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO idempotency_keys (key, page_id, action, status, freee_ids, created_at, updated_at)
+               VALUES (?, ?, ?, 'done', ?, datetime('now','localtime'), datetime('now','localtime'))
+               ON CONFLICT(key) DO UPDATE SET
+                   status=excluded.status,
+                   freee_ids=excluded.freee_ids,
+                   updated_at=excluded.updated_at""",
+            (key, page_id, action, _json.dumps(freee_ids, ensure_ascii=False))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 def process_record(record: dict, dry_run: bool = False) -> dict:
     """
     1件のNotionレコードを処理する
@@ -148,17 +169,21 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
     }
 
 
-    # idempotency チェック
-    from app import _get_db
-    conn = _get_db()
-    try:
-        existing = conn.execute("SELECT page_id FROM idempotency_keys WHERE page_id=?", (page_id,)).fetchone()
-        if existing:
-            result["status"] = "skip"
-            result["message"] = "既に登録済み（idempotency）"
-            return result
-    finally:
-        conn.close()
+    # idempotency チェック（page_id + action で重複防止）
+    # ここでは action が確定する前なので page_id のみで事前チェック
+    if not dry_run:
+        _idem_conn = _get_db()
+        try:
+            _idem_row = _idem_conn.execute(
+                "SELECT status FROM idempotency_keys WHERE page_id=? AND status IN ('processing','done')",
+                (page_id,)
+            ).fetchone()
+            if _idem_row:
+                result["status"] = "skip"
+                result["message"] = f"既に登録済み（idempotency: {_idem_row[0]}）"
+                return result
+        finally:
+            _idem_conn.close()
 
     try:
         # 仕訳データを構築
@@ -259,12 +284,11 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["pca_id"] = reg_result["pca_id"]
 
                 # 成功したらidempotency_keysに記録
-                conn = _get_db()
-                try:
-                    conn.execute("INSERT OR IGNORE INTO idempotency_keys (page_id, registered_at) VALUES (?, ?)", (page_id, datetime.now().isoformat()))
-                    conn.commit()
-                finally:
-                    conn.close()
+                _idem_save(page_id, "refund", {
+                    "sales_id": reg_result.get("sales_id"),
+                    "purchase_id": reg_result.get("purchase_id"),
+                    "pca_id": reg_result.get("pca_id"),
+                })
 
                 ok = mark_as_done(page_id, current_status,
                                   db_type=db_type,
@@ -373,6 +397,8 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = f"freee請求書登録は成功したが、Notion書き戻しに失敗（請求書ID={result['invoice_id']}）。手動確認が必要"
                 result["needs_manual_check"] = True
                 return result
+            # 成功したらidempotency_keysに記録
+            _idem_save(page_id, "send_invoice", {"invoice_id": result.get("invoice_id")})
             result["status"] = "success"
             msg_parts = [f"請求書(ID={result['invoice_id']})を登録しました"]
             if result.get("purchase_id"):
@@ -409,6 +435,8 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（仕入ID={result.get('purchase_id')}）。手動確認が必要"
                 result["needs_manual_check"] = True
                 return result
+            # 成功したらidempotency_keysに記録
+            _idem_save(page_id, "register_scout_only", {"purchase_id": result.get("purchase_id")})
             result["status"] = "success"
             result["message"] = (
                 f"スカウト手数料仕訳を登録しました "
@@ -445,6 +473,12 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（売上ID={result['sales_id']}, 仕入ID={result['purchase_id']}）。手動確認が必要"
                 result["needs_manual_check"] = True
             else:
+                # 成功したらidempotency_keysに記録
+                _idem_save(page_id, "register", {
+                    "sales_id": result.get("sales_id"),
+                    "purchase_id": result.get("purchase_id"),
+                    "pca_id": result.get("pca_id"),
+                })
                 result["status"] = "success"
                 result["message"] = (
                     f"仕訳を登録しました "

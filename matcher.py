@@ -19,17 +19,12 @@ freeeのファイルボックス（証憑ファイル）に登録された未照
 import logging
 import os
 import re
-import tempfile
 import requests
 from datetime import datetime, timedelta
 from typing import Optional
 
 from freee_client import (
-    FREEE_API_BASE,
-    FREEE_COMPANY_ID,
-    _api_headers,
-    get_valid_token,
-)
+    FREEE_API_BASE, FREEE_COMPANY_ID, _api_headers, )
 
 logger = logging.getLogger(__name__)
 

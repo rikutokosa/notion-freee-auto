@@ -7,20 +7,19 @@ import json
 import time
 import requests
 
-import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 def _freee_request(method: str, url: str, **kwargs):
     """freee APIへのリクエスト共通ラッパー。429/5xxで最大3回リトライ。"""
     session = requests.Session()
-    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST", "PATCH", "DELETE"])
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST", "PATCH", "DELETE", "PUT"])
     session.mount("https://", HTTPAdapter(max_retries=retry))
     resp = session.request(method, url, **kwargs)
     resp.raise_for_status()
     return resp
 
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -592,7 +591,7 @@ def delete_invoice(invoice_id: int) -> bool:
     """
     import logging
     logger = logging.getLogger(__name__)
-    resp = requests.put(
+    resp = _freee_request("PUT",
         f"{FREEE_IV_BASE}/invoices/{invoice_id}/cancel",
         headers=_api_headers(),
         json={"company_id": FREEE_COMPANY_ID},
@@ -638,7 +637,7 @@ def search_invoices(
         except Exception:
             pass
 
-    resp = _freee_request("GET", f"https://api.freee.co.jp/iv/invoices",
+    resp = _freee_request("GET", "https://api.freee.co.jp/iv/invoices",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -877,7 +876,7 @@ def send_invoice(invoice_id: int, contact_email: Optional[str] = None) -> dict:
     if contact_email:
         payload["partner_contact_email_to"] = contact_email
     logger.info(f"請求書送付リクエスト: invoice_id={invoice_id}, payload={payload}")
-    resp = requests.put(
+    resp = _freee_request("PUT",
         f"{FREEE_IV_BASE}/invoices/{invoice_id}",
         headers=_api_headers(),
         json=payload,
@@ -952,8 +951,6 @@ def get_deal(deal_id: int) -> dict:
     """
     freeeの仕訳（取引）を1件取得する
     """
-    import logging
-    logger = logging.getLogger(__name__)
     resp = _freee_request("GET", f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
         params={"company_id": FREEE_COMPANY_ID},
@@ -973,7 +970,7 @@ def update_deal(deal_id: int, update_fields: dict) -> dict:
     logger = logging.getLogger(__name__)
     payload = {"company_id": FREEE_COMPANY_ID}
     payload.update(update_fields)
-    resp = requests.put(
+    resp = _freee_request("PUT",
         f"{FREEE_API_BASE}/deals/{deal_id}",
         headers=_api_headers(),
         json={"deal": payload},
@@ -1137,7 +1134,7 @@ def list_invoices(
         except Exception:
             pass
 
-    resp = _freee_request("GET", f"https://api.freee.co.jp/iv/invoices",
+    resp = _freee_request("GET", "https://api.freee.co.jp/iv/invoices",
         headers=_api_headers(),
         params=params,
         timeout=30,
@@ -1516,7 +1513,7 @@ def add_furikomi_tag(deal_id: int) -> bool:
         "details": put_details,
         "tag_ids": new_tag_ids,
     }
-    put_r = requests.put(f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
+    put_r = _freee_request("PUT", f"{FREEE_API_BASE}/deals/{deal_id}", headers=_api_headers(),
                          json={"deal": payload}, timeout=15)
     if put_r.status_code != 200:
         import logging

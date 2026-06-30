@@ -649,7 +649,7 @@ def build_journal_entries(record: dict) -> dict:
             return base
 
         base["action"] = "send_invoice"
-        base["message"] = f"入社済: 請求書を送付します（freee請求書IDが必要）"
+        base["message"] = "入社済: 請求書を送付します（freee請求書IDが必要）"
         base["needs_invoice"] = True
         return base
 

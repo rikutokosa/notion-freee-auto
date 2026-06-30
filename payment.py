@@ -5,9 +5,6 @@ SBIネット銀行 総合振込対応
 仕様: 全国銀行協会 総合振込フォーマット（固定長テキスト）
 """
 import os
-import re
-from datetime import datetime
-from typing import Optional
 
 from freee_client import get_partner_bank
 
@@ -113,7 +110,6 @@ def build_fb_file(transfer_targets: list, transfer_date: str) -> tuple:
     if missing:
         raise ValueError(f"FBファイル生成に必要な環境変数が未設定です: {', '.join(missing)}")
     lines = []
-    today = datetime.now()
 
     # ヘッダーの振込指定日：対象仕訳の最も早いdue_dateを使用（なければtransfer_dateを使用）
     due_dates = [t.get("due_date", "") for t in transfer_targets if t.get("due_date")]
@@ -169,14 +165,6 @@ def build_fb_file(transfer_targets: list, transfer_date: str) -> tuple:
         if amount <= 0:
             skipped.append({"deal_id": t.get("deal_id"), "reason": "金額0以下"})
             continue
-
-        # 振込指定日は各仕訳の決済期日（due_date）を使用。未設定の場合はヘッダーの日付で代用
-        due_date_raw = t.get("due_date", "") or ""
-        if due_date_raw and len(due_date_raw) == 10:
-            # YYYY-MM-DD → MMDD
-            record_transfer_date = due_date_raw[5:7] + due_date_raw[8:10]
-        else:
-            record_transfer_date = transfer_date[4:8]  # ヘッダーの日付で代用
 
         account_name = _to_halfkana(bank.get("account_name", ""))
 

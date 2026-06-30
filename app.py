@@ -20,7 +20,6 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime
 import tempfile
 from pathlib import Path
 import sqlite3
@@ -82,8 +81,13 @@ def _init_db():
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS idempotency_keys (
-                page_id TEXT PRIMARY KEY,
-                registered_at TEXT NOT NULL
+                key         TEXT PRIMARY KEY,
+                page_id     TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'processing',
+                freee_ids   TEXT NOT NULL DEFAULT '{}',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )
         """)
         conn.commit()
@@ -135,7 +139,7 @@ import csv
 import io
 import subprocess
 import hmac
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 from datetime import datetime, date, timezone, timedelta
 from flask import Flask, render_template, request, redirect, jsonify, url_for, send_file, Response
 
@@ -145,14 +149,14 @@ from freee_client import (
     create_deal, upload_receipt, create_partner,
     search_deals, search_invoices, delete_deal, delete_invoice,
     # エージェント拡張ツール
-    get_deal, update_deal, list_deals, get_account_item_balance,
+    get_deal, update_deal, list_deals,
     list_invoices, register_invoice_agent,
     resolve_partner_id,
     get_payment_deals, add_furikomi_tag, FREEE_API_BASE, FREEE_COMPANY_ID, CSS_SECTION_IDS, FURIKOMI_TAG_ID, _find_section_id as _resolve_sec
 )
 from matcher import run_matching
 from payment import build_fb_file
-from notion_client import fetch_pending_records, get_record, PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
+from notion_client import fetch_pending_records, PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
 from rules import build_journal_entries
 from processor import run_once, process_single_by_id, processing_log
 
@@ -174,18 +178,36 @@ app.secret_key = _secret if _secret else os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
 # ============================================================
-# 管理者API認証
+# Basic認証
 # ============================================================
-ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN", "")
+_BASIC_USER = os.environ.get("BASIC_AUTH_USER", "")
+_BASIC_PASS = os.environ.get("BASIC_AUTH_PASSWORD", "")
 
+# 認証免除パス（前方一致）
+_PUBLIC_PREFIXES = ("/auth/freee", "/static/")
+# 認証免除パス（完全一致）
+_PUBLIC_EXACT = ("/health",)
 
-def _require_admin():
-    """実行系APIの認証。ADMIN_API_TOKENが設定されている場合はリクエストヘッダを検証する。"""
-    if not ADMIN_API_TOKEN:
-        return None  # 未設定の場合は認証スキップ（開発・移行期間の互換性）
-    token = request.headers.get("X-Admin-Token") or request.args.get("admin_token")
-    if token != ADMIN_API_TOKEN:
-        return jsonify({"error": "unauthorized"}), 401
+@app.before_request
+def _basic_auth_guard():
+    """全エンドポイントにBasic認証を適用する。/health・/auth/freee・/static/ のみ免除。"""
+    path = request.path
+    if path in _PUBLIC_EXACT or path.startswith(_PUBLIC_PREFIXES):
+        return None
+    if not (_BASIC_USER and _BASIC_PASS):
+        return Response("Basic auth not configured", 500)
+    auth = request.authorization
+    ok = (
+        bool(auth)
+        and hmac.compare_digest(auth.username or "", _BASIC_USER)
+        and hmac.compare_digest(auth.password or "", _BASIC_PASS)
+    )
+    if not ok:
+        return Response(
+            "Unauthorized",
+            401,
+            {"WWW-Authenticate": 'Basic realm="notion-freee"'},
+        )
     return None
 
 # ============================================================
@@ -664,8 +686,6 @@ def api_assistant_ai():
         today = date.today()
         today_str = today.strftime("%Y年%m月%d日")
         fiscal_year = today.year if today.month >= 4 else today.year - 1
-        fiscal_start = f"{fiscal_year}-04-01"
-        fiscal_end = f"{fiscal_year + 1}-03-31"
         last_month = today.month - 1 if today.month > 1 else 12
         last_month_year = today.year if today.month > 1 else today.year - 1
 
@@ -1100,7 +1120,6 @@ def api_assistant_ai():
                     account_items = cache.get("account_items", [])
                     sections = cache.get("sections", [])
                     # 親部門を除外（取引に設定できない）: parent_idがNone/0のものは親部門
-                    child_sections = [s for s in sections if s.get("parent_id")]
                     current_details = current.get("details", [])
                     new_details = []
                     for idx, d in enumerate(args["details"]):
@@ -1290,8 +1309,7 @@ def api_assistant_ai():
 
         # 登録確認待ちがある場合はAIの「登録しました」メッセージを上書き
         if pending_registers:
-            count = len(pending_registers)
-            final_reply = f"以下の内容でfreeeに登録します。内容を確認してください。"
+            final_reply = "以下の内容でfreeeに登録します。内容を確認してください。"
 
         return jsonify({
             "reply": final_reply,
@@ -1520,7 +1538,6 @@ def api_extract_file():
     対応形式: PDF, 画像(PNG/JPG), Excel(xlsx/xls), CSV
     """
     files = request.files.getlist('files')
-    user_message = request.form.get('message', '')
     logger.info(f"extract_file: {len(files)}件のファイルを受信")
     if not files or all(f.filename == '' for f in files):
         return jsonify({"contents": []})
@@ -1529,6 +1546,7 @@ def api_extract_file():
     for file in files:
         filename = file.filename
         suffix = Path(filename).suffix.lower()
+        tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 file.save(tmp.name)
@@ -1540,6 +1558,9 @@ def api_extract_file():
         except Exception as e:
             logger.exception(f"ファイル読み取りエラー: {filename}")
             contents.append(f"【{filename}】読み取りエラー: {str(e)}")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     return jsonify({"contents": contents})
 
@@ -1930,7 +1951,7 @@ def api_get_chat_history(session_id):
         conn.close()
         messages = [{"role": r[0], "content": r[1]} for r in rows]
         return jsonify({"session_id": session_id, "messages": messages})
-    except Exception as e:
+    except Exception:
         logger.exception("chat_history取得エラー")
         return jsonify({"session_id": session_id, "messages": []})
 
@@ -2007,7 +2028,7 @@ def api_list_chat_sessions():
                 "first_user_msg": (r[4] or "")[:80],
             })
         return jsonify({"sessions": sessions})
-    except Exception as e:
+    except Exception:
         logger.exception("chat_sessions一覧取得エラー")
         return jsonify({"sessions": []})
 
@@ -2154,7 +2175,7 @@ def _do_scheduled_run():
     now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
     lines = []
-    lines.append(f"本店経理自動化システム 日次実行レポート")
+    lines.append("本店経理自動化システム 日次実行レポート")
     lines.append(f"実行日時: {now_str} JST")
     lines.append("=" * 50)
 
@@ -2303,7 +2324,7 @@ def _do_payment_alert():
 
     try:
         result = get_payment_deals(months_back=3, alert_days=5)
-    except Exception as e:
+    except Exception:
         logger.exception("総合振込アラート取得エラー")
         return
 
@@ -2567,8 +2588,8 @@ def _start_scheduler():
 
 
 # gunicornのworker起動時に実行（__main__以外でも動作する）
-_scheduler = _init_db()
-_start_scheduler()
+_init_db()
+_scheduler = _start_scheduler()
 
 
 # ============================================================

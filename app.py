@@ -953,11 +953,11 @@ def api_assistant_ai():
                     "description": "指定したIDの仕訳を削除する。必ず事前にsearch_dealsで対象を検索し、その検索結果に含まれる実際のid値のみを使用すること。実在しないダミーID（1,2,3など）を渡してはいけない。",
                     "parameters": {
                         "type": "object",
-                        "required": ["deal_ids", "confirmation_message"],
+                        "required": ["deal_ids", "deals_detail", "confirmation_message"],
                         "properties": {
                             "deal_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する仕訳IDのリスト。search_dealsの結果から取得した実際のid値のみ使用すること。"},
-                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会社Stellifyの2026年9月以降の仕訳を削除します。」"},
-                            "deals_detail": {"type": "array", "description": "search_dealsで取得した仕訳の詳細情報。各要素はid/issue_date/amount/partner_nameを含む。", "items": {"type": "object"}},
+                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会示Stelliifyの2026年9月以降の仕訳を削除します。」"},
+                            "deals_detail": {"type": "array", "description": "search_dealsで取得した仕訳の詳細情報。必ずsearch_dealsの結果をそのまま渡すこと。各要素はid/issue_date/amount/partner_nameを含む。", "items": {"type": "object"}},
                         },
                     },
                 },
@@ -969,10 +969,11 @@ def api_assistant_ai():
                     "description": "指定したIDの請求書を削除する。必ず事前にsearch_invoicesで対象を検索し、その検索結果に含まれる実際のid値のみを使用すること。実在しないダミーID（1,2,3など）を渡してはいけない。",
                     "parameters": {
                         "type": "object",
-                        "required": ["invoice_ids", "confirmation_message"],
+                        "required": ["invoice_ids", "invoices_detail", "confirmation_message"],
                         "properties": {
                             "invoice_ids": {"type": "array", "items": {"type": "integer"}, "description": "削除する請求書IDのリスト。search_invoicesの結果から取得した実際のid値のみ使用すること。"},
-                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会社Stellifyの2026年9月以降の請求書を取消します。」"},
+                            "confirmation_message": {"type": "string", "description": "削除対象の説明文。「　を削除します。」という形式で記述すること。決して「削除しました」と過去形にしないこと。例：「株式会示Stelliifyの2026年9月以降の請求書を取消します。」"},
+                            "invoices_detail": {"type": "array", "description": "search_invoicesで取得した請求書の詳細情報。必ずsearch_invoicesの結果をそのまま渡すこと。各要素はid/billing_date/total_amount/invoice_numberを含む。", "items": {"type": "object"}},
                         },
                     },
                 },
@@ -1312,12 +1313,13 @@ def api_assistant_ai():
                 }, ensure_ascii=False)
 
             elif name == "delete_invoices":
-                # 後方互換性のため残存
                 invoice_ids = args["invoice_ids"]
+                # AIがinvoices_detailを渡してきた場合はそれを使用、なければIDのみ
+                invoices_detail = args.get("invoices_detail") or [{"id": iid} for iid in invoice_ids]
                 return _json.dumps({
                     "status": "pending_confirmation",
                     "invoice_ids": invoice_ids,
-                    "invoices_detail": [{"id": iid} for iid in invoice_ids],
+                    "invoices_detail": invoices_detail,
                     "message": args.get("confirmation_message", "")
                 }, ensure_ascii=False)
 

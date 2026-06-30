@@ -1452,14 +1452,14 @@ async function sendAiMessage() {
           replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">仕訳 ${pd.deals_detail.length}件:</div>
             <table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">
             <tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">日付</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">取引先</th></tr>`;
-          pd.deals_detail.forEach(d => { replyHtml += `<tr><td style="padding:3px 8px;">${d.issue_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${d.amount?d.amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${d.partner_name||'-'}</td></tr>`; });
+          [...pd.deals_detail].sort((a,b)=>(a.issue_date||'').localeCompare(b.issue_date||'')).forEach(d => { replyHtml += `<tr><td style="padding:3px 8px;">${d.issue_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${d.amount?d.amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${d.partner_name||'-'}</td></tr>`; });
           replyHtml += `</table>`;
         }
         if ((pd.invoices_detail||[]).length > 0) {
           replyHtml += `<div style="font-size:12px;font-weight:bold;color:#555;margin-bottom:4px;">請求書 ${pd.invoices_detail.length}件:</div>
             <table style="font-size:12px;border-collapse:collapse;width:100%;margin-bottom:8px;">
             <tr style="background:#f0f0f0;"><th style="padding:3px 8px;text-align:left;">請求日</th><th style="padding:3px 8px;text-align:right;">金額</th><th style="padding:3px 8px;text-align:left;">請求書番号</th></tr>`;
-          pd.invoices_detail.forEach(inv => { replyHtml += `<tr><td style="padding:3px 8px;">${inv.billing_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${inv.total_amount?inv.total_amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${inv.invoice_number||'-'}</td></tr>`; });
+          [...pd.invoices_detail].sort((a,b)=>(a.billing_date||'').localeCompare(b.billing_date||'')).forEach(inv => { replyHtml += `<tr><td style="padding:3px 8px;">${inv.billing_date||'-'}</td><td style="padding:3px 8px;text-align:right;">${inv.total_amount?inv.total_amount.toLocaleString()+'円':'-'}</td><td style="padding:3px 8px;">${inv.invoice_number||'-'}</td></tr>`; });
           replyHtml += `</table>`;
         }
         const pdJson = JSON.stringify(pd).replace(/"/g, '&quot;');

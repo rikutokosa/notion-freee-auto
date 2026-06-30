@@ -23,7 +23,7 @@
 | GitHubリポジトリ | https://github.com/rikutokosa/notion-freee-auto |
 | ホスティング | Railway（main ブランチ push → 自動デプロイ） |
 | 通知 | Slack Incoming Webhook（`SLACK_WEBHOOK_URL` 環境変数に設定済み） |
-| スケジュール実行 | 毎日12:00 JST（03:00 UTC）。`/api/scheduled_run` → `/api/payment_alert` の順 |
+| スケジュール実行 | 毎日12:00 JST（Asia/Tokyo）。**APScheduler**（app.py内蔵）が `_do_scheduled_run` → `_do_payment_alert` を順次実行。Manusスケジューラは無効化済み。 |
 | freee事業所ID | 1856949 |
 
 > RailwayはSMTPポートをブロックしているためメール通知は使用不可。通知はSlack Webhookのみ。
@@ -100,6 +100,7 @@
 | 2026-06-26 | 振込漏れリスク | `/api/payment_alert` エンドポイントを追加 |
 | 2026-06-27 | 定期実行が機能していない | manus-configでスケジュール設定（run-as-new-task） |
 | 2026-06-29 | スケジュール実行後に通知が来ない | `runMode: ask_user` → `run-as-new-task` に変更 |
+| 2026-06-30 | 12時のSlack通知が届かない（4回目） | `scheduled_run`/`payment_alert` を非同期化（バックグラウンドスレッド）。さらにAPSchedulerをapp.pyに組み込みManusスケジューラを廃止。 |
 | 2026-06-29 | 振込アラートで「本日期限」が誤表示 | `datetime.now()` → JST基準 `datetime.now(JST)` に修正 |
 | 2026-06-29 | 要対応アラートが振込未処理より下に表示 | 表示順序を修正（要対応→振込未処理の順） |
 | 2026-06-29 | 要確認の詳細がSlackに出力されない | `[要確認詳細]` セクションを追加 |

@@ -371,7 +371,6 @@ def api_status():
         token_ok = True
     except Exception:
         pass
-    import os
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     return jsonify({
         "token_ok": token_ok,
@@ -593,22 +592,18 @@ def api_assistant_register_bulk():
 @app.route("/api/assistant/ai", methods=["POST"])
 def api_assistant_ai():
     """自然言語指示をFunction Calling対応のAIエージェントで処理する"""
-    import os, json as _json, re
-    from datetime import date as _date
     data = request.get_json() or {}
     user_message = data.get("message", "")
     history = data.get("history", [])
     master = data.get("master", {})
 
     try:
-        import requests as req
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         openai_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
         if not openai_key:
             return jsonify({"error": "OpenAI APIキーが設定されていません"}), 500
-
         # 現在日付・年度情報
-        today = _date.today()
+        today = date.today()
         today_str = today.strftime("%Y年%m月%d日")
         fiscal_year = today.year if today.month >= 4 else today.year - 1
         fiscal_start = f"{fiscal_year}-04-01"
@@ -989,7 +984,7 @@ def api_assistant_ai():
                     _partners_map = {p["id"]: p["name"] for p in _cache.get("partners", []) if p.get("id")}
                 except Exception:
                     _partners_map = {}
-                return _json.dumps([
+                return json.dumps([
                     {"id": d["id"], "issue_date": d.get("issue_date"),
                      "partner_name": _partners_map.get(d.get("partner_id")) or d.get("partner_name") or "",
                      "amount": d.get("amount"), "type": d.get("type")}
@@ -998,7 +993,7 @@ def api_assistant_ai():
 
             elif name == "search_invoices":
                 invoices = search_invoices(**args)
-                return _json.dumps([
+                return json.dumps([
                     {"id": inv["id"],
                      "billing_date": inv.get("billing_date"),
                      "issue_date": inv.get("issue_date"),
@@ -1010,7 +1005,7 @@ def api_assistant_ai():
 
             elif name == "list_deals":
                 result = list_deals(**args)
-                return _json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False)
 
             elif name == "list_invoices":
                 result = list_invoices(
@@ -1019,16 +1014,16 @@ def api_assistant_ai():
                     end_billing_date=args.get("end_billing_date"),
                     invoice_status=args.get("invoice_status"),
                 )
-                return _json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False)
 
             elif name == "get_deal":
                 deal = get_deal(args["deal_id"])
-                return _json.dumps(deal, ensure_ascii=False)
+                return json.dumps(deal, ensure_ascii=False)
 
             elif name == "register_deal":
                 # 即時登録せず確認待ちとして返す
                 deal_type = args.get("deal_type", "expense")
-                return _json.dumps({
+                return json.dumps({
                     "status": "pending_register",
                     "deal_args": args,
                     "deal_type": deal_type,
@@ -1043,7 +1038,7 @@ def api_assistant_ai():
                     title=args.get("title", "請求書"),
                     memo=args.get("memo", ""),
                 )
-                return _json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
+                return json.dumps({"status": "ok", "id": result.get("id")}, ensure_ascii=False)
 
             elif name == "update_deal":
                 deal_id = args.pop("deal_id")
@@ -1139,22 +1134,22 @@ def api_assistant_ai():
                         for d in current.get("details", [])
                     ]
                 result = update_deal(deal_id, update_fields)
-                return _json.dumps({"status": "ok", "id": deal_id, "message": f"仕訳ID {deal_id} を更新しました"}, ensure_ascii=False)
+                return json.dumps({"status": "ok", "id": deal_id, "message": f"仕訳ID {deal_id} を更新しました"}, ensure_ascii=False)
 
             elif name == "execute_delete_deal":
                 result = execute_delete_deal(args["deal_id"])
-                return _json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False)
 
             elif name == "execute_delete_invoice":
                 result = execute_delete_invoice(args["invoice_id"])
-                return _json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False)
 
             elif name == "delete_deals":
                 # AIがsearch_dealsで取得した詳細情報を直接使う
                 deal_ids = args["deal_ids"]
                 # AIがdeals_detailを渡してきた場合はそれを使用、なければIDのみ
                 deals_detail = args.get("deals_detail") or [{"id": did} for did in deal_ids]
-                return _json.dumps({
+                return json.dumps({
                     "status": "pending_confirmation",
                     "deal_ids": deal_ids,
                     "deals_detail": deals_detail,
@@ -1165,7 +1160,7 @@ def api_assistant_ai():
                 invoice_ids = args["invoice_ids"]
                 # AIがinvoices_detailを渡してきた場合はそれを使用、なければIDのみ
                 invoices_detail = args.get("invoices_detail") or [{"id": iid} for iid in invoice_ids]
-                return _json.dumps({
+                return json.dumps({
                     "status": "pending_confirmation",
                     "invoice_ids": invoice_ids,
                     "invoices_detail": invoices_detail,
@@ -1177,7 +1172,7 @@ def api_assistant_ai():
                     name=args["name"],
                     shortcut1=args.get("shortcut1", ""),
                 )
-                return _json.dumps({
+                return json.dumps({
                     "status": "ok",
                     "id": partner.get("id"),
                     "name": partner.get("name"),
@@ -1200,7 +1195,7 @@ def api_assistant_ai():
         for loop_count in range(15):  # 最大15回ループ
             # リトライ付きAPI呼び出し（429エラー対策）
             for _retry in range(4):
-                resp = req.post(
+                resp = requests.post(
                     f"{openai_base}/chat/completions",
                     headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
                     json={"model": "gpt-4o", "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.1},
@@ -1226,7 +1221,7 @@ def api_assistant_ai():
             # 各ツールを実行
             for tc in msg["tool_calls"]:
                 fn_name = tc["function"]["name"]
-                fn_args = _json.loads(tc["function"]["arguments"])
+                fn_args = json.loads(tc["function"]["arguments"])
                 tool_result = execute_tool(fn_name, fn_args)
                 messages.append({
                     "role": "tool",
@@ -1235,7 +1230,7 @@ def api_assistant_ai():
                 })
 
                 # 削除・登録待機中の場合はフロントに渡す
-                result_obj = _json.loads(tool_result)
+                result_obj = json.loads(tool_result)
                 if isinstance(result_obj, dict):
                     if result_obj.get("status") == "pending_confirmation":
                         if "deal_ids" in result_obj:
@@ -1530,11 +1525,8 @@ def api_extract_file():
 
 def _extract_file_text(path: str, filename: str, suffix: str) -> str:
     """ファイルからテキストを抽出する"""
-    import subprocess
-
     # CSV
     if suffix == '.csv':
-        import csv
         rows = []
         with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
             reader = csv.reader(f)
@@ -1631,16 +1623,13 @@ def _extract_file_text(path: str, filename: str, suffix: str) -> str:
 
 
 def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
-    """OpenAI Vision APIで画像からテキストを抽出する
-    注意: OCRは必ず公式OpenAI APIを直接使用する。
-    OPENAI_API_BASEはサンドボックス専用プロキシの場合があり、Vision機能をサポートしない可能性があるため。
+    """OpenAI Vision APIで画像からテキストを抽出する。
+    OPENAI_VISION_API_BASEが設定されている場合はそちらを使用する。
+    未設定の場合は公式OpenAI APIを使用する（プロキシがVisionをサポートしない場合のフォールバック）。
     mime_override: 指定した場合はそのmimeタイプを使用（webp等のフォールバック用）
     """
-    import base64
-    import requests as req
     openai_key = os.environ.get("OPENAI_API_KEY", "")
-    # Vision用は常に公式OpenAI APIを使用（プロキシは使わない）
-    ocr_api_base = "https://api.openai.com/v1"
+    ocr_api_base = os.environ.get("OPENAI_VISION_API_BASE") or "https://api.openai.com/v1"
     if not openai_key:
         return ''
     try:
@@ -1655,7 +1644,7 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
             mime = 'image/webp'
         else:
             mime = 'image/jpeg'
-        resp = req.post(
+        resp = requests.post(
             f"{ocr_api_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
@@ -1764,14 +1753,12 @@ def api_payment_generate_fb():
     """
     振込対象仕訳から全銀FBファイルを生成してダウンロードさせる
     """
-    import io
     data = request.get_json() or {}
     transfer_date = data.get("transfer_date")  # YYYYMMDD
     deal_ids = data.get("deal_ids")  # 選択した仕訳IDリスト（Noneなら全件）
 
     if not transfer_date:
-        from datetime import datetime as _dt
-        transfer_date = _dt.now().strftime("%Y%m%d")
+        transfer_date = datetime.now().strftime("%Y%m%d")
 
     try:
         from freee_client import get_payment_deals
@@ -1848,13 +1835,12 @@ def api_receipt_download(receipt_id: int):
     ?inline=1 の場合はContent-Disposition: inline（プレビュー用）
     デフォルトはattachment（ダウンロード）
     """
-    import requests as req
     inline = request.args.get("inline", "0") == "1"
     try:
         from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID
         token = get_valid_token()
         # まず証憑メタ情報を取得してファイル名を得る
-        meta_resp = req.get(
+        meta_resp = requests.get(
             f"{FREEE_API_BASE}/receipts/{receipt_id}",
             headers={"Authorization": f"Bearer {token}"},
             params={"company_id": FREEE_COMPANY_ID},
@@ -1867,7 +1853,7 @@ def api_receipt_download(receipt_id: int):
         mime_type = receipt_meta.get("mime_type") or "application/octet-stream"
 
         # ファイル本体をダウンロード
-        dl_resp = req.get(
+        dl_resp = requests.get(
             f"{FREEE_API_BASE}/receipts/{receipt_id}/download",
             headers={"Authorization": f"Bearer {token}"},
             params={"company_id": FREEE_COMPANY_ID},
@@ -1996,7 +1982,6 @@ def api_list_chat_sessions():
 @app.route("/rules")
 def rules_page():
     """ルールブック: 機能ルール（rules.py）+ 変更履歴（GitHub API）"""
-    import requests as req
     from rules import RULES
 
     return render_template(
@@ -2031,7 +2016,6 @@ def api_rules_html(tab_id):
 @app.route("/changelog")
 def changelog():
     """変更履歴ページ（リポジトリ全体のコミット履歴）"""
-    import requests as req
     history = []
     try:
         github_repo = os.environ.get("GITHUB_REPO", "rikutokosa/notion-freee-auto")
@@ -2039,7 +2023,7 @@ def changelog():
         headers = {"Accept": "application/vnd.github.v3+json"}
         if github_token:
             headers["Authorization"] = f"Bearer {github_token}"
-        resp = req.get(
+        resp = requests.get(
             f"https://api.github.com/repos/{github_repo}/commits",
             headers=headers,
             params={"per_page": 100},
@@ -2089,8 +2073,6 @@ def send_slack_notification(subject: str, body: str):
     環境変数:
       SLACK_WEBHOOK_URL : Slack Incoming Webhook URL
     """
-    import requests as _requests
-
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL", "")
     if not slack_webhook_url:
         logger.error("Slack通知失敗: SLACK_WEBHOOK_URLが設定されていません")
@@ -2099,7 +2081,7 @@ def send_slack_notification(subject: str, body: str):
     try:
         # Slackのメッセージ本文を整形（コードブロックで読みやすく）
         slack_text = f"*{subject}*\n```{body}```"
-        resp = _requests.post(
+        resp = requests.post(
             slack_webhook_url,
             headers={"Content-Type": "application/json"},
             json={"text": slack_text},
@@ -2122,7 +2104,6 @@ def scheduled_run():
     3. 結果をSlackで通知
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
-    import threading
     def _run_in_background():
         _do_scheduled_run()
     t = threading.Thread(target=_run_in_background, daemon=True)
@@ -2270,7 +2251,8 @@ def scheduled_payment_alert():
     支払期日5日以内に振込データがダウンロードされていない取引を検出し、Slack通知する。
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
-    import threading
+    if _is_manually_stopped():
+        return jsonify({"status": "skipped", "message": "FREEE_AUTO_STOPPED=1 のため実行をスキップしました"}), 200
     def _run_in_background():
         _do_payment_alert()
     t = threading.Thread(target=_run_in_background, daemon=True)
@@ -2282,7 +2264,6 @@ def _do_payment_alert():
     """
     payment_alert の実処理（バックグラウンドスレッドで実行）
     """
-    from datetime import datetime, timezone, timedelta
     from freee_client import get_payment_deals
     JST = timezone(timedelta(hours=9))
     now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
@@ -2394,9 +2375,8 @@ def api_healthcheck():
     # --- freee部門IDの検証 ---
     try:
         from freee_client import get_valid_token, FREEE_API_BASE, FREEE_COMPANY_ID, CSS_SECTION_IDS
-        import requests as req
         token = get_valid_token()
-        resp = req.get(
+        resp = requests.get(
             f"{FREEE_API_BASE}/sections",
             headers={"Authorization": f"Bearer {token}"},
             params={"company_id": FREEE_COMPANY_ID},
@@ -2419,7 +2399,7 @@ def api_healthcheck():
     # --- freee振込依頼済タグIDの検証 ---
     try:
         from freee_client import FURIKOMI_TAG_ID
-        resp = req.get(
+        resp = requests.get(
             f"{FREEE_API_BASE}/tags",
             headers={"Authorization": f"Bearer {token}"},
             params={"company_id": FREEE_COMPANY_ID},
@@ -2441,7 +2421,6 @@ def api_healthcheck():
     # --- Notionステータス検証 ---
     try:
         from notion_client import PENDING_STATUSES_HONTEN, PENDING_STATUSES_PCA
-        import requests as req
         notion_token = os.environ.get("NOTION_TOKEN", "")
         notion_db_honten = os.environ.get("NOTION_DB_ID_HONTEN", "")
         notion_db_pca = os.environ.get("NOTION_DB_ID_PCA", "")
@@ -2453,7 +2432,7 @@ def api_healthcheck():
         ]:
             if not db_id or not notion_token:
                 continue
-            resp = req.post(
+            resp = requests.post(
                 f"https://api.notion.com/v1/databases/{db_id}",
                 headers={
                     "Authorization": f"Bearer {notion_token}",

@@ -8,8 +8,8 @@ echo "== git show --stat --oneline HEAD =="
 git show --stat --oneline HEAD
 
 echo ""
-echo "== git show HEAD -- requirements-dev.txt scripts/selfcheck.sh tests/ =="
-git show HEAD -- requirements-dev.txt scripts/selfcheck.sh tests/
+echo "== git show --stat --patch HEAD =="
+git show --stat --patch HEAD
 
 echo ""
 echo "== python3 -m pytest tests/ -vv =="

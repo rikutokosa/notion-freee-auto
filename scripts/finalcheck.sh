@@ -8,8 +8,12 @@ echo "== git show --stat --oneline HEAD =="
 git show --stat --oneline HEAD
 
 echo ""
-echo "== git show --stat --patch HEAD =="
-git show --stat --patch HEAD
+echo "== git diff --stat origin/main...HEAD =="
+git diff --stat origin/main...HEAD
+
+echo ""
+echo "== git diff origin/main...HEAD =="
+git diff origin/main...HEAD
 
 echo ""
 echo "== python3 -m pytest tests/ -vv =="

@@ -160,15 +160,19 @@ def _idem_save(key: str, page_id: str, action: str, freee_ids: dict):
     finally:
         conn.close()
 
-def _idem_error(key: str):
-    """例外・freee失敗時に status='error' に更新する（再実行可能にする）。"""
+def _idem_error(key: str, error_message: str = ""):
+    """例外・freee失敗時に status='error' に更新する（再実行可能にする）。
+    error_message は freee_ids の error フィールドとして記録する。
+    """
     conn = _get_db()
     try:
         conn.execute(
             """UPDATE idempotency_keys
-               SET status='error', updated_at=datetime('now','localtime')
+               SET status='error',
+                   freee_ids=json_patch(freee_ids, json_object('error', ?)),
+                   updated_at=datetime('now','localtime')
                WHERE key=? AND status='processing'""",
-            (key,)
+            (error_message[:500] if error_message else "", key)
         )
         conn.commit()
     finally:
@@ -258,15 +262,40 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         _idem_conn = _get_db()
         try:
             _idem_row = _idem_conn.execute(
-                "SELECT status FROM idempotency_keys WHERE key=? AND status IN ('processing','done')",
+                """SELECT status, updated_at FROM idempotency_keys
+                   WHERE key=? AND status IN ('processing','done')""",
                 (_idem_key_val,)
             ).fetchone()
         finally:
             _idem_conn.close()
         if _idem_row:
-            result["status"] = "skip"
-            result["message"] = f"既に登録済み（idempotency key={_idem_key_val}, status={_idem_row[0]}）"
-            return result
+            idem_status, idem_updated_at = _idem_row[0], _idem_row[1]
+            if idem_status == "done":
+                result["status"] = "skip"
+                result["message"] = f"既に登録済み（idempotency key={_idem_key_val}, status=done）"
+                return result
+            # status='processing' の場合：30分以上古ければ stale とみなし error 化して再実行
+            if idem_status == "processing":
+                try:
+                    from datetime import datetime as _dt
+                    updated = _dt.strptime(idem_updated_at, "%Y-%m-%d %H:%M:%S")
+                    age_minutes = (_dt.now() - updated).total_seconds() / 60
+                except Exception:
+                    age_minutes = 0
+                if age_minutes >= 30:
+                    logger.warning(
+                        f"[STALE] idempotency key={_idem_key_val} が {age_minutes:.1f}分 processing のまま。"
+                        f" stale とみなし error 化して再実行します。"
+                    )
+                    _idem_error(_idem_key_val, "stale: 30分以上 processing のまま残存")
+                    # error 化後は再実行するため skip しない（下の _idem_start で上書き）
+                else:
+                    result["status"] = "skip"
+                    result["message"] = (
+                        f"処理中（idempotency key={_idem_key_val}, status=processing, "
+                        f"updated={idem_updated_at}）。別プロセスが実行中か、前回が異常終了した可能性があります。"
+                    )
+                    return result
         # 処理開始を記録
         _idem_start(_idem_key_val, page_id, journal["action"])
 
@@ -283,7 +312,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             )
             if del_result["errors"]:
                 error_msg = " / ".join(del_result["errors"])
-                _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                 mark_as_error(page_id, error_msg)
                 result["status"] = "error"
                 result["message"] = error_msg
@@ -317,7 +346,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             )
             if reg_result["errors"]:
                 error_msg = " / ".join(reg_result["errors"])
-                _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                 mark_as_error(page_id, error_msg)
                 result["status"] = "error"
                 result["message"] = error_msg
@@ -355,7 +384,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             invoice_id = get_invoice_id_from_record(record)
             if not invoice_id:
                 error_msg = "freee請求書IDが見つかりません。本部確認済の処理で請求書が登録されているか確認してください。"
-                _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                 mark_as_error(page_id, error_msg)
                 result["status"] = "error"
                 result["message"] = error_msg
@@ -365,7 +394,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             send_result = send_invoice(invoice_id)
             if send_result.get("error"):
                 error_msg = send_result["error"]
-                _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                 mark_as_error(page_id, error_msg)
                 result["status"] = "error"
                 result["message"] = error_msg
@@ -403,7 +432,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             )
             if inv_result["errors"]:
                 error_msg = " / ".join(inv_result["errors"])
-                _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                 mark_as_error(page_id, error_msg)
                 result["status"] = "error"
                 result["message"] = error_msg
@@ -433,7 +462,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 if sub_errors:
                     # 請求書は登録済みだが仕入/PCAが失敗した場合はエラーとして記録
                     error_msg = f"請求書(ID={result['invoice_id']})登録済みだが: " + " / ".join(sub_errors)
-                    _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                    _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                     mark_as_error(page_id, error_msg)
                     result["status"] = "error"
                     result["message"] = error_msg
@@ -477,7 +506,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                     result["purchase_id"] = deal.get("id")
                 except Exception as e:
                     error_msg = f"スカウト手数料登録エラー: {str(e)}"
-                    _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+                    _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
                     mark_as_error(page_id, error_msg)
                     result["status"] = "error"
                     result["message"] = error_msg
@@ -513,7 +542,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         )
         if reg_result["errors"]:
             error_msg = " / ".join(reg_result["errors"])
-            _idem_error(_idem_key_val)  # processing → error（再実行可能に）
+            _idem_error(_idem_key_val, error_msg)  # processing → error（再実行可能に）
             mark_as_error(page_id, error_msg)
             result["status"] = "error"
             result["message"] = error_msg
@@ -551,7 +580,7 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         # 処理開始済みの場合は processing → error に更新（再実行可能にする）
         if _idem_key_val:
             try:
-                _idem_error(_idem_key_val)
+                _idem_error(_idem_key_val, error_msg[:500])
             except Exception:
                 pass
         if not dry_run:

@@ -31,10 +31,85 @@ from apscheduler.triggers.cron import CronTrigger
 # ============================================================
 from db import _get_db  # noqa: E402
 
+_IDEMPOTENCY_KEYS_REQUIRED_COLS = {"key", "page_id", "action", "status", "freee_ids", "created_at", "updated_at"}
+
+
+def _migrate_idempotency_keys(conn) -> None:
+    """
+    本番DB に旧 schema の idempotency_keys が存在する場合、安全に新 schema へ移行する。
+
+    手順:
+      1. PRAGMA table_info で現在のカラムを確認
+      2. 必要カラムが全て揃っていれば何もしない
+      3. 不足カラムがあれば旧テーブルを idempotency_keys_backup_YYYYMMDD_HHMMSS にリネーム
+      4. 新 schema で idempotency_keys を作成
+      5. schema_migrations テーブルに記録
+    """
+    import logging as _logging
+    _mig_logger = _logging.getLogger(__name__)
+
+    rows = conn.execute("PRAGMA table_info(idempotency_keys)").fetchall()
+    if not rows:
+        # テーブル未存在 → 新規作成は後続の CREATE TABLE IF NOT EXISTS に任せる
+        return
+
+    existing_cols = {r[1] for r in rows}
+    missing = _IDEMPOTENCY_KEYS_REQUIRED_COLS - existing_cols
+    if not missing:
+        _mig_logger.info("[DB migration] idempotency_keys schema OK（migration不要）")
+        return
+
+    # 旧 schema → backup にリネームして新 schema を作成
+    from datetime import datetime as _dt
+    backup_name = f"idempotency_keys_backup_{_dt.now().strftime('%Y%m%d_%H%M%S')}"
+    _mig_logger.warning(
+        f"[DB migration] idempotency_keys に不足カラム {missing} を検出。"
+        f" 旧テーブルを {backup_name} にリネームして新 schema を作成します。"
+    )
+    conn.execute(f"ALTER TABLE idempotency_keys RENAME TO {backup_name}")
+    conn.execute("""
+        CREATE TABLE idempotency_keys (
+            key         TEXT PRIMARY KEY,
+            page_id     TEXT NOT NULL,
+            action      TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'processing',
+            freee_ids   TEXT NOT NULL DEFAULT '{}',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    # schema_migrations テーブルが存在すれば記録
+    try:
+        conn.execute("""
+            INSERT OR IGNORE INTO schema_migrations (version, applied_at, description)
+            VALUES (?, datetime('now','localtime'), ?)
+        """, (
+            "20250101_idempotency_keys_v2",
+            f"旧 schema を {backup_name} にバックアップし新 schema を作成。不足カラム: {sorted(missing)}"
+        ))
+    except Exception:
+        pass
+    conn.commit()
+    _mig_logger.warning(f"[DB migration] idempotency_keys migration 完了。backup={backup_name}")
+
+
 def _init_db():
-    """起動時1回のみ呼ぶ。全テーブルを作成する。"""
+    """起動1回のみ呼ぶ。全テーブルを作成する。schema migration も実行する。"""
     conn = _get_db()
     try:
+        # schema_migrations テーブルを最初に作成（migration記録用）
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version    TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.commit()
+
+        # idempotency_keys の schema migration（旧 schema 対応）
+        _migrate_idempotency_keys(conn)
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 session_id TEXT NOT NULL,

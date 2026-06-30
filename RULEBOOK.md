@@ -192,8 +192,8 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 | `FREEE_CLIENT_ID` | freee OAuthクライアントID | コード内にハードコード |
 | `FREEE_CLIENT_SECRET` | freee OAuthクライアントシークレット | コード内にハードコード |
 | `FREEE_COMPANY_ID` | freee事業所ID | `1856949` |
-| `TOKEN_FILE` | freeeトークン保存先 | `/tmp/freee_token.json` |
-| `POLL_INTERVAL` | 自動ポーリング間隔（秒） | `3600`（1時間） |
+| `TOKEN_FILE` | freeeトークン保存先 | `/data/freee_token.json` |
+| `FREEE_AUTO_STOPPED` | 手動停止フラグ（`1`で停止） | `0` |
 | `APP_BASE_URL` | アプリのベースURL（OAuth redirect用） | なし |
 | `OPENAI_API_KEY` | OpenAI APIキー（AI仕訳提案用） | なし |
 | `OPENAI_API_BASE` | OpenAI APIベースURL | `https://api.openai.com/v1` |
@@ -215,8 +215,7 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 | GET | `/auth/freee/callback` | freee OAuth認証コールバック |
 | POST | `/run` | 手動で全件処理 |
 | POST | `/run/single` | 1件処理 |
-| POST | `/polling/start` | ポーリング開始 |
-| POST | `/polling/stop` | ポーリング停止 |
+| POST | `/api/payment_alert` | 振込アラートSlack通知 |
 | GET | `/api/pending` | 経理対応待ち一覧（JSON） |
 | GET | `/api/logs` | 処理ログ（JSON） |
 | GET | `/api/status` | システム状態（JSON） |
@@ -255,3 +254,4 @@ Notionの成約管理DBを監視し、「②経理対応待ち」ステータス
 |---|---|
 | 2026-06-17 | 初版作成。Notionステータス遷移・請求有無フィールド対応・●入社済ステータス処理・繰り返し登録説明・ファイル添付・AI自動仕訳提案機能を実装 |
 | 2026-06-29 | 振込アラートの除外ルールを追記。銀行連携済は freee APIで判別不可のため「振込依頼済」メモタグの手動付与で対応することを明記。 |
+| 2026-06-30 | スケジュール実行をManusスケジューラからAPScheduler（アプリ内蔵）に移行。毎日12:00 JSTに自動実行。ポーリングエンドポイント廃止。 |

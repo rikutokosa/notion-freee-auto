@@ -27,6 +27,8 @@ from datetime import datetime
 import tempfile
 from pathlib import Path
 import sqlite3
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # ============================================================
 # 会話履歴DB（ボリューム永続化）
@@ -2643,6 +2645,43 @@ def api_healthcheck():
         "checks": checks,
         "warnings": warnings,
     }), 200 if status == "healthy" else 200
+
+
+# ============================================================
+# APScheduler: アプリ内部スケジューラ（毎日12:00 JST = 03:00 UTC）
+# Manusのスケジューラに依存せず、gunicornプロセス内で確実に実行する
+# ============================================================
+def _scheduled_job():
+    """APSchedulerから毎日12:00 JSTに呼ばれるジョブ"""
+    logger.info("[APScheduler] 定期実行開始")
+    try:
+        _do_scheduled_run()
+    except Exception:
+        logger.exception("[APScheduler] scheduled_run エラー")
+    try:
+        _do_payment_alert()
+    except Exception:
+        logger.exception("[APScheduler] payment_alert エラー")
+    logger.info("[APScheduler] 定期実行完了")
+
+
+def _start_scheduler():
+    """gunicornのワーカープロセス起動時に一度だけスケジューラを開始する"""
+    scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
+    scheduler.add_job(
+        _scheduled_job,
+        trigger=CronTrigger(hour=12, minute=0, timezone="Asia/Tokyo"),
+        id="daily_auto_run",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()
+    logger.info("[APScheduler] スケジューラ起動: 毎日12:00 JSTに自動実行")
+    return scheduler
+
+
+# gunicornのworker起動時に実行（__main__以外でも動作する）
+_scheduler = _start_scheduler()
 
 
 # ============================================================

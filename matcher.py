@@ -68,8 +68,12 @@ AMOUNT_TOLERANCE = 0
 
 # 自動紐づけの最低スコア閾値（これ未満の候補は自動紐づけしない）
 # スコア基準: 日付最大50点 + 取引先名最大30点 = 最大80点
-# 40点以上: 日付が10日以内、または取引先名が一致している場合に相当
-MIN_SCORE_THRESHOLD = 40
+# 55点以上: 日付が10日以内 かつ 取引先名が一致している場合に相当
+MIN_SCORE_THRESHOLD = 55
+
+# 同スコア候補が複数あった場合に自動紐づけを許可する最大件数
+# 2件以上ある場合は自動紐づけせずunmatchedに回す
+MAX_AMBIGUOUS_CANDIDATES = 1
 
 
 # ============================================================
@@ -656,6 +660,67 @@ def run_matching(dry_run: bool = False) -> dict:
                 "receipt_id": receipt_id,
                 "description": description,
                 "reason": f"スコア不足（{best_score:.0f}点 < 閾値{MIN_SCORE_THRESHOLD}点）",
+                "amount": amount,
+                "issue_date": issue_date,
+                "partner_name": partner_name,
+                "best_score": best_score,
+                "best_deal_id": deal_id,
+                "best_deal_url": f"https://secure.freee.co.jp/deals#deal_id={deal_id}",
+                "used_ai_ocr": used_ai_ocr,
+            })
+            result["unmatched_count"] += 1
+            continue
+
+        # 取引先名不一致チェック: 取引先名が取れているのに一致しない場合は自動紐づけしない
+        receipt_partner_check = (receipt_meta.get("partner_name") or "").strip()
+        deal_partner_check = ((best_deal.get("partner") or {}).get("name") or "").strip()
+        if receipt_partner_check and deal_partner_check:
+            partner_match = (
+                receipt_partner_check == deal_partner_check
+                or receipt_partner_check in deal_partner_check
+                or deal_partner_check in receipt_partner_check
+            )
+            if not partner_match:
+                logger.info(f"書類ID={receipt_id}: 取引先不一致（書類={receipt_partner_check}, 仕訳={deal_partner_check}）のため自動紐づけスキップ")
+                result["unmatched"].append({
+                    "receipt_id": receipt_id,
+                    "description": description,
+                    "reason": f"取引先不一致（書類={receipt_partner_check} / 仕訳={deal_partner_check}）",
+                    "amount": amount,
+                    "issue_date": issue_date,
+                    "partner_name": partner_name,
+                    "best_score": best_score,
+                    "best_deal_id": deal_id,
+                    "used_ai_ocr": used_ai_ocr,
+                })
+                result["unmatched_count"] += 1
+                continue
+
+        # 同点候補が複数ある場合は自動紐づけしない（曖昧性排除）
+        top_score_candidates = [d for d, s in scored if s["total"] == best_score]
+        if len(top_score_candidates) > MAX_AMBIGUOUS_CANDIDATES:
+            logger.info(f"書類ID={receipt_id}: 同点候補{len(top_score_candidates)}件のため自動紐づけスキップ")
+            result["unmatched"].append({
+                "receipt_id": receipt_id,
+                "description": description,
+                "reason": f"同点候補が{len(top_score_candidates)}件あり曖昧（スコア{best_score:.0f}点）",
+                "amount": amount,
+                "issue_date": issue_date,
+                "partner_name": partner_name,
+                "best_score": best_score,
+                "candidates_count": len(top_score_candidates),
+                "used_ai_ocr": used_ai_ocr,
+            })
+            result["unmatched_count"] += 1
+            continue
+
+        # AI-OCRのみで取得した情報は信頼度が低いため自動紐づけしない
+        if used_ai_ocr:
+            logger.info(f"書類ID={receipt_id}: AI-OCR使用のため自動紐づけスキップ（スコア{best_score:.0f}点）")
+            result["unmatched"].append({
+                "receipt_id": receipt_id,
+                "description": description,
+                "reason": f"AI-OCR使用（スコア{best_score:.0f}点）: 手動確認が必要",
                 "amount": amount,
                 "issue_date": issue_date,
                 "partner_name": partner_name,

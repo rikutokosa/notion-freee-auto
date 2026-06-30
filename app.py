@@ -69,6 +69,14 @@ def _get_db():
             has_error   INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # ジョブロックテーブル（複数ワーカー間の二重実行防止）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS job_locks (
+            job_name   TEXT PRIMARY KEY,
+            locked_at  TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     return conn
 
@@ -143,8 +151,24 @@ logger = logging.getLogger(__name__)
 # Flask アプリ
 # ============================================================
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "notion-freee-secret-2026")
+_secret = os.environ.get("SECRET_KEY")
+app.secret_key = _secret if _secret else os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
+
+# ============================================================
+# 管理者API認証
+# ============================================================
+ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN", "")
+
+
+def _require_admin():
+    """実行系APIの認証。ADMIN_API_TOKENが設定されている場合はリクエストヘッダを検証する。"""
+    if not ADMIN_API_TOKEN:
+        return None  # 未設定の場合は認証スキップ（開発・移行期間の互換性）
+    token = request.headers.get("X-Admin-Token") or request.args.get("admin_token")
+    if token != ADMIN_API_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+    return None
 
 # ============================================================
 # 停止フラグ・通知ログ
@@ -273,6 +297,9 @@ def auth_freee_callback():
 @app.route("/run", methods=["POST"])
 def run_manual():
     """手動で全件処理を実行する"""
+    err = _require_admin()
+    if err:
+        return err
     data = request.get_json() or {}
     db_type = data.get("db_type", "all")
     dry_run = data.get("dry_run", False)
@@ -308,6 +335,9 @@ def run_manual():
 @app.route("/run/single", methods=["POST"])
 def run_single():
     """1件を処理する"""
+    err = _require_admin()
+    if err:
+        return err
     data = request.get_json() or {}
     page_id = data.get("page_id")
     db_type = data.get("db_type", "honten")
@@ -379,12 +409,14 @@ def api_status():
         "log_count": len(processing_log),
         "process_count": len(processing_log),
         "openai_key_set": bool(openai_key),
-        "openai_key_prefix": openai_key[:10] + "..." if openai_key else "",
     })
 
 
 @app.route("/api/refresh_cache", methods=["POST"])
 def api_refresh_cache():
+    err = _require_admin()
+    if err:
+        return err
     clear_master_cache()
     return jsonify({"message": "マスタキャッシュをクリアしました"})
 
@@ -440,6 +472,9 @@ def api_match_preview():
 @app.route("/api/match/execute", methods=["POST"])
 def api_match_execute():
     """書類照合実行（dry_run=False）"""
+    err = _require_admin()
+    if err:
+        return err
     try:
         result = run_matching(dry_run=False)
         _save_execution_log(
@@ -650,13 +685,15 @@ def api_assistant_ai():
 
 ## 1. 自律的な判断と実行
 - ユーザーの意図を汲み取り、必要なツールを自分で選択して実行する
-- 不明な点は推測して進める（ユーザーへの質問より行動を優先）
+- **不明な点は推測して進めない**。候補を列挙してユーザーに確認する。
+  例: 取引先名がマスタに完全一致しない場合→「候補: A社 / B社 / C社 — どれを使用しますか？」と質問する
 - 複数ステップが必要な場合は、ツールを連続して呼び出して完結させる
 - 「検索→確認→登録」「検索→集計→報告」など複合的な処理も自律的にこなす
 
 ## 2. 登録・更新処理
-- 取引先名・勘定科目名はマスタ一覧から最も近いものを推測して使用する
-  例: 「ステリファイ」→「stellify」、「売上」→「売上高」、「広告費」→「広告宣伝費」
+- 取引先名はマスタ一覧から**完全一致または候補1件に絞り込める場合のみ自動使用**する。複数候補がある場合は候補を列挙してユーザーに選ばせる。
+  例: 「売上」→「売上高」（完全一致）、「広告費」→「広告宣伝費」（完全一致）
+  例: 「ステリ」→候補が「stellify」「ステリス」の2件→「「stellify」「ステリス」のどちらですか？」と質問する
 - **ユーザーが勘定科目を明示的に指定した場合は、必ずその科目を使用する**。AIが「より適切」と判断しても勝手に変更しない。
   例: ユーザーが「前払費用で」と言ったら「前払費用」を使う（「地代家賃」に変えない）
 - 取引先がマスタに存在しない場合はcreate_partnerで自動作成してから登録する
@@ -1753,6 +1790,9 @@ def api_payment_generate_fb():
     """
     振込対象仕訳から全銀FBファイルを生成してダウンロードさせる
     """
+    err = _require_admin()
+    if err:
+        return err
     data = request.get_json() or {}
     transfer_date = data.get("transfer_date")  # YYYYMMDD
     deal_ids = data.get("deal_ids")  # 選択した仕訳IDリスト（Noneなら全件）
@@ -1778,19 +1818,8 @@ def api_payment_generate_fb():
         fb_bytes = fb_text.encode("shift_jis", errors="replace")
         filename = f"sogohurikomi_{transfer_date}.txt"
 
-        # FBファイル生成確定 → 対象仕訳に「振込依頼済」タグを付与
-        from freee_client import add_furikomi_tag
-        tag_results = {}
-        for t in targets:
-            did = t["deal_id"]
-            ok = add_furikomi_tag(did)
-            tag_results[did] = ok
-            if not ok:
-                logger.warning(f"振込依頼済タグ付与失敗: deal_id={did}")
-
-        tagged_count = sum(1 for v in tag_results.values() if v)
-        logger.info(f"振込依頼済タグ付与: {tagged_count}/{len(targets)}件")
-
+        # ファイル生成のみログを保存（タグ付与は /api/payment/confirm_fb で別途実行）
+        deal_ids_for_tag = [t["deal_id"] for t in targets]
         _save_execution_log(
             log_type="payment_fb",
             summary={
@@ -1798,7 +1827,7 @@ def api_payment_generate_fb():
                 "valid_count": summary["valid_count"],
                 "total_amount": summary["total_amount"],
                 "skipped_count": len(summary["skipped"]),
-                "tagged_count": tagged_count,
+                "deal_ids": deal_ids_for_tag,
             },
             detail={
                 "targets": [{"partner_name": t.get("partner_name",""), "amount": t.get("amount",0), "due_date": t.get("due_date","")} for t in targets],
@@ -1817,12 +1846,42 @@ def api_payment_generate_fb():
             "X-Transfer-Count": str(summary["valid_count"]),
             "X-Transfer-Amount": str(summary["total_amount"]),
             "X-Skipped-Count": str(len(summary["skipped"])),
-            "X-Tagged-Count": str(tagged_count),
+            "X-Deal-Ids": ",".join(str(d) for d in deal_ids_for_tag),
         }
     except Exception as e:
         logger.exception("FBファイル生成エラー")
         _save_execution_log(log_type="payment_fb", summary={"valid_count": 0, "total_amount": 0, "error_message": str(e)}, trigger="manual", has_error=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/payment/confirm_fb", methods=["POST"])
+def api_payment_confirm_fb():
+    """
+    FBファイルを銀行に持参し、振込完了を確認した後に呼び出すエンドポイント。
+    対象仕訳に「振込依頼済」タグを付与する。
+    generate_fb と分離することで、ファイルダウンロードとタグ付与を独立に制御できる。
+    """
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json() or {}
+    deal_ids = data.get("deal_ids")  # タグ付与対象の仕訳IDリスト
+    if not deal_ids:
+        return jsonify({"error": "deal_ids が必要です"}), 400
+    from freee_client import add_furikomi_tag
+    tag_results = {}
+    for did in deal_ids:
+        ok = add_furikomi_tag(did)
+        tag_results[did] = ok
+        if not ok:
+            logger.warning(f"振込依頼済タグ付与失敗: deal_id={did}")
+    tagged_count = sum(1 for v in tag_results.values() if v)
+    logger.info(f"振込依頼済タグ付与: {tagged_count}/{len(deal_ids)}件")
+    return jsonify({
+        "tagged_count": tagged_count,
+        "total": len(deal_ids),
+        "results": tag_results,
+    })
 
 
 # ============================================================
@@ -2104,6 +2163,9 @@ def scheduled_run():
     3. 結果をSlackで通知
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
+    err = _require_admin()
+    if err:
+        return err
     def _run_in_background():
         _do_scheduled_run()
     t = threading.Thread(target=_run_in_background, daemon=True)
@@ -2251,6 +2313,9 @@ def scheduled_payment_alert():
     支払期日5日以内に振込データがダウンロードされていない取引を検出し、Slack通知する。
     バックグラウンドスレッドで非同期実行し、即座に202を返す。
     """
+    err = _require_admin()
+    if err:
+        return err
     if _is_manually_stopped():
         return jsonify({"status": "skipped", "message": "FREEE_AUTO_STOPPED=1 のため実行をスキップしました"}), 200
     def _run_in_background():
@@ -2470,10 +2535,43 @@ def api_healthcheck():
 # APScheduler: アプリ内部スケジューラ（毎日12:00 JST = 03:00 UTC）
 # Manusのスケジューラに依存せず、gunicornプロセス内で確実に実行する
 # ============================================================
+def _acquire_job_lock(job_name: str, ttl_seconds: int = 3600) -> bool:
+    """ジョブロックを取得する。成功した場合True、既にロック中の場合False。"""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=ttl_seconds)
+    conn = _get_db()
+    try:
+        # 期限切れのロックを削除してから取得を試みる
+        conn.execute("DELETE FROM job_locks WHERE job_name=? AND expires_at < ?",
+                     (job_name, now.isoformat()))
+        conn.execute("INSERT INTO job_locks (job_name, locked_at, expires_at) VALUES (?, ?, ?)",
+                     (job_name, now.isoformat(), expires.isoformat()))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False  # 既にロック中
+    finally:
+        conn.close()
+
+
+def _release_job_lock(job_name: str):
+    """ジョブロックを解放する。"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM job_locks WHERE job_name=?", (job_name,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _scheduled_job():
     """APSchedulerから毎日12:00 JSTに呼ばれるジョブ"""
     if _is_manually_stopped():
         logger.info("[APScheduler] FREEE_AUTO_STOPPED=1 のため定期実行をスキップ")
+        return
+    if not _acquire_job_lock("daily_auto_run", ttl_seconds=7200):
+        logger.warning("[APScheduler] 別プロセスが実行中のためスキップ")
         return
     logger.info("[APScheduler] 定期実行開始")
     try:
@@ -2484,6 +2582,8 @@ def _scheduled_job():
         _do_payment_alert()
     except Exception:
         logger.exception("[APScheduler] payment_alert エラー")
+    finally:
+        _release_job_lock("daily_auto_run")
     logger.info("[APScheduler] 定期実行完了")
 
 

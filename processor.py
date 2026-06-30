@@ -213,11 +213,16 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = error_msg
                 result["errors"] = del_result["errors"]
             else:
-                mark_as_done(page_id, current_status,
-                             db_type=db_type,
-                             freee_status=FREEE_STATUS_SHIWAKE_SUCCESS)
-                result["status"] = "success"
-                result["message"] = "入社前辞退: 取引を削除しました"
+                ok = mark_as_done(page_id, current_status,
+                                  db_type=db_type,
+                                  freee_status=FREEE_STATUS_SHIWAKE_SUCCESS)
+                if not ok:
+                    result["status"] = "partial_error"
+                    result["message"] = "freee削除は成功したが、Notion書き戻しに失敗。手動確認が必要"
+                    result["needs_manual_check"] = True
+                else:
+                    result["status"] = "success"
+                    result["message"] = "入社前辞退: 取引を削除しました"
             return result
 
         # ============================================================
@@ -239,13 +244,18 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["sales_id"] = reg_result["sales_id"]
                 result["purchase_id"] = reg_result["purchase_id"]
                 result["pca_id"] = reg_result["pca_id"]
-                mark_as_done(page_id, current_status,
-                             db_type=db_type,
-                             freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
-                             sales_id=reg_result["sales_id"],
-                             purchase_id=reg_result["purchase_id"])
-                result["status"] = "success"
-                result["message"] = "返金マイナス仕訳を登録しました"
+                ok = mark_as_done(page_id, current_status,
+                                  db_type=db_type,
+                                  freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
+                                  sales_id=reg_result["sales_id"],
+                                  purchase_id=reg_result["purchase_id"])
+                if not ok:
+                    result["status"] = "partial_error"
+                    result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（売上ID={result['sales_id']}）。手動確認が必要"
+                    result["needs_manual_check"] = True
+                else:
+                    result["status"] = "success"
+                    result["message"] = "返金マイナス仕訳を登録しました"
             return result
 
         # ============================================================
@@ -270,12 +280,17 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["errors"] = [error_msg]
             else:
                 result["invoice_id"] = invoice_id
-                mark_as_done(page_id, current_status,
-                             db_type=db_type,
-                             freee_status=FREEE_STATUS_INVOICE_SUCCESS,
-                             invoice_id=invoice_id)
-                result["status"] = "success"
-                result["message"] = f"請求書(ID={invoice_id})を送付しました"
+                ok = mark_as_done(page_id, current_status,
+                                  db_type=db_type,
+                                  freee_status=FREEE_STATUS_INVOICE_SUCCESS,
+                                  invoice_id=invoice_id)
+                if not ok:
+                    result["status"] = "partial_error"
+                    result["message"] = f"freee請求書送付は成功したが、Notion書き戻しに失敗（請求書ID={invoice_id}）。手動確認が必要"
+                    result["needs_manual_check"] = True
+                else:
+                    result["status"] = "success"
+                    result["message"] = f"請求書(ID={invoice_id})を送付しました"
             return result
 
         # ============================================================
@@ -327,10 +342,15 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                     result["errors"] = sub_errors
                     return result
 
-            mark_as_done(page_id, current_status,
-                         db_type=db_type,
-                         freee_status=FREEE_STATUS_INVOICE_REGISTERED,
-                         invoice_id=result["invoice_id"])
+            ok = mark_as_done(page_id, current_status,
+                             db_type=db_type,
+                             freee_status=FREEE_STATUS_INVOICE_REGISTERED,
+                             invoice_id=result["invoice_id"])
+            if not ok:
+                result["status"] = "partial_error"
+                result["message"] = f"freee請求書登録は成功したが、Notion書き戻しに失敗（請求書ID={result['invoice_id']}）。手動確認が必要"
+                result["needs_manual_check"] = True
+                return result
             result["status"] = "success"
             msg_parts = [f"請求書(ID={result['invoice_id']})を登録しました"]
             if result.get("purchase_id"):
@@ -359,10 +379,15 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                     result["message"] = error_msg
                     result["errors"] = [error_msg]
                     return result
-            mark_as_done(page_id, current_status,
-                         db_type=db_type,
-                         freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
-                         purchase_id=result.get("purchase_id"))
+            ok = mark_as_done(page_id, current_status,
+                             db_type=db_type,
+                             freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
+                             purchase_id=result.get("purchase_id"))
+            if not ok:
+                result["status"] = "partial_error"
+                result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（仕入ID={result.get('purchase_id')}）。手動確認が必要"
+                result["needs_manual_check"] = True
+                return result
             result["status"] = "success"
             result["message"] = (
                 f"スカウト手数料仕訳を登録しました "
@@ -388,17 +413,22 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             result["sales_id"] = reg_result["sales_id"]
             result["purchase_id"] = reg_result["purchase_id"]
             result["pca_id"] = reg_result["pca_id"]
-            mark_as_done(page_id, current_status,
-                         db_type=db_type,
-                         freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
-                         sales_id=reg_result["sales_id"],
-                         purchase_id=reg_result["purchase_id"],
-                         pca_id=reg_result.get("pca_id"))
-            result["status"] = "success"
-            result["message"] = (
-                f"仕訳を登録しました "
-                f"(売上ID={result['sales_id']}, 仕入ID={result['purchase_id']})"
-            )
+            ok = mark_as_done(page_id, current_status,
+                              db_type=db_type,
+                              freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
+                              sales_id=reg_result["sales_id"],
+                              purchase_id=reg_result["purchase_id"],
+                              pca_id=reg_result.get("pca_id"))
+            if not ok:
+                result["status"] = "partial_error"
+                result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（売上ID={result['sales_id']}, 仕入ID={result['purchase_id']}）。手動確認が必要"
+                result["needs_manual_check"] = True
+            else:
+                result["status"] = "success"
+                result["message"] = (
+                    f"仕訳を登録しました "
+                    f"(売上ID={result['sales_id']}, 仕入ID={result['purchase_id']})"
+                )
 
     except Exception as e:
         logger.exception(f"[EXCEPTION] {phase}: {e}")

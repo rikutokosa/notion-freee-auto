@@ -4,6 +4,7 @@
 SBIネット銀行 総合振込対応
 仕様: 全国銀行協会 総合振込フォーマット（固定長テキスト）
 """
+import os
 import re
 from datetime import datetime
 from typing import Optional
@@ -11,14 +12,21 @@ from typing import Optional
 from freee_client import get_partner_bank
 
 # ============================================================
-# 依頼人情報（住信SBIネット銀行 法人口座）
+# 依頼人情報（環境変数から取得）
+# 必須環境変数:
+#   FB_REQUESTER_CODE          依頼人コード（10桁）
+#   FB_REQUESTER_NAME_KANA     依頼人名（半角カナ・最大20文字）
+#   FB_REQUESTER_BANK_CODE     銀行コード（4桁）
+#   FB_REQUESTER_BRANCH_CODE   支店コード（3桁）
+#   FB_REQUESTER_ACCOUNT_TYPE  口座種別（1=普通, 2=当座）
+#   FB_REQUESTER_ACCOUNT_NUMBER 口座番号（7桁）
 # ============================================================
-REQUESTER_CODE = "2010523001"       # 依頼人コード（10桁）住信SBIネット銀行
-REQUESTER_NAME_KANA = "ﾍﾞｱｰｽﾞﾅﾋﾞ"  # 依頼人名（カナ・半角20文字以内）
-REQUESTER_BANK_CODE = "0038"        # 住信SBIネット銀行
-REQUESTER_BRANCH_CODE = "106"       # 支店番号
-REQUESTER_ACCOUNT_TYPE = "1"        # 1=普通
-REQUESTER_ACCOUNT_NUMBER = "1356501"
+REQUESTER_CODE = os.environ.get("FB_REQUESTER_CODE", "")
+REQUESTER_NAME_KANA = os.environ.get("FB_REQUESTER_NAME_KANA", "")
+REQUESTER_BANK_CODE = os.environ.get("FB_REQUESTER_BANK_CODE", "")
+REQUESTER_BRANCH_CODE = os.environ.get("FB_REQUESTER_BRANCH_CODE", "")
+REQUESTER_ACCOUNT_TYPE = os.environ.get("FB_REQUESTER_ACCOUNT_TYPE", "1")
+REQUESTER_ACCOUNT_NUMBER = os.environ.get("FB_REQUESTER_ACCOUNT_NUMBER", "")
 
 
 # ============================================================
@@ -91,14 +99,19 @@ def _account_type_code(account_type: str) -> str:
 def build_fb_file(transfer_targets: list, transfer_date: str) -> tuple:
     """
     全銀フォーマット（FB形式）のテキストを生成する。
-
     Args:
         transfer_targets: get_payment_deals()の transfer_targets リスト
         transfer_date: ヘッダー用の振込日（YYYYMMDD形式）。各明細は due_date を使用。
-
     Returns:
         (fb_text, summary) のタプル
     """
+    missing = [v for v in [
+        "FB_REQUESTER_CODE", "FB_REQUESTER_NAME_KANA",
+        "FB_REQUESTER_BANK_CODE", "FB_REQUESTER_BRANCH_CODE",
+        "FB_REQUESTER_ACCOUNT_NUMBER",
+    ] if not os.environ.get(v)]
+    if missing:
+        raise ValueError(f"FBファイル生成に必要な環境変数が未設定です: {', '.join(missing)}")
     lines = []
     today = datetime.now()
 

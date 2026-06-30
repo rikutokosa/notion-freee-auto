@@ -29,13 +29,7 @@ from apscheduler.triggers.cron import CronTrigger
 # ============================================================
 # 会話履歴DB（ボリューム永続化）
 # ============================================================
-_VOLUME_PATH = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "/data")
-_DB_PATH = os.path.join(_VOLUME_PATH, "chat_history.db")
-
-def _get_db():
-    """SQLite接続のみ返す（テーブル作成は_init_dbで行う）"""
-    os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
-    return sqlite3.connect(_DB_PATH)
+from db import _get_db  # noqa: E402
 
 def _init_db():
     """起動時1回のみ呼ぶ。全テーブルを作成する。"""
@@ -181,7 +175,7 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 # Basic認証
 # ============================================================
 _BASIC_USER = os.environ.get("BASIC_AUTH_USER", "")
-_BASIC_PASS = os.environ.get("BASIC_AUTH_PASSWORD", "")
+_BASIC_PASS = os.environ.get("BASIC_AUTH_PASS", "")
 
 # 認証免除パス（前方一致）
 _PUBLIC_PREFIXES = ("/auth/freee", "/static/")

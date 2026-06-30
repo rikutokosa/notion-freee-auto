@@ -367,7 +367,6 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
         if journal["action"] == "register_scout_only":
             purchase_entry = journal.get("purchase_entry")
             if purchase_entry:
-                from freee_client import create_deal, get_master_cache
                 cache = get_master_cache()
                 try:
                     deal = create_deal(purchase_entry, "expense", cache)

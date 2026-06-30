@@ -202,40 +202,6 @@ def fetch_pending_records(db_type: str = "honten") -> list[dict]:
     return records
 
 
-def fetch_pending_manual_journal_records(db_type: str = "all") -> list[dict]:
-    """
-    freee処理状態が「請求登録成功（要仕訳転記）」のレコードを取得する
-    （freee管理画面で手動「取引登録」ボタンを押す必要があるレコード）
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    records = []
-
-    if db_type in ("honten", "all"):
-        try:
-            honten = _query_db_by_freee_status(
-                NOTION_DB_ID_HONTEN, FREEE_STATUS_INVOICE_REGISTERED
-            )
-            for r in honten:
-                r["_db_type"] = "honten"
-            records.extend(honten)
-        except Exception as e:
-            logger.error(f"本店CA DB(要仕訳転記)クエリ失敗: {e}")
-
-    if db_type in ("pca", "all"):
-        try:
-            pca = _query_db_by_freee_status(
-                NOTION_DB_ID_PCA, FREEE_STATUS_INVOICE_REGISTERED
-            )
-            for r in pca:
-                r["_db_type"] = "pca"
-            records.extend(pca)
-        except Exception as e:
-            logger.error(f"PCA DB(要仕訳転記)クエリ失敗: {e}")
-
-    return records
-
-
 def get_record(page_id: str) -> dict:
     """
     特定のページを取得する
@@ -296,35 +262,6 @@ def get_company_name(record: dict) -> str:
     except Exception:
         pass
     return ""
-
-
-def get_invoice_required(record: dict) -> bool:
-    """
-    レコードの「請求有無」フォーミュラプロパティを取得する
-    「要請求」の場合はTrue、「請求不要」またはその他の場合はFalseを返す
-    """
-    try:
-        props = record.get("properties", {})
-        field = props.get("請求有無", {})
-        field_type = field.get("type", "")
-
-        if field_type == "formula":
-            formula = field.get("formula", {})
-            ft = formula.get("type", "")
-            if ft == "string":
-                val = formula.get("string", "")
-                return val == "要請求"
-        elif field_type == "select":
-            sel = field.get("select")
-            if sel:
-                return sel.get("name", "") == "要請求"
-        elif field_type == "rich_text":
-            texts = field.get("rich_text", [])
-            val = "".join([x.get("plain_text", "") for x in texts])
-            return val == "要請求"
-    except Exception:
-        pass
-    return False
 
 
 def get_invoice_id_from_record(record: dict) -> Optional[int]:

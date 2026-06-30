@@ -19,6 +19,7 @@ import os
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 import tempfile
 from pathlib import Path
@@ -129,7 +130,6 @@ from freee_client import (
     # エージェント拡張ツール
     get_deal, update_deal, list_deals, get_account_item_balance,
     list_invoices, register_invoice_agent,
-    execute_delete_deal, execute_delete_invoice,
     resolve_partner_id,
 )
 from matcher import run_matching
@@ -879,7 +879,7 @@ def api_assistant_ai():
                             "start_issue_date": {"type": "string", "description": "発生日開始（YYYY-MM-DD）"},
                             "end_issue_date": {"type": "string", "description": "発生日終了（YYYY-MM-DD）"},
                             "deal_type": {"type": "string", "enum": ["income", "expense"], "description": "取引種別（income=収入, expense=支出）"},
-                            "limit": {"type": "integer", "description": "取得件数（最大10、デフォルト100）"},
+                            "limit": {"type": "integer", "description": "取得件数（最大100、デフォルト100）"},
                         },
                     },
                 },
@@ -898,34 +898,7 @@ def api_assistant_ai():
                     },
                 },
             },
-            {
-                "type": "function",
-                "function": {
-                    "name": "execute_delete_deal",
-                    "description": "仕訳1件を実際に削除する。必ず事前にユーザーの承認を得てから呼び出すこと。",
-                    "parameters": {
-                        "type": "object",
-                        "required": ["deal_id"],
-                        "properties": {
-                            "deal_id": {"type": "integer", "description": "削除する仕訳ID"},
-                        },
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "execute_delete_invoice",
-                    "description": "請求書1件を実際に取消する。必ず事前にユーザーの承認を得てから呼び出すこと。",
-                    "parameters": {
-                        "type": "object",
-                        "required": ["invoice_id"],
-                        "properties": {
-                            "invoice_id": {"type": "integer", "description": "取消する請求書ID"},
-                        },
-                    },
-                },
-            },
+
             {
                 "type": "function",
                 "function": {
@@ -1173,14 +1146,6 @@ def api_assistant_ai():
                 result = update_deal(deal_id, update_fields)
                 return json.dumps({"status": "ok", "id": deal_id, "message": f"仕訳ID {deal_id} を更新しました"}, ensure_ascii=False)
 
-            elif name == "execute_delete_deal":
-                result = execute_delete_deal(args["deal_id"])
-                return json.dumps(result, ensure_ascii=False)
-
-            elif name == "execute_delete_invoice":
-                result = execute_delete_invoice(args["invoice_id"])
-                return json.dumps(result, ensure_ascii=False)
-
             elif name == "delete_deals":
                 # AIがsearch_dealsで取得した詳細情報を直接使う
                 deal_ids = args["deal_ids"]
@@ -1235,11 +1200,10 @@ def api_assistant_ai():
                 resp = requests.post(
                     f"{openai_base}/chat/completions",
                     headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
-                    json={"model": "gpt-4o", "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.1},
+                    json={"model": os.environ.get("OPENAI_AGENT_MODEL", "gpt-4o"), "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.1},
                     timeout=60,
                 )
                 if resp.status_code == 429 and _retry < 3:
-                    import time
                     wait_sec = int(resp.headers.get("Retry-After", 2 ** (_retry + 1)))
                     logger.warning(f"OpenAI 429 rate limit - {wait_sec}秒待機後リトライ ({_retry+1}/3)")
                     time.sleep(wait_sec)
@@ -1685,7 +1649,7 @@ def _ocr_image_with_openai(image_path: str, mime_override: str = None) -> str:
             f"{ocr_api_base}/chat/completions",
             headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
             json={
-                "model": "gpt-4o",
+                "model": os.environ.get("OPENAI_VISION_MODEL", "gpt-4o"),
                 "messages": [{
                     "role": "user",
                     "content": [

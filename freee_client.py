@@ -297,9 +297,12 @@ def get_master_cache() -> dict:
 
 
 def clear_master_cache():
-    """マスタキャッシュをクリアする"""
-    global _cache
+    """マスタキャッシュをクリアする（_partner_cache・_account_id_to_name も含む）"""
+    global _cache, _partner_cache, _partner_name_cache, _account_id_to_name
     _cache = {}
+    _partner_cache = {}
+    _partner_name_cache = {}
+    _account_id_to_name = {}
 
 
 def _find_account_item_id(name: str, items_cache: list) -> Optional[int]:
@@ -309,17 +312,14 @@ def _find_account_item_id(name: str, items_cache: list) -> Optional[int]:
     return None
 
 
+# _find_item_id は _find_account_item_id と同一実装のため統合済み
+_find_item_id = _find_account_item_id
+
+
 def _find_partner_id(name: str, partners_cache: list) -> Optional[int]:
     for p in partners_cache:
         if p.get("name") == name:
             return p.get("id")
-    return None
-
-
-def _find_item_id(name: str, items_cache: list) -> Optional[int]:
-    for item in items_cache:
-        if item.get("name") == name:
-            return item.get("id")
     return None
 
 
@@ -1108,20 +1108,6 @@ def get_account_item_balance(
     return resp.json()
 
 
-def get_invoice(invoice_id: int) -> dict:
-    """
-    freeeの請求書を1件取得する
-    """
-    resp = requests.get(
-        f"{FREEE_IV_BASE}/invoices/{invoice_id}",
-        headers=_api_headers(),
-        params={"company_id": FREEE_COMPANY_ID},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json().get("invoice", {})
-
-
 def list_invoices(
     partner_name: Optional[str] = None,
     start_billing_date: Optional[str] = None,
@@ -1201,22 +1187,6 @@ def register_invoice_agent(
         ],
     }
     return create_invoice(entry, cache)
-
-
-def execute_delete_deal(deal_id: int) -> dict:
-    """
-    仕訳を1件削除する（エージェントが確認後に呼び出す）
-    """
-    delete_deal(deal_id)
-    return {"status": "deleted", "deal_id": deal_id}
-
-
-def execute_delete_invoice(invoice_id: int) -> dict:
-    """
-    請求書を1件取消する（エージェントが確認後に呼び出す）
-    """
-    delete_invoice(invoice_id)
-    return {"status": "cancelled", "invoice_id": invoice_id}
 
 
 # ============================================================

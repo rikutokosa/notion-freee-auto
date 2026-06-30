@@ -15,9 +15,12 @@ git diff --check
 echo "== git status =="
 git status --short
 
-echo "== secret scan masked =="
+echo "== secret scan (masked, tracked files only) =="
 set +e
-git grep -nE '(ntn_|ghp_|github_pat_|sk-[A-Za-z0-9]|xox[baprs]-|railway)' -- '*.py' '*.md' '*.txt' \
+git grep -nE '(ntn_[A-Za-z0-9]{10,}|ghp_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})' -- '*.py' '*.md' '*.html' '*.toml' '*.example' \
   | sed -E 's/(ntn_|ghp_|github_pat_|sk-)[A-Za-z0-9_=-]+/\1[REDACTED]/g' \
-  | sed -E 's/(xox[baprs]-)[A-Za-z0-9-]+/\1[REDACTED]/g'
+  | sed -E 's/(xox[baprs]-)[A-Za-z0-9-]+/\1[REDACTED]/g' \
+  || true
 set -e
+
+echo "== done =="

@@ -175,7 +175,7 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 # Basic認証
 # ============================================================
 _BASIC_USER = os.environ.get("BASIC_AUTH_USER", "")
-_BASIC_PASS = os.environ.get("BASIC_AUTH_PASS", "")
+_BASIC_PASS = os.environ.get("BASIC_AUTH_PASSWORD", "")
 
 # 認証免除パス（前方一致）
 _PUBLIC_PREFIXES = ("/auth/freee", "/static/")

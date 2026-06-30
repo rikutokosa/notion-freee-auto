@@ -491,6 +491,12 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             result["sales_id"] = reg_result["sales_id"]
             result["purchase_id"] = reg_result["purchase_id"]
             result["pca_id"] = reg_result["pca_id"]
+            # freee登録成功後、Notion書き戻し前にidempotency_keysに記録
+            _idem_save(_idem_key_val, page_id, "register", {
+                "sales_id": result.get("sales_id"),
+                "purchase_id": result.get("purchase_id"),
+                "pca_id": result.get("pca_id"),
+            })
             ok = mark_as_done(page_id, current_status,
                               db_type=db_type,
                               freee_status=FREEE_STATUS_SHIWAKE_SUCCESS,
@@ -502,12 +508,6 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
                 result["message"] = f"freee登録は成功したが、Notion書き戻しに失敗（売上ID={result['sales_id']}, 仕入ID={result['purchase_id']}）。手動確認が必要"
                 result["needs_manual_check"] = True
             else:
-                # freee成功後（Notion書き戻し前）にidempotency_keysに記録
-                _idem_save(_idem_key_val, page_id, "register", {
-                    "sales_id": result.get("sales_id"),
-                    "purchase_id": result.get("purchase_id"),
-                    "pca_id": result.get("pca_id"),
-                })
                 result["status"] = "success"
                 result["message"] = (
                     f"仕訳を登録しました "

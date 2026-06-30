@@ -23,4 +23,7 @@ git grep -nE '(ntn_[A-Za-z0-9]{10,}|ghp_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9]{
   || true
 set -e
 
+echo "== pytest =="
+python3 -m pytest tests/ -v --tb=short
+
 echo "== done =="

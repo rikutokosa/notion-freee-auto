@@ -30,6 +30,12 @@ from apscheduler.triggers.cron import CronTrigger
 # 会話履歴DB（ボリューム永続化）
 # ============================================================
 from db import _get_db  # noqa: E402
+from settings_store import (  # noqa: E402
+    ensure_app_settings_table,
+    get_auto_stopped,
+    set_auto_stopped,
+    get_auto_stopped_source,
+)
 
 _IDEMPOTENCY_KEYS_REQUIRED_COLS = {"key", "page_id", "action", "status", "freee_ids", "created_at", "updated_at"}
 
@@ -162,6 +168,8 @@ def _init_db():
         conn.commit()
     finally:
         conn.close()
+    # app_settings テーブル（settings_store モジュールが管理）
+    ensure_app_settings_table()
 
 
 def _save_execution_log(log_type: str, summary: dict, detail: dict = None, trigger: str = 'manual', has_error: bool = False):
@@ -283,22 +291,20 @@ def _basic_auth_guard():
 # 停止フラグ・通知ログ
 # ============================================================
 # FREEE_AUTO_STOPPED=1 で APScheduler の定期実行を停止する
-# メモリ内フラグ（プロセス再起動後は環境変数の初期値に戻る）
-_manually_stopped: bool = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
+# 停止状態は SQLite の app_settings テーブルに永続化される（プロセス再起動後も維持）
+# 環境変数 FREEE_AUTO_STOPPED は初期値・フォールバックとして使用する
 # 仕訳アシスタント登録ログ（メモリ内、最新200件）
 assistant_log: list = []
 
 
 def _is_manually_stopped() -> bool:
-    """停止フラグを返す（FREEE_AUTO_STOPPED=1 の場合 True）"""
-    return _manually_stopped
+    """停止フラグを返す（DB優先、DBに値がなければ環境変数 FREEE_AUTO_STOPPED を使用）"""
+    return get_auto_stopped()
 
 
 def _set_manually_stopped(stopped: bool):
-    """停止フラグをメモリ内に設定する"""
-    global _manually_stopped
-    _manually_stopped = stopped
-    os.environ["FREEE_AUTO_STOPPED"] = "1" if stopped else "0"
+    """停止フラグを DB に永続保存する（プロセス再起動後も維持される）"""
+    set_auto_stopped(stopped)
 
 
 # ============================================================
@@ -2727,13 +2733,10 @@ def _get_scheduler_info() -> dict:
     APScheduler / FREEE_AUTO_STOPPED の現在状態を辞書で返す。
     freee / Notion / OpenAI / Slack は一切呼ばない。
     """
-    stopped_env = os.environ.get("FREEE_AUTO_STOPPED", "0")
     manually_stopped = _is_manually_stopped()
-
     scheduler_exists = _scheduler is not None
     job_registered = False
     next_run_time = None
-
     if scheduler_exists:
         try:
             job = _scheduler.get_job("daily_auto_run")
@@ -2742,9 +2745,12 @@ def _get_scheduler_info() -> dict:
                 next_run_time = job.next_run_time.isoformat()
         except Exception:
             pass
-
+    stopped_source = get_auto_stopped_source()
     return {
-        "freee_auto_stopped_env": stopped_env,
+        "freee_auto_stopped_env": stopped_source["freee_auto_stopped_env"],
+        "persisted_auto_stopped": stopped_source["persisted_auto_stopped"],
+        "effective_auto_stopped": stopped_source["effective_auto_stopped"],
+        "source": stopped_source["source"],
         "is_manually_stopped": manually_stopped,
         "scheduler_exists": scheduler_exists,
         "job_registered": job_registered,

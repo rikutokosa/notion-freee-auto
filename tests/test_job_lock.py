@@ -128,7 +128,7 @@ class TestScheduledJobSafety:
         """FREEE_AUTO_STOPPED=1 のとき _do_scheduled_run が呼ばれない"""
         import app as app_module
 
-        monkeypatch.setattr(app_module, "_manually_stopped", True)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: True)
         mock_acquire = MagicMock(return_value=True)
         mock_run = MagicMock()
         mock_release = MagicMock()
@@ -148,7 +148,7 @@ class TestScheduledJobSafety:
         """FREEE_AUTO_STOPPED=1 のとき Slack 停止中通知が送られる"""
         import app as app_module
 
-        monkeypatch.setattr(app_module, "_manually_stopped", True)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: True)
         mock_acquire = MagicMock(return_value=True)
         mock_release = MagicMock()
         mock_slack = MagicMock()
@@ -169,7 +169,7 @@ class TestScheduledJobSafety:
         """FREEE_AUTO_STOPPED=0 のとき _do_scheduled_run が呼ばれる"""
         import app as app_module
 
-        monkeypatch.setattr(app_module, "_manually_stopped", False)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
         mock_acquire = MagicMock(return_value=True)
         mock_run = MagicMock()
         mock_alert = MagicMock()
@@ -189,7 +189,7 @@ class TestScheduledJobSafety:
         """_do_scheduled_run が例外を投げても _release_job_lock が呼ばれる"""
         import app as app_module
 
-        monkeypatch.setattr(app_module, "_manually_stopped", False)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
         mock_acquire = MagicMock(return_value=True)
         mock_run = MagicMock(side_effect=RuntimeError("test error"))
         mock_alert = MagicMock()

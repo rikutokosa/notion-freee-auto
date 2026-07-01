@@ -195,7 +195,7 @@ class TestFreeeAutoStoppedFlag:
     def test_stopped_flag_true_when_env_is_1(self, flask_client, auth_headers, monkeypatch):
         import app as app_module
         # _is_manually_stopped を True を返すように差し替え
-        monkeypatch.setattr(app_module, "_manually_stopped", True)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: True)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
 
         resp = flask_client.get("/api/status", headers=auth_headers)
@@ -210,7 +210,7 @@ class TestFreeeAutoStoppedFlag:
 
     def test_stopped_flag_false_when_env_is_0(self, flask_client, auth_headers, monkeypatch):
         import app as app_module
-        monkeypatch.setattr(app_module, "_manually_stopped", False)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
         resp = flask_client.get("/api/status", headers=auth_headers)
@@ -233,7 +233,7 @@ class TestGetSchedulerInfoUnit:
 
     def test_returns_dict_with_all_keys(self, monkeypatch):
         import app as app_module
-        monkeypatch.setattr(app_module, "_manually_stopped", False)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
         info = app_module._get_scheduler_info()

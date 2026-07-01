@@ -43,8 +43,8 @@ def db_conn(tmp_db_path, monkeypatch):
             action TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'processing',
             freee_ids TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
     conn.execute("""

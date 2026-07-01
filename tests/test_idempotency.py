@@ -29,8 +29,8 @@ def _make_db(tmp_path):
             action TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'processing',
             freee_ids TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
     conn.commit()
@@ -484,6 +484,8 @@ class TestProcessingStuck:
         assert result["status"] in ("success", "partial_error"), (
             f"stale processing は再実行され success / partial_error になるはず: got {result['status']}"
         )
+        # freee 登録が実際に再実行されたことを確認
+        mock_reg.assert_called_once(), "stale processing 後に register_journal が呼ばれていない"
         # DB 上でも processing のまま残っていないことを確認
         row = conn.execute(
             "SELECT status FROM idempotency_keys WHERE key=?", (idem_key,)
@@ -492,6 +494,80 @@ class TestProcessingStuck:
         assert row["status"] != "processing", (
             f"stale processing が processing のまま残っている: {row['status']}"
         )
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# done 済み idempotency key dedup テスト
+# ---------------------------------------------------------------------------
+
+class TestIdempotencyDedup:
+    """done 済みの idempotency key がある場合、freee 登録が再実行されないこと"""
+
+    def test_done_key_skips_freee_registration(self, tmp_path, monkeypatch):
+        """done 済みキーがある場合は skip を返し、freee 登録・削除・請求書送付が呼ばれない"""
+        db_path, conn = _make_db(tmp_path)
+        import db as db_module
+        monkeypatch.setattr(db_module, "_DB_PATH", db_path)
+
+        journal = {
+            "action": "register",
+            "message": "通常登録",
+            "original_status": "本部確認済",
+            "job_db": "本部",
+            "nyusha_date": "2025-04-01",
+            "jobseeker_name": "テスト太郎",
+            "sales_entry": {"issue_date": "2025-04-01", "amount": 500000},
+            "purchase_entry": {"issue_date": "2025-04-01", "amount": 100000},
+            "pca_entry": None,
+        }
+
+        # _idem_key と同じロジックで事前にキーを計算して done 行を挿入
+        import processor
+        idem_key = processor._idem_key("page-001", "register", journal)
+        saved_freee_ids = json.dumps({"sales_id": 9999, "purchase_id": 8888})
+        conn.execute(
+            """INSERT INTO idempotency_keys
+               (key, page_id, action, status, freee_ids, created_at, updated_at)
+               VALUES (?, ?, ?, 'done', ?, datetime('now','localtime'), datetime('now','localtime'))""",
+            (idem_key, "page-001", "register", saved_freee_ids)
+        )
+        conn.commit()
+
+        monkeypatch.setattr("processor.build_journal_entries", lambda r: journal)
+        monkeypatch.setattr("processor.set_invoice_required_select", MagicMock())
+        monkeypatch.setattr("processor.clear_error_set_processing", MagicMock())
+        monkeypatch.setattr("processor.mark_as_error", MagicMock())
+
+        mock_reg = MagicMock()
+        monkeypatch.setattr("processor.register_journal", mock_reg)
+        mock_delete = MagicMock()
+        monkeypatch.setattr("processor.delete_deals", mock_delete)
+        mock_send = MagicMock()
+        monkeypatch.setattr("processor.send_invoice", mock_send)
+        mock_done = MagicMock()
+        monkeypatch.setattr("processor.mark_as_done", mock_done)
+
+        result = processor.process_record(_make_record("register"))
+
+        # done 済みなので skip を返すこと
+        assert result["status"] == "skip", (
+            f"done 済みキーがある場合は skip を返すはず: got {result['status']}"
+        )
+        # freee 登録・削除・請求書送付・Notion 書き戻しが呼ばれないこと
+        mock_reg.assert_not_called()
+        mock_delete.assert_not_called()
+        mock_send.assert_not_called()
+        mock_done.assert_not_called()
+        # DB の freee_ids が保持されていること
+        row = conn.execute(
+            "SELECT status, freee_ids FROM idempotency_keys WHERE key=?", (idem_key,)
+        ).fetchone()
+        assert row is not None, "idempotency_keys にレコードが存在しない"
+        assert row["status"] == "done", f"done のまま保持されるはず: got {row['status']}"
+        stored = json.loads(row["freee_ids"])
+        assert stored["sales_id"] == 9999, f"freee_ids が上書きされた: {stored}"
+        assert stored["purchase_id"] == 8888, f"freee_ids が上書きされた: {stored}"
         conn.close()
 
 

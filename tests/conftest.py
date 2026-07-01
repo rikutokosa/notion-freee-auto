@@ -11,7 +11,10 @@ import tempfile
 import pytest
 
 # プロジェクトルートを sys.path に追加
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+# scripts/ を sys.path に追加（run_scheduled_job 等のテスト用）
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "scripts"))
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _determine_stopped() -> bool:
+    """
+    停止フラグを判定して返す。
+
+    DB 優先（app_settings.auto_stopped）、DB に値がなければ
+    環境変数 FREEE_AUTO_STOPPED をフォールバックとして使用する。
+    settings_store の読み取りで例外が発生した場合は fail-safe として
+    True（停止扱い）を返す。本番経理系なので読み取り失敗時は停止側に倒す。
+
+    Returns:
+        True  → 停止中（処理をスキップすべき）
+        False → 稼働中（処理を実行してよい）
+    """
+    try:
+        from settings_store import get_auto_stopped, ensure_app_settings_table
+        ensure_app_settings_table()
+        stopped = get_auto_stopped()
+        logger.info(f"[CLI] 停止フラグ確認: stopped={stopped} (DB優先、envフォールバック)")
+        return stopped
+    except Exception as e:
+        logger.error(
+            f"[CLI] settings_store 読み取り失敗のため fail-safe で停止扱いにします: {e}"
+        )
+        return True  # fail-safe: 本番経理系なので読み取り失敗時は停止側に倒す
+
+
 def main():
     dry_run = "--dry-run" in sys.argv
 
@@ -44,16 +70,7 @@ def main():
         logger.info("[CLI] --dry-run モードで実行します（freee / Notion への書き込みなし）")
 
     # 停止フラグ確認: DB 優先、DB に値がなければ環境変数をフォールバック
-    try:
-        from settings_store import get_auto_stopped, ensure_app_settings_table
-        ensure_app_settings_table()
-        stopped = get_auto_stopped()
-        logger.info(f"[CLI] 停止フラグ確認: stopped={stopped} (DB優先、envフォールバック)")
-    except Exception as e:
-        logger.error(
-            f"[CLI] settings_store 読み取り失敗のため fail-safe で停止扱いにします: {e}"
-        )
-        stopped = True  # fail-safe: 本番経理系なので読み取り失敗時は停止側に倒す
+    stopped = _determine_stopped()
 
     if stopped:
         logger.info("[CLI] 停止フラグが有効なため処理をスキップします")

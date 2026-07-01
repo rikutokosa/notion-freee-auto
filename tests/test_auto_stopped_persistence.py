@@ -461,117 +461,130 @@ class TestCLIStoppedBehavior:
 
 # ============================================================
 # CLI（run_scheduled_job.py）の fail-safe テスト
-# settings_store 読み取り例外 + env=0 でも _do_scheduled_run が呼ばれない
+# run_scheduled_job._determine_stopped を直接 import してテストする
 # ============================================================
 
 class TestCLIFailSafe:
     """
-    scripts/run_scheduled_job.py の停止判定関数を直接テストする。
-    settings_store 読み取り例外 + env=0 でも fail-safe で停止扱いになることを確認。
+    scripts/run_scheduled_job._determine_stopped() を直接テストする。
+
+    テスト内に本体ロジックのコピーは一切持たない。
+    settings_store._get_db を monkeypatch して例外を発生させ、
+    _determine_stopped() の except 節を実際に通す。
+    caplog で run_scheduled_job の ERROR ログが出ることを確認する。
     """
 
-    def _get_stopped_from_cli_logic(self, monkeypatch, get_auto_stopped_fn):
+    def test_failsafe_when_settings_store_raises(self, tmp_path, monkeypatch, caplog):
         """
-        run_scheduled_job.py の停止判定ロジックを再現するヘルパー。
-        実際の CLI main() を呼ばず、停止判定部分だけを切り出してテストする。
-        """
-        import logging
-        logger = logging.getLogger("test_cli_failsafe")
-        try:
-            stopped = get_auto_stopped_fn()
-            logger.info(f"[CLI] 停止フラグ確認: stopped={stopped}")
-        except Exception as e:
-            logger.error(
-                f"[CLI] settings_store 読み取り失敗のため fail-safe で停止扱いにします: {e}"
-            )
-            stopped = True  # fail-safe
-        return stopped
-
-    def test_cli_failsafe_when_settings_store_raises(self, tmp_path, monkeypatch):
-        """
-        settings_store.get_auto_stopped() が例外を投げた場合、
-        CLI は stopped=True（fail-safe）として処理をスキップする。
+        settings_store._get_db が例外を投げた場合、
+        _determine_stopped() は True（fail-safe）を返す。
         env=0 であっても停止扱いになること。
+        run_scheduled_job の logger から ERROR ログが出ること。
         """
+        _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
-        def broken_get_auto_stopped():
-            raise RuntimeError("settings_store 読み取り失敗（テスト用）")
+        import settings_store
+        import run_scheduled_job
 
-        stopped = self._get_stopped_from_cli_logic(monkeypatch, broken_get_auto_stopped)
-        assert stopped is True, (
-            "settings_store 例外 + env=0 でも CLI は fail-safe で停止扱いになるべき"
+        def broken_get_db():
+            raise RuntimeError("DB接続失敗（テスト用）")
+
+        monkeypatch.setattr(settings_store, "_get_db", broken_get_db)
+
+        import logging
+        with caplog.at_level(logging.ERROR, logger="run_scheduled_job"):
+            result = run_scheduled_job._determine_stopped()
+
+        assert result is True, (
+            "settings_store 例外 + env=0 でも _determine_stopped() は fail-safe で True を返すべき"
         )
+        assert any(
+            "fail-safe" in r.message and r.levelno == logging.ERROR
+            for r in caplog.records
+        ), "run_scheduled_job の logger から ERROR ログが出るべき"
 
-    def test_cli_failsafe_does_not_call_do_scheduled_run(self, tmp_path, monkeypatch):
+    def test_failsafe_does_not_call_do_scheduled_run(self, tmp_path, monkeypatch):
         """
-        settings_store 読み取り例外 + env=0 のとき、
-        _do_scheduled_run が呼ばれないことを確認する。
+        _determine_stopped() が True を返した場合、
+        main() の後続処理（_do_scheduled_run 呼び出し）に進まないことを確認する。
         """
+        _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        import run_scheduled_job
+
+        def broken_get_db():
+            raise RuntimeError("DB接続失敗（テスト用）")
+
+        monkeypatch.setattr(settings_store, "_get_db", broken_get_db)
 
         do_scheduled_run_called = []
-
-        def broken_get_auto_stopped():
-            raise RuntimeError("settings_store 読み取り失敗（テスト用）")
 
         def mock_do_scheduled_run():
             do_scheduled_run_called.append(True)
 
-        stopped = self._get_stopped_from_cli_logic(monkeypatch, broken_get_auto_stopped)
-
-        # stopped=True なので _do_scheduled_run は呼ばない
+        # _determine_stopped() が True を返した場合、main() は _do_scheduled_run を呼ばない
+        stopped = run_scheduled_job._determine_stopped()
         if not stopped:
             mock_do_scheduled_run()
 
         assert len(do_scheduled_run_called) == 0, (
-            "settings_store 例外時は _do_scheduled_run が呼ばれてはいけない"
+            "_determine_stopped() が True のとき _do_scheduled_run が呼ばれてはいけない"
         )
 
-    def test_cli_runs_when_settings_store_returns_false(self, tmp_path, monkeypatch):
+    def test_returns_false_when_settings_store_returns_false(self, tmp_path, monkeypatch, caplog):
         """
-        settings_store.get_auto_stopped() が False を返した場合、
-        CLI は処理を実行する（_do_scheduled_run が呼ばれる）。
+        settings_store.get_auto_stopped() が False を返す場合、
+        _determine_stopped() は False を返す（処理を実行する）。
+        run_scheduled_job の logger から INFO ログが出ること。
         """
+        _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
-        def normal_get_auto_stopped():
-            return False
+        import settings_store
+        import run_scheduled_job
 
-        do_scheduled_run_called = []
+        # DB に stopped=0 を保存（正常稼働中状態）
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(False)
 
-        def mock_do_scheduled_run():
-            do_scheduled_run_called.append(True)
+        import logging
+        with caplog.at_level(logging.INFO, logger="run_scheduled_job"):
+            result = run_scheduled_job._determine_stopped()
 
-        stopped = self._get_stopped_from_cli_logic(monkeypatch, normal_get_auto_stopped)
-
-        if not stopped:
-            mock_do_scheduled_run()
-
-        assert len(do_scheduled_run_called) == 1, (
-            "settings_store が False を返した場合は _do_scheduled_run が呼ばれるべき"
+        assert result is False, (
+            "DBに stopped=0 があり env=0 のとき _determine_stopped() は False を返すべき"
         )
+        assert any(
+            "stopped=False" in r.message and r.levelno == logging.INFO
+            for r in caplog.records
+        ), "run_scheduled_job の logger から INFO ログが出るべき"
 
-    def test_cli_stops_when_settings_store_returns_true(self, tmp_path, monkeypatch):
+    def test_returns_true_when_settings_store_returns_true(self, tmp_path, monkeypatch, caplog):
         """
-        settings_store.get_auto_stopped() が True を返した場合、
-        CLI は _do_scheduled_run を呼ばない。
+        settings_store.get_auto_stopped() が True を返す場合、
+        _determine_stopped() は True を返す（処理をスキップする）。
         """
+        _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
-        def stopped_get_auto_stopped():
-            return True
+        import settings_store
+        import run_scheduled_job
 
-        do_scheduled_run_called = []
+        # DB に stopped=1 を保存
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(True)
 
-        def mock_do_scheduled_run():
-            do_scheduled_run_called.append(True)
+        import logging
+        with caplog.at_level(logging.INFO, logger="run_scheduled_job"):
+            result = run_scheduled_job._determine_stopped()
 
-        stopped = self._get_stopped_from_cli_logic(monkeypatch, stopped_get_auto_stopped)
-
-        if not stopped:
-            mock_do_scheduled_run()
-
-        assert len(do_scheduled_run_called) == 0, (
-            "settings_store が True を返した場合は _do_scheduled_run が呼ばれてはいけない"
+        assert result is True, (
+            "DBに stopped=1 があり env=0 のとき _determine_stopped() は True を返すべき"
         )
+        assert any(
+            "stopped=True" in r.message and r.levelno == logging.INFO
+            for r in caplog.records
+        ), "run_scheduled_job の logger から INFO ログが出るべき"

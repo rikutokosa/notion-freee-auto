@@ -10,21 +10,19 @@ FREEE_AUTO_STOPPED 停止フラグの DB 永続化テスト。
 - APScheduler は起動しない
 - _do_scheduled_run / _do_payment_alert は呼ばない
 
-カバーするケース:
-1. DB に stopped=1 が保存されていれば、env=0 でも get_auto_stopped() が True
-2. DB に stopped=0 が保存されていれば、env=1 でも get_auto_stopped() が False
-3. DB に値がなければ env を見る（env=1 → True, env=0 → False）
-4. set_auto_stopped(True) 後、新しい DB 接続でも停止状態が読める（プロセス再起動相当）
-5. ensure_app_settings_table() が冪等で、既存データを消さない
-6. get_auto_stopped_source() が freee_auto_stopped_env / persisted_auto_stopped / effective_auto_stopped / source を正しく返す
-7. _is_manually_stopped() が get_auto_stopped() と同じ値を返す（settings_store 経由）
-8. _set_manually_stopped(True) 後に _is_manually_stopped() が True を返す
-9. APScheduler 停止時に _do_scheduled_run を呼ばず、Slack 停止中通知だけ呼ぶ
-10. CLI も DB 停止フラグを見て処理をスキップする
+停止判定の仕様（fail-safe 設計）:
+  env=1, DB=0  → 停止  (env_force)
+  env=1, DB=1  → 停止  (env_force)
+  env=0, DB=1  → 停止  (db)
+  env=0, DB=0  → 稼働  (db)
+  env=0, DBなし → 稼働  (env)
+  env=0, DB読み取り例外 → 停止  (db_error, fail-safe)
+
+set_auto_stopped() は os.environ を変更しない。
 """
 import os
 import pytest
-import importlib
+import sqlite3
 
 
 def _patch_db(tmp_path, monkeypatch):
@@ -36,14 +34,38 @@ def _patch_db(tmp_path, monkeypatch):
 
 
 # ============================================================
-# settings_store 単体テスト
+# settings_store 単体テスト: 停止判定の優先順位
 # ============================================================
 
-class TestSettingsStoreUnit:
-    """settings_store モジュールの単体テスト"""
+class TestStoppedPriority:
+    """停止判定の優先順位テスト（env=1最優先・fail-safe設計）"""
 
-    def test_db_stopped1_overrides_env0(self, tmp_path, monkeypatch):
-        """DB に stopped=1 が保存されていれば、env=0 でも True"""
+    def test_env1_db0_stops(self, tmp_path, monkeypatch):
+        """env=1, DB=0 → 停止（env が DB に勝つ）"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(False)  # DB に 0 を保存
+
+        assert settings_store.get_auto_stopped() is True, (
+            "env=1 のとき DB=0 でも停止になるべき"
+        )
+
+    def test_env1_db1_stops(self, tmp_path, monkeypatch):
+        """env=1, DB=1 → 停止"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(True)
+
+        assert settings_store.get_auto_stopped() is True
+
+    def test_env0_db1_stops(self, tmp_path, monkeypatch):
+        """env=0, DB=1 → 停止"""
         _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
@@ -53,10 +75,10 @@ class TestSettingsStoreUnit:
 
         assert settings_store.get_auto_stopped() is True
 
-    def test_db_stopped0_overrides_env1(self, tmp_path, monkeypatch):
-        """DB に stopped=0 が保存されていれば、env=1 でも False"""
+    def test_env0_db0_runs(self, tmp_path, monkeypatch):
+        """env=0, DB=0 → 稼働"""
         _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
         import settings_store
         settings_store.ensure_app_settings_table()
@@ -64,19 +86,8 @@ class TestSettingsStoreUnit:
 
         assert settings_store.get_auto_stopped() is False
 
-    def test_no_db_value_uses_env1(self, tmp_path, monkeypatch):
-        """DB に値がなければ env=1 を使う"""
-        _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
-
-        import settings_store
-        settings_store.ensure_app_settings_table()
-        # DB には何も保存しない
-
-        assert settings_store.get_auto_stopped() is True
-
-    def test_no_db_value_uses_env0(self, tmp_path, monkeypatch):
-        """DB に値がなければ env=0 を使う"""
+    def test_env0_no_db_runs(self, tmp_path, monkeypatch):
+        """env=0, DB なし → 稼働"""
         _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
@@ -85,6 +96,175 @@ class TestSettingsStoreUnit:
         # DB には何も保存しない
 
         assert settings_store.get_auto_stopped() is False
+
+    def test_env0_db_exception_stops_fail_safe(self, tmp_path, monkeypatch):
+        """env=0, DB 読み取り例外 → 停止（fail-safe）"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        import db as db_module
+
+        # DB 読み取りを強制的に例外にする
+        def broken_get_db():
+            raise RuntimeError("DB 接続失敗（テスト用）")
+
+        monkeypatch.setattr(db_module, "_get_db", broken_get_db)
+
+        result = settings_store.get_auto_stopped()
+        assert result is True, (
+            "DB 読み取り例外時は fail-safe で停止扱いになるべき"
+        )
+
+
+# ============================================================
+# set_auto_stopped が os.environ を変更しないことを確認
+# ============================================================
+
+class TestSetAutoStoppedDoesNotTouchEnv:
+    """set_auto_stopped() は os.environ を変更しない"""
+
+    def test_set_true_does_not_change_env(self, tmp_path, monkeypatch):
+        """set_auto_stopped(True) 後も os.environ["FREEE_AUTO_STOPPED"] は変わらない"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(True)
+
+        # os.environ は変更されていないこと
+        assert os.environ.get("FREEE_AUTO_STOPPED") == "0", (
+            "set_auto_stopped(True) が os.environ を変更してはいけない"
+        )
+
+    def test_set_false_does_not_change_env(self, tmp_path, monkeypatch):
+        """set_auto_stopped(False) 後も os.environ["FREEE_AUTO_STOPPED"] は変わらない"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(False)
+
+        # os.environ は変更されていないこと
+        assert os.environ.get("FREEE_AUTO_STOPPED") == "1", (
+            "set_auto_stopped(False) が os.environ を変更してはいけない"
+        )
+
+
+# ============================================================
+# get_auto_stopped_source の source フィールド確認
+# ============================================================
+
+class TestGetAutoStoppedSource:
+    """get_auto_stopped_source() の source・persisted_auto_stopped・effective_auto_stopped を厳密に確認"""
+
+    def test_env1_db0_source_is_env_force(self, tmp_path, monkeypatch):
+        """env=1, DB=0 → source='env_force', persisted='0', effective=True"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(False)  # DB に 0 を保存
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "1"
+        assert result["persisted_auto_stopped"] == "0"
+        assert result["effective_auto_stopped"] is True
+        assert result["source"] == "env_force", (
+            f"env=1 のとき source は 'env_force' であるべき: {result}"
+        )
+
+    def test_env1_db1_source_is_env_force(self, tmp_path, monkeypatch):
+        """env=1, DB=1 → source='env_force', effective=True"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(True)
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "1"
+        assert result["persisted_auto_stopped"] == "1"
+        assert result["effective_auto_stopped"] is True
+        assert result["source"] == "env_force"
+
+    def test_env0_db1_source_is_db(self, tmp_path, monkeypatch):
+        """env=0, DB=1 → source='db', persisted='1', effective=True"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(True)
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "0"
+        assert result["persisted_auto_stopped"] == "1"
+        assert result["effective_auto_stopped"] is True
+        assert result["source"] == "db"
+
+    def test_env0_db0_source_is_db(self, tmp_path, monkeypatch):
+        """env=0, DB=0 → source='db', persisted='0', effective=False"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        settings_store.set_auto_stopped(False)
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "0"
+        assert result["persisted_auto_stopped"] == "0"
+        assert result["effective_auto_stopped"] is False
+        assert result["source"] == "db"
+
+    def test_env0_no_db_source_is_env(self, tmp_path, monkeypatch):
+        """env=0, DB なし → source='env', persisted=None, effective=False"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        settings_store.ensure_app_settings_table()
+        # DB には何も保存しない
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "0"
+        assert result["persisted_auto_stopped"] is None
+        assert result["effective_auto_stopped"] is False
+        assert result["source"] == "env"
+
+    def test_env0_db_exception_source_is_db_error(self, tmp_path, monkeypatch):
+        """env=0, DB 例外 → source='db_error', effective=True（fail-safe）"""
+        _patch_db(tmp_path, monkeypatch)
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
+
+        import settings_store
+        import db as db_module
+
+        def broken_get_db():
+            raise RuntimeError("DB 接続失敗（テスト用）")
+
+        monkeypatch.setattr(db_module, "_get_db", broken_get_db)
+
+        result = settings_store.get_auto_stopped_source()
+        assert result["freee_auto_stopped_env"] == "0"
+        assert result["persisted_auto_stopped"] is None
+        assert result["effective_auto_stopped"] is True
+        assert result["source"] == "db_error", (
+            f"DB 例外時は source='db_error' であるべき: {result}"
+        )
+
+
+# ============================================================
+# 永続性・冪等性テスト
+# ============================================================
+
+class TestPersistenceAndIdempotency:
+    """プロセス再起動相当の永続性と冪等性テスト"""
 
     def test_persisted_across_new_connection(self, tmp_path, monkeypatch):
         """set_auto_stopped(True) 後、新しい DB 接続でも値が読める（プロセス再起動相当）"""
@@ -96,7 +276,6 @@ class TestSettingsStoreUnit:
         settings_store.set_auto_stopped(True)
 
         # 新しい接続で読み直す（プロセス再起動相当）
-        import sqlite3
         conn = sqlite3.connect(db_path)
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = 'auto_stopped'"
@@ -115,63 +294,12 @@ class TestSettingsStoreUnit:
         settings_store.ensure_app_settings_table()
         settings_store.set_auto_stopped(True)
 
-        # 2回目・3回目の ensure_app_settings_table() 呼び出し
+        # 2回目・3回目の呼び出し
         settings_store.ensure_app_settings_table()
         settings_store.ensure_app_settings_table()
 
         # データが消えていないこと
         assert settings_store.get_auto_stopped() is True
-
-    def test_get_auto_stopped_source_db_stopped1(self, tmp_path, monkeypatch):
-        """DB に stopped=1 がある場合、source='db', effective=True
-
-        注意: set_auto_stopped(True) は補助的に os.environ も更新するため、
-        set_auto_stopped 後の freee_auto_stopped_env は "1" になる。
-        ここでは source='db' と effective=True を確認することが主目的。
-        """
-        _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
-
-        import settings_store
-        settings_store.ensure_app_settings_table()
-        settings_store.set_auto_stopped(True)
-        # set_auto_stopped は os.environ["FREEE_AUTO_STOPPED"] も "1" に更新する
-
-        result = settings_store.get_auto_stopped_source()
-        assert result["source"] == "db"
-        assert result["persisted_auto_stopped"] == "1"
-        assert result["effective_auto_stopped"] is True
-        # set_auto_stopped が env も更新するため freee_auto_stopped_env は "1"
-        assert result["freee_auto_stopped_env"] == "1"
-
-    def test_get_auto_stopped_source_env_only(self, tmp_path, monkeypatch):
-        """DB に値がない場合、source='env'"""
-        _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
-
-        import settings_store
-        settings_store.ensure_app_settings_table()
-        # DB には何も保存しない
-
-        result = settings_store.get_auto_stopped_source()
-        assert result["source"] == "env"
-        assert result["persisted_auto_stopped"] is None
-        assert result["effective_auto_stopped"] is True
-        assert result["freee_auto_stopped_env"] == "1"
-
-    def test_get_auto_stopped_source_db_stopped0_env1(self, tmp_path, monkeypatch):
-        """DB=0, env=1 の場合、effective=False, source='db'"""
-        _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
-
-        import settings_store
-        settings_store.ensure_app_settings_table()
-        settings_store.set_auto_stopped(False)
-
-        result = settings_store.get_auto_stopped_source()
-        assert result["source"] == "db"
-        assert result["persisted_auto_stopped"] == "0"
-        assert result["effective_auto_stopped"] is False
 
     def test_toggle_stopped_flag(self, tmp_path, monkeypatch):
         """True → False → True と切り替えられる"""
@@ -226,7 +354,6 @@ class TestScheduledJobStoppedBehavior:
         def mock_send_slack(subject, body):
             mock_calls.append(("send_slack", subject))
 
-        # _scheduled_job のロジックをシミュレート
         if mock_acquire_lock("daily_auto_run"):
             try:
                 if settings_store.get_auto_stopped():
@@ -288,44 +415,35 @@ class TestCLIStoppedBehavior:
     def test_cli_skips_when_db_stopped(self, tmp_path, monkeypatch):
         """DB に stopped=1 があれば CLI は処理をスキップする（env=0 でも）"""
         _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")  # env は 0
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
         import settings_store
         settings_store.ensure_app_settings_table()
-        settings_store.set_auto_stopped(True)  # DB に stopped=1 を保存
+        settings_store.set_auto_stopped(True)
 
-        # CLI の停止判定ロジックをシミュレート
-        try:
-            stopped = settings_store.get_auto_stopped()
-            source = settings_store.get_auto_stopped_source()["source"]
-        except Exception:
-            stopped = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
-            source = "env"
+        stopped = settings_store.get_auto_stopped()
+        source = settings_store.get_auto_stopped_source()["source"]
 
         assert stopped is True
         assert source == "db"
 
     def test_cli_runs_when_db_not_stopped(self, tmp_path, monkeypatch):
-        """DB に stopped=0 があれば CLI は処理を実行する（env=1 でも）"""
+        """DB に stopped=0 があれば CLI は処理を実行する（env=0 のとき）"""
         _patch_db(tmp_path, monkeypatch)
-        monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")  # env は 1
+        monkeypatch.setenv("FREEE_AUTO_STOPPED", "0")
 
         import settings_store
         settings_store.ensure_app_settings_table()
-        settings_store.set_auto_stopped(False)  # DB に stopped=0 を保存
+        settings_store.set_auto_stopped(False)
 
-        try:
-            stopped = settings_store.get_auto_stopped()
-            source = settings_store.get_auto_stopped_source()["source"]
-        except Exception:
-            stopped = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
-            source = "env"
+        stopped = settings_store.get_auto_stopped()
+        source = settings_store.get_auto_stopped_source()["source"]
 
         assert stopped is False
         assert source == "db"
 
     def test_cli_uses_env_when_no_db_value(self, tmp_path, monkeypatch):
-        """DB に値がなければ CLI は env を使う"""
+        """DB に値がなければ CLI は env を使う（env=1 → 停止）"""
         _patch_db(tmp_path, monkeypatch)
         monkeypatch.setenv("FREEE_AUTO_STOPPED", "1")
 
@@ -336,5 +454,5 @@ class TestCLIStoppedBehavior:
         stopped = settings_store.get_auto_stopped()
         source = settings_store.get_auto_stopped_source()["source"]
 
-        assert stopped is True  # env=1 が使われる
-        assert source == "env"
+        assert stopped is True
+        assert source == "env_force"  # env=1 なので env_force

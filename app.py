@@ -532,6 +532,7 @@ def api_status():
         "log_count": len(processing_log),
         "process_count": len(processing_log),
         "openai_key_set": bool(openai_key),
+        "scheduler": _get_scheduler_info(),
     })
 
 
@@ -2583,6 +2584,7 @@ def api_healthcheck():
         "status": status,
         "checks": checks,
         "warnings": warnings,
+        "scheduler": _get_scheduler_info(),
     }), 200 if status == "healthy" else 200
 
 
@@ -2657,6 +2659,36 @@ def _scheduled_job():
 
     finally:
         _release_job_lock("daily_auto_run")
+
+
+def _get_scheduler_info() -> dict:
+    """
+    APScheduler / FREEE_AUTO_STOPPED の現在状態を辞書で返す。
+    freee / Notion / OpenAI / Slack は一切呼ばない。
+    """
+    stopped_env = os.environ.get("FREEE_AUTO_STOPPED", "0")
+    manually_stopped = _is_manually_stopped()
+
+    scheduler_exists = _scheduler is not None
+    job_registered = False
+    next_run_time = None
+
+    if scheduler_exists:
+        try:
+            job = _scheduler.get_job("daily_auto_run")
+            job_registered = job is not None
+            if job_registered and job.next_run_time is not None:
+                next_run_time = job.next_run_time.isoformat()
+        except Exception:
+            pass
+
+    return {
+        "freee_auto_stopped_env": stopped_env,
+        "is_manually_stopped": manually_stopped,
+        "scheduler_exists": scheduler_exists,
+        "job_registered": job_registered,
+        "next_run_time": next_run_time,
+    }
 
 
 def _start_scheduler():

@@ -2621,24 +2621,42 @@ def _release_job_lock(job_name: str):
 
 def _scheduled_job():
     """APSchedulerから毎日12:00 JSTに呼ばれるジョブ"""
-    if _is_manually_stopped():
-        logger.info("[APScheduler] FREEE_AUTO_STOPPED=1 のため定期実行をスキップ")
-        return
     if not _acquire_job_lock("daily_auto_run", ttl_seconds=7200):
         logger.warning("[APScheduler] 別プロセスが実行中のためスキップ")
         return
-    logger.info("[APScheduler] 定期実行開始")
+
     try:
-        _do_scheduled_run()
-    except Exception:
-        logger.exception("[APScheduler] scheduled_run エラー")
-    try:
-        _do_payment_alert()
-    except Exception:
-        logger.exception("[APScheduler] payment_alert エラー")
+        if _is_manually_stopped():
+            logger.info("[APScheduler] FREEE_AUTO_STOPPED=1 のため定期実行をスキップ")
+            JST = timezone(timedelta(hours=9))
+            now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+            subject = f"⏸️ 本店経理自動化 日次実行停止中 {now_str}"
+            body = "\n".join([
+                "本店経理自動化システム 日次実行レポート",
+                f"実行日時: {now_str} JST",
+                "=" * 50,
+                "",
+                "FREEE_AUTO_STOPPED=1 のため、日次自動実行をスキップしました。",
+                "freee / Notion / OpenAI への自動処理は実行していません。",
+                "",
+                "自動実行を再開するには、Railway Variables の FREEE_AUTO_STOPPED を 0 に変更してください。",
+            ])
+            send_slack_notification(subject, body)
+            return
+
+        logger.info("[APScheduler] 定期実行開始")
+        try:
+            _do_scheduled_run()
+        except Exception:
+            logger.exception("[APScheduler] scheduled_run エラー")
+        try:
+            _do_payment_alert()
+        except Exception:
+            logger.exception("[APScheduler] payment_alert エラー")
+        logger.info("[APScheduler] 定期実行完了")
+
     finally:
         _release_job_lock("daily_auto_run")
-    logger.info("[APScheduler] 定期実行完了")
 
 
 def _start_scheduler():

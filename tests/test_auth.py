@@ -54,9 +54,16 @@ class TestCorrectAuth:
 
     def test_api_status_with_correct_auth(self, flask_client, auth_headers):
         resp = flask_client.get("/api/status", headers=auth_headers)
-        # 401 でなければ認証は通っている（200 または他のエラーは認証通過）
-        assert resp.status_code != 401, f"Expected non-401, got {resp.status_code}"
+        # /api/status は get_valid_token() の例外を握りつぶして常に 200 を返す
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+        data = resp.get_json()
+        assert data is not None, "レスポンスが JSON でない"
+        assert "token_ok" in data, f"token_ok キーが存在しない: {data}"
 
     def test_api_healthcheck_with_correct_auth(self, flask_client, auth_headers):
         resp = flask_client.get("/api/healthcheck", headers=auth_headers)
-        assert resp.status_code != 401, f"Expected non-401, got {resp.status_code}"
+        # /api/healthcheck は freee 接続エラーを warnings に入れて 200 を返す
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+        data = resp.get_json()
+        assert data is not None, "レスポンスが JSON でない"
+        assert "status" in data, f"status キーが存在しない: {data}"

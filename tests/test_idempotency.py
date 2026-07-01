@@ -429,8 +429,10 @@ class TestProcessingStuck:
 
         assert result["status"] == "error"
         row = _find_idem_row(conn, "page-001", "register")
-        if row:
-            assert row["status"] == "error", f"Expected error, got {row['status']}"
+        # _idem_start は register_journal 呼び出し前に実行されるため、
+        # 例外発生後も DB に行が存在するはず
+        assert row is not None, "idempotency_keys にレコードが存在しない（_idem_start が呼ばれていない可能性）"
+        assert row["status"] == "error", f"Expected error, got {row['status']}"
         conn.close()
 
     def test_stale_processing_is_error_and_retried(self, tmp_path, monkeypatch):
@@ -478,8 +480,18 @@ class TestProcessingStuck:
 
         result = processor.process_record(_make_record("register"))
 
-        # stale なので再実行され、成功するはず（skip ではない）
-        assert result["status"] != "skip", "stale processing は skip されてはいけない"
+        # stale なので再実行され、freee 登録が成功するはず
+        assert result["status"] in ("success", "partial_error"), (
+            f"stale processing は再実行され success / partial_error になるはず: got {result['status']}"
+        )
+        # DB 上でも processing のまま残っていないことを確認
+        row = conn.execute(
+            "SELECT status FROM idempotency_keys WHERE key=?", (idem_key,)
+        ).fetchone()
+        assert row is not None, "idempotency_keys にレコードが存在しない"
+        assert row["status"] != "processing", (
+            f"stale processing が processing のまま残っている: {row['status']}"
+        )
         conn.close()
 
 

@@ -50,8 +50,10 @@ def main():
         stopped = get_auto_stopped()
         logger.info(f"[CLI] 停止フラグ確認: stopped={stopped} (DB優先、envフォールバック)")
     except Exception as e:
-        logger.warning(f"[CLI] settings_store 読み取り失敗、envにフォールバック: {e}")
-        stopped = os.environ.get("FREEE_AUTO_STOPPED", "0") == "1"
+        logger.error(
+            f"[CLI] settings_store 読み取り失敗のため fail-safe で停止扱いにします: {e}"
+        )
+        stopped = True  # fail-safe: 本番経理系なので読み取り失敗時は停止側に倒す
 
     if stopped:
         logger.info("[CLI] 停止フラグが有効なため処理をスキップします")

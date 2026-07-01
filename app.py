@@ -510,6 +510,67 @@ def api_execution_logs():
     return jsonify({"logs": logs, "log_type": log_type})
 
 
+@app.route("/api/inbox")
+def api_inbox():
+    """
+    要対応インボックス API（第5段階）
+
+    認証必須。未認証は 401。
+    freee / Notion / OpenAI / Slack は呼ばない。
+    DB migration は実行しない。
+
+    返却内容:
+      - error_count   : error ステータスの件数
+      - review_count  : review ステータスの件数
+      - last_run      : 最終実行ログ（最新 1 件）
+      - recent_errors : 最新 error ログ（最大 10 件）
+      - recent_reviews: 最新 review ログ（最大 10 件）
+    """
+    limit = int(request.args.get("limit", 50))
+
+    # execution_logs から error / review を集計
+    logs = _get_execution_logs("auto_transfer", limit)
+
+    error_items = []
+    review_items = []
+
+    for log in logs:
+        detail = log.get("detail", {})
+        results = detail.get("results", [])
+        for res in results:
+            status = res.get("status", "")
+            item = {
+                "executed_at": log.get("executed_at"),
+                "trigger": log.get("trigger"),
+                "status": status,
+                "message": res.get("message", ""),
+                "page_id": res.get("page_id", ""),
+                "action": res.get("action", ""),
+            }
+            if status == "error":
+                error_items.append(item)
+            elif status == "review":
+                review_items.append(item)
+
+    # 最終実行ログ（1件）
+    last_run = logs[0] if logs else None
+    last_run_summary = None
+    if last_run:
+        last_run_summary = {
+            "executed_at": last_run.get("executed_at"),
+            "trigger": last_run.get("trigger"),
+            "has_error": last_run.get("has_error"),
+            "summary": last_run.get("summary", {}),
+        }
+
+    return jsonify({
+        "error_count": len(error_items),
+        "review_count": len(review_items),
+        "last_run": last_run_summary,
+        "recent_errors": error_items[:10],
+        "recent_reviews": review_items[:10],
+    })
+
 
 @app.route("/health")
 def health():

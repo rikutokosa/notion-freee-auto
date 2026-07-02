@@ -6,7 +6,7 @@
 #   bash scripts/restore_db.sh <BACKUP_FILE> [DB_PATH]
 #
 # 引数省略時のデフォルト:
-#   DB_PATH = /data/notion_freee.db  (Railway volume)
+#   DB_PATH = ${RAILWAY_VOLUME_MOUNT_PATH:-/data}/chat_history.db
 #
 # 注意:
 #   - 現在の DB を上書きする前に自動で退避バックアップを作成する
@@ -21,7 +21,8 @@ if [ $# -lt 1 ]; then
 fi
 
 BACKUP_FILE="${1}"
-DB_PATH="${2:-/data/notion_freee.db}"
+DEFAULT_DB_PATH="${RAILWAY_VOLUME_MOUNT_PATH:-/data}/chat_history.db"
+DB_PATH="${2:-${DEFAULT_DB_PATH}}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 PRE_RESTORE_BACKUP="${DB_PATH}.pre_restore_${TIMESTAMP}"
 

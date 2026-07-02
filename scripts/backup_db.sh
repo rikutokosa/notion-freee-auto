@@ -6,17 +6,18 @@
 #   bash scripts/backup_db.sh [DB_PATH] [BACKUP_DIR]
 #
 # 引数省略時のデフォルト:
-#   DB_PATH    = /data/notion_freee.db  (Railway volume)
-#   BACKUP_DIR = /data/backups
+#   DB_PATH    = ${RAILWAY_VOLUME_MOUNT_PATH:-/data}/chat_history.db
+#   BACKUP_DIR = ${RAILWAY_VOLUME_MOUNT_PATH:-/data}/backups
 #
 # 本番 DB migration は実行しない。読み取り専用コピーのみ。
 # freee / Notion / OpenAI / Slack には一切アクセスしない。
 set -euo pipefail
 
-DB_PATH="${1:-/data/notion_freee.db}"
-BACKUP_DIR="${2:-/data/backups}"
+DEFAULT_DB_PATH="${RAILWAY_VOLUME_MOUNT_PATH:-/data}/chat_history.db"
+DB_PATH="${1:-${DEFAULT_DB_PATH}}"
+BACKUP_DIR="${2:-${RAILWAY_VOLUME_MOUNT_PATH:-/data}/backups}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_FILE="${BACKUP_DIR}/notion_freee_backup_${TIMESTAMP}.db"
+BACKUP_FILE="${BACKUP_DIR}/chat_history_backup_${TIMESTAMP}.db"
 
 if [ ! -f "${DB_PATH}" ]; then
     echo "[backup_db] ERROR: DB ファイルが存在しません: ${DB_PATH}" >&2

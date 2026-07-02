@@ -16,7 +16,36 @@
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import calendar
+from decimal import Decimal, ROUND_DOWN
 from typing import Optional
+
+
+# ============================================================
+# 金額計算ヘルパー（Decimal 化・端数処理統一）
+# 現行の int() 切り捨て挙動（0方向への切り捨て）を Decimal で明示的に再現する。
+# ROUND_HALF_UP への変更は業務要件確認が必要なため行わない。
+# ============================================================
+
+def _to_decimal(value) -> Decimal:
+    """数値を Decimal に変換する。None は 0 として扱う。"""
+    if value is None:
+        return Decimal("0")
+    return Decimal(str(value))
+
+
+def _int_trunc_decimal(value: Decimal) -> int:
+    """Decimal を 0 方向へ切り捨てして int に変換する（現行 int(float) と同挙動）。"""
+    return int(value.to_integral_value(rounding=ROUND_DOWN))
+
+
+def _tax_included_10(amount) -> int:
+    """税抜金額に消費税10%を乗じて税込金額（int）を返す。端数は 0 方向切り捨て。"""
+    return _int_trunc_decimal(_to_decimal(amount) * Decimal("1.1"))
+
+
+def _percent_amount(amount, rate) -> int:
+    """amount * rate / 100 を計算して int（0 方向切り捨て）を返す。返金率計算に使用。"""
+    return _int_trunc_decimal(_to_decimal(amount) * _to_decimal(rate) / Decimal("100"))
 
 
 # ============================================================
@@ -525,17 +554,17 @@ def build_journal_entries(record: dict) -> dict:
         if henkin_uriage is not None:
             minus_uriage = henkin_uriage - original_uriage  # 負の値
         else:
-            minus_uriage = -int(original_uriage * henkin_ritsu / 100)
+            minus_uriage = -_percent_amount(original_uriage, henkin_ritsu)
         # 税込に変換
-        minus_uriage_tax_incl = int(minus_uriage * 1.1)
+        minus_uriage_tax_incl = _tax_included_10(minus_uriage)
 
         # 仕入の返金額計算（税込）
         if henkin_shukyaku is not None:
             minus_shukyaku = henkin_shukyaku - original_shukyaku  # 負の値
         else:
-            minus_shukyaku = -int(original_shukyaku * henkin_ritsu / 100)
+            minus_shukyaku = -_percent_amount(original_shukyaku, henkin_ritsu)
         # 税込に変換
-        minus_shukyaku_tax_incl = int(minus_shukyaku * 1.1)
+        minus_shukyaku_tax_incl = _tax_included_10(minus_shukyaku)
 
         today_str = date.today().isoformat()
 
@@ -613,7 +642,7 @@ def build_journal_entries(record: dict) -> dict:
 
         # PCA成約管理の場合: PCA支払のマイナス仕訳も追加
         if db_type == "pca" and p["pca_shiire"]:
-            pca_henkin = -int(p["pca_shiire"] * henkin_ritsu / 100)
+            pca_henkin = -_percent_amount(p["pca_shiire"], henkin_ritsu)
             if pca_henkin != 0:
                 base["pca_entry"] = {
                     "issue_date": today_str,
@@ -708,7 +737,7 @@ def build_journal_entries(record: dict) -> dict:
     # 売上仕訳（CSS求人=登録不要の場合はスキップ）
     if rule["payment_rule"] != "登録不要":
         # 税込売上を優先使用。なければ税抜×1.1でフォールバック
-        uriage_amount = int(p["zeikomi_uriage"]) if p.get("zeikomi_uriage") else int(p["zeinuki_uriage"] * 1.1) if p.get("zeinuki_uriage") else 0
+        uriage_amount = int(p["zeikomi_uriage"]) if p.get("zeikomi_uriage") else _tax_included_10(p["zeinuki_uriage"]) if p.get("zeinuki_uriage") else 0
         if uriage_amount > 0:
             account_item = "CA売上【自社】"
             if db_type == "pca":
@@ -749,7 +778,7 @@ def build_journal_entries(record: dict) -> dict:
         # スカウト手数料（仕入）を登録
         if p.get("zeinuki_shukyaku") and p["zeinuki_shukyaku"] > 0:
             purchase_section = "本店：PCA" if db_type == "pca" else "本店：CA"
-            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else int(p["zeinuki_shukyaku"] * 1.1)
+            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else _tax_included_10(p["zeinuki_shukyaku"])
             base["purchase_entry"] = {
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,
@@ -777,7 +806,7 @@ def build_journal_entries(record: dict) -> dict:
             shukyaku_rule = get_rule(p.get("shukyaku_keiro") or "")
             purchase_partner = shukyaku_rule.get("supplier") if shukyaku_rule else rule.get("supplier")
             # 税込集客手数料を使用（ない場合は税抜×1.1でフォールバック）
-            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else int(p["zeinuki_shukyaku"] * 1.1)
+            purchase_amount = int(p["zeikomi_shukyaku"]) if p.get("zeikomi_shukyaku") else _tax_included_10(p["zeinuki_shukyaku"])
             base["purchase_entry"] = {
                 "issue_date": nyusha_date_str,
                 "due_date": shiire_kessai.isoformat() if shiire_kessai else None,

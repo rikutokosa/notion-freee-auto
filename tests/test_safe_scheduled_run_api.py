@@ -163,12 +163,13 @@ class TestScheduledRunJobLock:
     def test_lock_failure_returns_409_and_skips_run(self, client_with_safe_mocks, monkeypatch):
         """
         _acquire_job_lock が False を返した場合、409 を返し _do_scheduled_run が呼ばれない。
-        本体の lock 取得失敗経路（L2337-2342）を直接通す。
+        本体の lock 取得失敗経路を直接通す。
         """
         flask_client, mock_do_run, _ = client_with_safe_mocks
         import app as app_module
+        mock_acquire = MagicMock(return_value=False)
         monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
-        monkeypatch.setattr(app_module, "_acquire_job_lock", MagicMock(return_value=False))
+        monkeypatch.setattr(app_module, "_acquire_job_lock", mock_acquire)
         monkeypatch.setattr(app_module, "_release_job_lock", MagicMock())
 
         resp = flask_client.post(
@@ -184,6 +185,8 @@ class TestScheduledRunJobLock:
             f"status が 'conflict' であるべき（実際: {data.get('status')}）"
         )
         mock_do_run.assert_not_called()
+        # lock 名が APScheduler 側と同じ "daily_auto_run" で呼ばれていることを確認
+        mock_acquire.assert_called_once_with("daily_auto_run", ttl_seconds=7200)
 
     def test_lock_exception_returns_503_and_skips_run(self, client_with_safe_mocks, monkeypatch):
         """
@@ -258,3 +261,96 @@ class TestScheduledRunNormalExecution:
             time.sleep(0.1)
 
         mock_do_run.assert_called_once()
+
+
+# ============================================================
+# lock 名統一テスト
+# ============================================================
+
+class TestScheduledRunLockNameConsistency:
+    """
+    /api/scheduled_run と APScheduler (_scheduled_job) が同じ lock 名
+    "daily_auto_run" を使うことを確認する。
+    手動 API と日次自動実行で _do_scheduled_run() が同時実行されないようにするため。
+    """
+
+    def test_api_uses_daily_auto_run_lock_name(self, client_with_safe_mocks, monkeypatch):
+        """
+        /api/scheduled_run が _acquire_job_lock("daily_auto_run", ttl_seconds=7200) を呼ぶこと。
+        APScheduler 側（_scheduled_job）と同じ lock 名・TTL を使っていることを確認する。
+        """
+        flask_client, mock_do_run, _ = client_with_safe_mocks
+        import app as app_module
+
+        mock_acquire = MagicMock(return_value=True)
+        mock_release = MagicMock()
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
+        monkeypatch.setattr(app_module, "_acquire_job_lock", mock_acquire)
+        monkeypatch.setattr(app_module, "_release_job_lock", mock_release)
+
+        import time
+        flask_client.post("/api/scheduled_run", headers=_auth_header())
+
+        # バックグラウンドスレッドの完了を待つ（最大2秒）
+        for _ in range(20):
+            if mock_release.call_count > 0:
+                break
+            time.sleep(0.1)
+
+        # lock 名が "daily_auto_run"、TTL が 7200 であることを確認
+        mock_acquire.assert_called_once_with("daily_auto_run", ttl_seconds=7200)
+        # release も同じ lock 名で呼ばれること
+        mock_release.assert_called_once_with("daily_auto_run")
+
+    def test_scheduled_job_uses_daily_auto_run_lock_name(self, monkeypatch):
+        """
+        APScheduler 側の _scheduled_job も "daily_auto_run" を使うこと（既存実装の確認）。
+        両者が同じ lock 名を使うことで同時実行を防ぐ設計を保証する。
+        """
+        import app as app_module
+
+        mock_acquire = MagicMock(return_value=True)
+        mock_release = MagicMock()
+        monkeypatch.setattr(app_module, "_acquire_job_lock", mock_acquire)
+        monkeypatch.setattr(app_module, "_release_job_lock", mock_release)
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: True)  # 停止中にして _do_scheduled_run は呼ばない
+        monkeypatch.setattr(app_module, "send_slack_notification", MagicMock())
+
+        app_module._scheduled_job()
+
+        mock_acquire.assert_called_once_with("daily_auto_run", ttl_seconds=7200)
+        mock_release.assert_called_once_with("daily_auto_run")
+
+    def test_no_manual_scheduled_run_lock_name_in_api(self, client_with_safe_mocks, monkeypatch):
+        """
+        /api/scheduled_run が古い lock 名 "manual_scheduled_run" を使っていないことを確認する。
+        （コード上の grep 確認と合わせて二重確認）
+        """
+        flask_client, mock_do_run, _ = client_with_safe_mocks
+        import app as app_module
+
+        acquired_with = []
+
+        def capturing_acquire(name, **kwargs):
+            acquired_with.append(name)
+            return True
+
+        monkeypatch.setattr(app_module, "_is_manually_stopped", lambda: False)
+        monkeypatch.setattr(app_module, "_acquire_job_lock", capturing_acquire)
+        monkeypatch.setattr(app_module, "_release_job_lock", MagicMock())
+
+        import time
+        flask_client.post("/api/scheduled_run", headers=_auth_header())
+
+        # バックグラウンドスレッドの完了を待つ（最大2秒）
+        for _ in range(20):
+            if acquired_with:
+                break
+            time.sleep(0.1)
+
+        assert "manual_scheduled_run" not in acquired_with, (
+            f"古い lock 名 'manual_scheduled_run' が使われています: {acquired_with}"
+        )
+        assert "daily_auto_run" in acquired_with, (
+            f"'daily_auto_run' が使われていません: {acquired_with}"
+        )

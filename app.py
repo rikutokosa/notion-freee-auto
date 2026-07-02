@@ -2299,9 +2299,13 @@ def scheduled_run():
       - 停止中は _do_scheduled_run を呼ばず 503 を返す
       - 停止判定で例外が発生した場合も fail-safe で停止扱いにする
     - job_lock（_acquire_job_lock）を必ず通す
+      - lock 名は APScheduler 側（_scheduled_job）と同じ "daily_auto_run" を使用する
+        → 手動 API と日次自動実行で同じ _do_scheduled_run() が同時実行されないようにするため
+      - TTL は APScheduler 側と同じ 7200 秒（2時間）に合わせる
       - ロック取得失敗時は _do_scheduled_run を呼ばず 409 を返す
       - ロック取得で例外が発生した場合も fail-safe で停止扱いにする
     - 上記をすべて通過した場合のみ _do_scheduled_run をバックグラウンドで実行する
+    - thread.start() 失敗時も _release_job_lock を呼び lock 残留を防ぐ
     """
     # --- 停止判定（fail-safe: 例外時は停止扱い） ---
     try:
@@ -2323,8 +2327,11 @@ def scheduled_run():
         }), 503
 
     # --- job_lock 取得（fail-safe: 例外時は停止扱い） ---
+    # APScheduler 側（_scheduled_job）と同じ lock 名 "daily_auto_run" を使用する。
+    # 手動 API と日次自動実行で _do_scheduled_run() が同時実行されないようにするため。
+    _LOCK_NAME = "daily_auto_run"
     try:
-        acquired = _acquire_job_lock("manual_scheduled_run", ttl_seconds=3600)
+        acquired = _acquire_job_lock(_LOCK_NAME, ttl_seconds=7200)
     except Exception as e:
         logger.error(
             f"[/api/scheduled_run] job_lock 取得で例外が発生したため fail-safe で停止扱いにします: {e}"
@@ -2342,16 +2349,26 @@ def scheduled_run():
         }), 409
 
     # --- バックグラウンド実行（lock は _do_scheduled_run 完了後に解放） ---
+    # thread.start() 失敗時も finally で lock を解放し残留を防ぐ。
     def _run_in_background():
         try:
             _do_scheduled_run()
         except Exception:
             logger.exception("[/api/scheduled_run] バックグラウンド実行エラー")
         finally:
-            _release_job_lock("manual_scheduled_run")
+            _release_job_lock(_LOCK_NAME)
 
     t = threading.Thread(target=_run_in_background, daemon=True)
-    t.start()
+    try:
+        t.start()
+    except Exception as e:
+        logger.error(f"[/api/scheduled_run] thread.start() 失敗のため lock を解放します: {e}")
+        _release_job_lock(_LOCK_NAME)
+        return jsonify({
+            "status": "error",
+            "message": "バックグラウンドスレッドの起動に失敗しました。"
+        }), 503
+
     return jsonify({"status": "accepted", "message": "スケジュール実行をバックグラウンドで開始しました"}), 202
 
 

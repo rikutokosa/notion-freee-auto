@@ -11,7 +11,7 @@ Notionの②経理対応待ちレコードを取得し、freeeに登録する
   - review: 手動確認が必要
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from notion_client import (
     fetch_pending_records,
@@ -129,6 +129,35 @@ def _idem_key(page_id: str, action: str, journal: dict) -> str:
     amount = abs(sales.get("amount", 0) or purchase.get("amount", 0))
     return f"{page_id}:{action}:{issue_date}:{amount}"
 
+def _parse_idem_updated_at_as_utc(
+    value: str,
+    now_utc: "datetime | None" = None,
+) -> "datetime":
+    """
+    idempotency_keys.updated_at の文字列を UTC aware datetime に変換する。
+
+    新規レコード: datetime('now') = UTC naive で書き込まれる。
+    移行期レガシー: 旧コードが datetime('now','localtime') = JST naive で書き込んでいた場合。
+
+    判定方法:
+    - まず UTC naive として解釈する。
+    - その結果が now_utc より 5 分以上未来になる場合、
+      旧 localtime/JST レコードの可能性が高いため JST naive とみなして UTC に変換する。
+    - それ以外は UTC として扱う。
+    """
+    from datetime import timedelta as _td
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+    naive = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    # まず UTC naive として解釈
+    as_utc = naive.replace(tzinfo=timezone.utc)
+    # UTC 解释で 5 分以上未来になる場合は legacy JST とみなす
+    if (as_utc - now_utc).total_seconds() > 5 * 60:
+        # JST = UTC+9 なので 9時間引く
+        as_utc = (naive - _td(hours=9)).replace(tzinfo=timezone.utc)
+    return as_utc
+
+
 def _idem_start(key: str, page_id: str, action: str):
     """処理開始前に status='processing' を INSERT (IGNORE)。"""
     conn = _get_db()
@@ -136,7 +165,7 @@ def _idem_start(key: str, page_id: str, action: str):
         conn.execute(
             """INSERT OR IGNORE INTO idempotency_keys
                (key, page_id, action, status, freee_ids, created_at, updated_at)
-               VALUES (?, ?, ?, 'processing', '{}', datetime('now','localtime'), datetime('now','localtime'))""",
+               VALUES (?, ?, ?, 'processing', '{}', datetime('now'), datetime('now'))""",
             (key, page_id, action)
         )
         conn.commit()
@@ -149,7 +178,7 @@ def _idem_save(key: str, page_id: str, action: str, freee_ids: dict):
     try:
         conn.execute(
             """INSERT INTO idempotency_keys (key, page_id, action, status, freee_ids, created_at, updated_at)
-               VALUES (?, ?, ?, 'done', ?, datetime('now','localtime'), datetime('now','localtime'))
+               VALUES (?, ?, ?, 'done', ?, datetime('now'), datetime('now'))
                ON CONFLICT(key) DO UPDATE SET
                    status='done',
                    freee_ids=excluded.freee_ids,
@@ -170,7 +199,7 @@ def _idem_error(key: str, error_message: str = ""):
             """UPDATE idempotency_keys
                SET status='error',
                    freee_ids=json_patch(freee_ids, json_object('error', ?)),
-                   updated_at=datetime('now','localtime')
+                   updated_at=datetime('now')
                WHERE key=? AND status='processing'""",
             (error_message[:500] if error_message else "", key)
         )
@@ -277,9 +306,10 @@ def process_record(record: dict, dry_run: bool = False) -> dict:
             # status='processing' の場合：30分以上古ければ stale とみなし error 化して再実行
             if idem_status == "processing":
                 try:
-                    from datetime import datetime as _dt
-                    updated = _dt.strptime(idem_updated_at, "%Y-%m-%d %H:%M:%S")
-                    age_minutes = (_dt.now() - updated).total_seconds() / 60
+                    # updated_at を UTC aware datetime に変換（legacy JST レコードも吸収）
+                    now_utc = datetime.now(timezone.utc)
+                    updated = _parse_idem_updated_at_as_utc(idem_updated_at, now_utc=now_utc)
+                    age_minutes = (now_utc - updated).total_seconds() / 60
                 except Exception:
                     age_minutes = 0
                 if age_minutes >= 30:

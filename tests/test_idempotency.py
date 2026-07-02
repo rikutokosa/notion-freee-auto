@@ -10,7 +10,7 @@ import sqlite3
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -29,8 +29,8 @@ def _make_db(tmp_path):
             action TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'processing',
             freee_ids TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
     conn.commit()
@@ -454,7 +454,8 @@ class TestProcessingStuck:
         }
 
         # 31分前の processing レコードを挿入
-        stale_time = (datetime.now() - timedelta(minutes=31)).strftime("%Y-%m-%d %H:%M:%S")
+        # processor.py の stale 判定は UTC 基準（datetime('now') = UTC）なので UTC で作成する
+        stale_time = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%d %H:%M:%S")
         import processor
         idem_key = processor._idem_key("page-001", "register", journal)
         conn.execute(
@@ -529,7 +530,7 @@ class TestIdempotencyDedup:
         conn.execute(
             """INSERT INTO idempotency_keys
                (key, page_id, action, status, freee_ids, created_at, updated_at)
-               VALUES (?, ?, ?, 'done', ?, datetime('now','localtime'), datetime('now','localtime'))""",
+               VALUES (?, ?, ?, 'done', ?, datetime('now'), datetime('now'))""",
             (idem_key, "page-001", "register", saved_freee_ids)
         )
         conn.commit()

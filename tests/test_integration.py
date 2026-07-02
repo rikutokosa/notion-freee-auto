@@ -31,8 +31,8 @@ def _make_db(tmp_path):
             action TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'processing',
             freee_ids TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
     conn.commit()

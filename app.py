@@ -2291,14 +2291,65 @@ def send_slack_notification(subject: str, body: str):
 @app.route("/api/scheduled_run", methods=["POST"])
 def scheduled_run():
     """
-    毎日昼12時のスケジュール実行エンドポイント。
-    1. 自動転記（run_once）を実行
-    2. 請求書照合（run_matching）を実行
-    3. 結果をSlackで通知
-    バックグラウンドスレッドで非同期実行し、即座に202を返す。
+    手動トリガーによるスケジュール実行エンドポイント。
+
+    安全化方針（fail-safe 設計）:
+    - Basic認証は _basic_auth_guard で全エンドポイントに適用済み
+    - 停止判定（_is_manually_stopped）を必ず通す
+      - 停止中は _do_scheduled_run を呼ばず 503 を返す
+      - 停止判定で例外が発生した場合も fail-safe で停止扱いにする
+    - job_lock（_acquire_job_lock）を必ず通す
+      - ロック取得失敗時は _do_scheduled_run を呼ばず 409 を返す
+      - ロック取得で例外が発生した場合も fail-safe で停止扱いにする
+    - 上記をすべて通過した場合のみ _do_scheduled_run をバックグラウンドで実行する
     """
+    # --- 停止判定（fail-safe: 例外時は停止扱い） ---
+    try:
+        stopped = _is_manually_stopped()
+    except Exception as e:
+        logger.error(
+            f"[/api/scheduled_run] 停止判定で例外が発生したため fail-safe で停止扱いにします: {e}"
+        )
+        return jsonify({
+            "status": "error",
+            "message": "停止判定に失敗しました。安全のため実行を中止しました。"
+        }), 503
+
+    if stopped:
+        logger.info("[/api/scheduled_run] 停止フラグが有効なため実行をスキップします")
+        return jsonify({
+            "status": "skipped",
+            "message": "FREEE_AUTO_STOPPED が有効なため実行をスキップしました。"
+        }), 503
+
+    # --- job_lock 取得（fail-safe: 例外時は停止扱い） ---
+    try:
+        acquired = _acquire_job_lock("manual_scheduled_run", ttl_seconds=3600)
+    except Exception as e:
+        logger.error(
+            f"[/api/scheduled_run] job_lock 取得で例外が発生したため fail-safe で停止扱いにします: {e}"
+        )
+        return jsonify({
+            "status": "error",
+            "message": "job_lock 取得に失敗しました。安全のため実行を中止しました。"
+        }), 503
+
+    if not acquired:
+        logger.warning("[/api/scheduled_run] job_lock を取得できなかったため実行をスキップします")
+        return jsonify({
+            "status": "conflict",
+            "message": "別の実行が進行中のためスキップしました。"
+        }), 409
+
+    # --- バックグラウンド実行（lock は _do_scheduled_run 完了後に解放） ---
     def _run_in_background():
-        _do_scheduled_run()
+        try:
+            _do_scheduled_run()
+        except Exception:
+            logger.exception("[/api/scheduled_run] バックグラウンド実行エラー")
+        finally:
+            _release_job_lock("manual_scheduled_run")
+
     t = threading.Thread(target=_run_in_background, daemon=True)
     t.start()
     return jsonify({"status": "accepted", "message": "スケジュール実行をバックグラウンドで開始しました"}), 202
